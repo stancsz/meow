@@ -16,7 +16,7 @@ export async function executeNativeTool(toolName: string, args: any) {
 
   const handlers: Record<string, (arg: any) => Promise<string>> = {
     read: async (p: string) => await Bun.file(p).text(),
-    shell: async (c: string) => await $`${c}`.text(),
+    shell: async (c: string) => await $`${c}`.text(), // Native Zero-Hop execution
     git: async (m: string) => await $`git commit -m ${m}`.text(),
   };
 

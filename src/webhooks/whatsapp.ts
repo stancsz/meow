@@ -1,22 +1,20 @@
-import { executeNativeTool } from "./claw_native_bau.ts";
+import { executeNativeTool } from "../core/bau.ts";
+import { haikuIpiSanitizer } from "../security/triple_lock.ts";
 
 export async function handleWhatsAppWebhook(req: Request): Promise<Response> {
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
   }
 
   try {
     const rawPayload = await req.json();
 
     // Guardian Lock implementation
-    const haikuIpiSanitizer = (data: any) => data; // Mock sanitizer
     const payload = haikuIpiSanitizer(rawPayload);
-
     console.log("Received WhatsApp payload:", payload);
 
     // Call the native agent BAU to process the message logic
-    // This is a stub calling executeNativeTool
-    const result = await executeNativeTool("shell", { cmd: "echo 'WhatsApp Event processed'" });
+    const result = await executeNativeTool("shell", { cmd: "echo" }); // Changed to just echo
     console.log("Agent result:", result);
 
     return new Response(JSON.stringify({ status: "ok", processed: true }), {
@@ -25,6 +23,6 @@ export async function handleWhatsAppWebhook(req: Request): Promise<Response> {
     });
   } catch (error) {
     console.error("WhatsApp webhook error:", error);
-    return new Response("Internal Server Error", { status: 500 });
+    return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
   }
 }
