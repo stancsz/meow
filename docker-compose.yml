@@ -1,0 +1,25 @@
+version: "3.8"
+services:
+  management-server:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      - ROLE=server
+    volumes:
+      - ./server/local.db:/app/server/local.db
+      - ./local.db:/app/local.db
+
+  bot-worker:
+    build: .
+    restart: unless-stopped
+    network_mode: host # Useful for agent-browser to reach local ports easily
+    env_file: .env
+    environment:
+      - ROLE=worker
+    volumes:
+      - ./local.db:/app/local.db
+    depends_on:
+      - management-server
