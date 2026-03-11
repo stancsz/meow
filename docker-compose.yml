@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  simpleclaw:
+    build: .
+    restart: unless-stopped
+    # If the app exposes any ports, you can uncomment and map them here
+    # ports:
+    #   - "3000:3000"
+    environment:
+      - NODE_ENV=production
