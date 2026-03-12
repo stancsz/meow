@@ -50,10 +50,19 @@ Deploying to low-resource instances (like `e2-micro`) requires specific handling
     sudo apt-get update && sudo apt-get install -y unzip curl git \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
     libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 \
-    libcairo2 libasound2
+    libcairo2 libasound2 libxfixes3 libxkbcommon0 libx11-6 \
+    libxext6 libxrender1 libxshmfence1 libgl1
     ```
 
-#### 2. Pathing in Non-Interactive Shells
+#### 2. Agent-Browser Daemon Lock
+*   **Challenge**: "Daemon failed to start" error usually means a previous `agent-browser` session crashed and left a stale socket/process.
+*   **Solution**: Clear the runtime directory and kill stale node processes:
+    ```bash
+    killall node || true
+    rm -rf /run/user/$(id -u)/agent-browser/*
+    ```
+
+#### 3. Pathing in Non-Interactive Shells
 *   **Challenge**: `gcloud ssh` commands don't load `.bashrc`, so `bun` appears missing even after installation.
 *   **Solution**: Use absolute paths (`~/.bun/bin/bun`) or prepend the path in your command:
     ```bash
