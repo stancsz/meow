@@ -9,6 +9,9 @@ const legacyBridge = {
   },
 };
 
+const stripAnsi = (str: string) => 
+  str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+
 export async function executeNativeTool(toolName: string, args: any) {
   if (/rm -rf|mkfs|dd|sudo/i.test(JSON.stringify(args))) return "DENIED";
 
@@ -18,9 +21,11 @@ export async function executeNativeTool(toolName: string, args: any) {
     git: (m: string) => execSync(`git commit -m "${m}"`).toString(),
   };
 
-  return (
+  const result = (
     (await handlers[toolName]?.(args.path || args.cmd || args.msg)) ??
     (await extensionRegistry.execute(toolName, args).catch(() => null)) ??
     legacyBridge.dispatch(toolName, args)
   );
+
+  return typeof result === "string" ? stripAnsi(result) : result;
 }
