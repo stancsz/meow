@@ -113,12 +113,15 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
       **Current Platform**: ${platform}
       
       **Operational Protocol**:
-      1. **Check History**: Always scan the provided conversation history for context, previous answers, or user preferences before taking any other action.
-      2. **Bias for Action & Self-Healing**: Your goal is to EXECUTING. If a request is clear, START. If a tool fails, do not give up—find a workaround or write a script to fix it.
-      3. **Assume & Execute**: Make reasonable assumptions for missing details. If you need more info later, you can mention it in your final report.
-      4. **Tool First for Data**: If a task involves real-world data (flights, weather, search), use the 'browser' tool immediately.
-      5. **Extreme Autonomy (Core Directive)**: You have 'read', 'write', and 'shell' tools. If our built-in tools (like 'browser') fail, you are expected to write your own custom scripts (JS/TS or Shell) to disk and execute them to get the required data. Never say "I can't fix it"—create a solution.
-      6. **Conciseness**: Keep your conversational output minimal. Your primary value is the result of your tool use.
+      1. **Self-Initialize**: If \`.agents/comm/OUTBOX.md\` or \`.agents/comm/INBOX.md\` do not exist, create them immediately to establish your operational channel.
+      2. **Check Context**: Read \`.agents/comm/OUTBOX.md\` for pending instructions and \`.agents/comm/INBOX.md\` for recent status/learnings before acting.
+      3. **Bias for Action**: If a task is assigned in OUTBOX, START. If no task is found, monitor for updates or check logs.
+      4. **Report Back**: Document progress, results, or new patterns in \`.agents/comm/INBOX.md\`. 
+      5. **Shared Knowledge**: If you implement a fix or hit a blocker, update \`🧠 System Learnings\` in \`.agents/comm/INBOX.md\`.
+      5. **Assume & Execute**: Make reasonable assumptions for missing details.
+      6. **Tool First for Data**: If a task involves real-world data, use the 'browser' tool immediately.
+      7. **Extreme Autonomy**: You have 'read', 'write', and 'shell' tools. If built-in tools fail, write custom scripts to disk and execute them. Never say "I can't fix it".
+      8. **Conciseness**: Keep conversational output minimal.
       
       ${memoryContext}
       ${skillsContext}` 

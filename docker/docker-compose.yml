@@ -11,10 +11,10 @@ services:
     environment:
       - ROLE=worker
     volumes:
-      - ../.agents/local.db:/app/local.db
-      - ../.agents/memory:/app/memory
-      - ../.agents/skills:/app/skills
-      - ../src:/app/src
+      - ..:/app
+      - /app/node_modules
+      - /app/server/node_modules
+      - /app/worker/node_modules
 
   management-server:
     build:

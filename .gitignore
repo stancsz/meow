@@ -49,3 +49,20 @@ _override.tf.json
 .terraformrc
 terraform.rc
 **.tar
+
+# 🔒 Git Lock: Protect root directory from new top-level entries
+/*
+!/.agents/
+!/cli/
+!/docker/
+!/docs/
+!/server/
+!/src/
+!/terraform/
+!/.env.example
+!/.gitignore
+!/README.md
+!/bun.lock
+!/package.json
+!/package-lock.json
+!/tsconfig.json
