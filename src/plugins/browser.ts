@@ -32,7 +32,12 @@ export const plugin: Extension = {
       }
 
       console.log(`🌐 Browser Skill: Executing "${command}"`);
-      const output = execSync(command).toString();
+      const output = execSync(command, { 
+        env: { 
+          ...process.env, 
+          PATH: `/home/stanc/.bun/bin:${process.env.PATH}` 
+        } 
+      }).toString();
       return output;
     } catch (error: any) {
       return `Browser error: ${error.message}`;
