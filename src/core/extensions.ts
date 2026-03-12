@@ -1,8 +1,9 @@
-export type ExtensionType = 'skill' | 'knowledgebase' | 'mcp';
+export type ExtensionType = "skill" | "knowledgebase" | "mcp" | "webhook";
 
 export interface Extension {
   name: string;
   type: ExtensionType;
+  route?: string; // Only for webhook type
   execute: (args: any) => Promise<any> | any;
 }
 
@@ -11,7 +12,9 @@ class Registry {
 
   register(extension: Extension) {
     if (this.extensions.has(extension.name)) {
-      console.warn(`Extension ${extension.name} is already registered. Overwriting.`);
+      console.warn(
+        `Extension ${extension.name} is already registered. Overwriting.`,
+      );
     }
     this.extensions.set(extension.name, extension);
   }
@@ -22,6 +25,12 @@ class Registry {
 
   getAll(): Extension[] {
     return Array.from(this.extensions.values());
+  }
+
+  findWebhook(path: string): Extension | undefined {
+    return Array.from(this.extensions.values()).find(
+      (ext) => ext.type === "webhook" && ext.route === path,
+    );
   }
 
   has(name: string): boolean {

@@ -5,7 +5,7 @@ import { extensionRegistry } from "./extensions.ts";
 const legacyBridge = {
   dispatch: (toolName: string, args: any) => {
     return `Legacy fallback for ${toolName} with args: ${JSON.stringify(args)}`;
-  }
+  },
 };
 
 export async function executeNativeTool(toolName: string, args: any) {
