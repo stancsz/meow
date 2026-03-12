@@ -1,4 +1,6 @@
 #!/bin/bash
+# AI NOTE: See .agent/workflows/setup.md for critical lessons on 
+# dependency handling, pathing, and memory optimization for cloud Free Tiers.
 set -e
 
 echo "🦀 SimpleClaw Automated Setup"
