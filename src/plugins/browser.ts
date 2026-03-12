@@ -13,7 +13,7 @@ export const plugin: Extension = {
       let command = "bunx agent-browser ";
       switch (action) {
         case "navigate":
-          command += `navigate ${url}`;
+          command += `navigate "${url}"`;
           break;
         case "click":
           command += `click "${selector}"`;
@@ -27,6 +27,10 @@ export const plugin: Extension = {
         case "screenshot":
           command += `screenshot`;
           break;
+        case "wait":
+          // If agent-browser doesn't have a direct 'wait', we can just use a sleep or a snapshot delay
+          command += `snapshot`; // Fallback to snapshot which usually waits for load
+          break;
         default:
           return `Unknown browser action: ${action}`;
       }
@@ -34,12 +38,12 @@ export const plugin: Extension = {
       console.log(`🌐 Browser Skill: Executing "${command}"`);
       const output = execSync(command, { 
         env: { 
-          ...process.env, 
-          PATH: `/home/stanc/.bun/bin:${process.env.PATH}` 
+          ...process.env
         } 
       }).toString();
       return output;
     } catch (error: any) {
+      console.error(`❌ Browser Error:`, error.message);
       return `Browser error: ${error.message}`;
     }
   },

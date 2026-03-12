@@ -42,33 +42,17 @@ client.once("clientReady", async (c) => {
   }
 });
 
-import OpenAI from "openai";
-
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-});
-
-import { executeNativeTool } from "../core/executor.ts";
+import { runAgentLoop } from "../core/agent.ts";
 
 client.on("messageCreate", async (message) => {
-  const guildId = (process.env.DISCORD_GUILD_ID || "").trim();
   const channelId = (process.env.DISCORD_CHANNEL_ID || "").trim();
 
-  console.log(`📡 Raw Message Detected: "${message.content}" from ${message.author.tag} in channel ${message.channelId}`);
-  
   if (message.author.bot) return;
 
   const isMentioned = client.user && message.mentions.has(client.user);
   const isDirectChannel = message.channelId === channelId;
 
-  console.log(`🔍 Check: Mentioned=${!!isMentioned}, DirectChannel=${isDirectChannel} (Target: ${channelId})`);
-
-  if (!isMentioned && !isDirectChannel) {
-    console.log(`⏭️ Skipping message: Not mentioned and not in target channel.`);
-    return;
-  }
+  if (!isMentioned && !isDirectChannel) return;
 
   // Guardian Lock implementation
   const sanitizedContent = aiIpiSanitizer(message.content);
@@ -76,84 +60,19 @@ client.on("messageCreate", async (message) => {
   try {
     await message.channel.sendTyping();
 
-    const tools = [
-      {
-        type: "function",
-        function: {
-          name: "shell",
-          description: "Execute a shell command",
-          parameters: {
-            type: "object",
-            properties: { cmd: { type: "string" } },
-            required: ["cmd"],
-          },
-        },
-      },
-      {
-        type: "function",
-        function: {
-          name: "read",
-          description: "Read a file from disk",
-          parameters: {
-            type: "object",
-            properties: { path: { type: "string" } },
-            required: ["path"],
-          },
-        },
-      },
-      {
-        type: "function",
-        function: {
-          name: "browser",
-          description: "Interact with the web browser",
-          parameters: {
-            type: "object",
-            properties: {
-              action: { 
-                type: "string", 
-                enum: ["navigate", "click", "type", "snapshot", "screenshot"],
-                description: "The action to perform" 
-              },
-              url: { type: "string", description: "The URL for navigate action" },
-              selector: { type: "string", description: "CSS selector for click/type action" },
-              text: { type: "string", description: "Text for type action" },
-            },
-            required: ["action"],
-          },
-        },
-      },
-    ];
-
-    const skillsContext = await loadSkillsContext();
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { 
-          role: "system", 
-          content: `You are SimpleClaw. You have access to native tools. Use them to fulfill requests. ${skillsContext}` 
-        },
-        { role: "user", content: sanitizedContent }
-      ],
-      tools: tools as any,
+    const result = await runAgentLoop(sanitizedContent, {
+      model: "gpt-5-nano",
+      onIteration: async (status) => {
+        // Optional: you could send status updates here, 
+        // but for now we just log to console and keep typing
+        await message.channel.sendTyping();
+      }
     });
 
-    const aiMessage = response.choices[0]?.message;
-
-    if (aiMessage?.tool_calls) {
-      for (const toolCall of aiMessage.tool_calls as any[]) {
-        const { name, arguments: argsString } = toolCall.function;
-        const args = JSON.parse(argsString);
-        console.log(`🛠️ Executing Tool [${name}]: ${argsString}`);
-        
-        const result = await executeNativeTool(name, args);
-        console.log(`✅ Tool Result: ${result}`);
-
-        // Sending the final tool result back to the user
-        await message.reply(`\`\`\`\n${result}\n\`\`\``);
-      }
-    } else if (aiMessage?.content) {
-      await message.reply(aiMessage.content);
+    if (result.content) {
+      await message.reply(result.content);
+    } else if (!result.completed) {
+      await message.reply("⚠️ Reached maximum task depth. Stopping.");
     }
   } catch (error: any) {
     console.error("❌ Error:", error.message);

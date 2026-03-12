@@ -1,4 +1,5 @@
 import { executeNativeTool } from "../core/executor.ts";
+import { runAgentLoop } from "../core/agent.ts";
 import { aiIpiSanitizer } from "../security/triple_lock.ts";
 import type { Extension } from "../core/extensions.ts";
 
@@ -20,9 +21,11 @@ export const plugin: Extension = {
       const payload = aiIpiSanitizer(rawPayload);
       console.log("Received Messenger payload:", payload);
 
-      // Call the native agent BAU to process the message logic
-      const result = await executeNativeTool("shell", { cmd: "echo" });
-      console.log("Agent result:", result);
+      // Call the core agent loop to process the message logic
+      const result = await runAgentLoop(String(payload.message?.text || ""), {
+        model: "gpt-5-nano"
+      });
+      console.log("Agent result:", result.content);
 
       return new Response(JSON.stringify({ status: "ok", processed: true }), {
         status: 200,
