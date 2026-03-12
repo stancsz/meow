@@ -52,6 +52,9 @@ client.on("messageCreate", async (message) => {
   const isMentioned = client.user && message.mentions.has(client.user);
   const isDirectChannel = message.channelId === channelId;
 
+  console.log(`📡 Message received: "${message.content}" from ${message.author.tag} in channel ${message.channelId}`);
+  console.log(`🔍 Intent Match: isMentioned=${isMentioned}, isDirectChannel=${isDirectChannel} (Target: ${channelId})`);
+
   if (!isMentioned && !isDirectChannel) return;
 
   // Guardian Lock implementation
