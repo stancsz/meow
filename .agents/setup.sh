@@ -1,5 +1,5 @@
 #!/bin/bash
-# AI NOTE: See .agent/workflows/setup.md for critical lessons on 
+# AI NOTE: See .agents/workflows/setup.md for critical lessons on 
 # dependency handling, pathing, and memory optimization for cloud Free Tiers.
 set -e
 

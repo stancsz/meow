@@ -67,7 +67,7 @@ Building Docker images directly on a 1GB RAM `e2-micro` instance is discouraged 
 
 2.  **Build and Tag Locally**:
     ```bash
-    docker build -t gcr.io/[PROJECT_ID]/simpleclaw-bot:latest .
+    docker build -t gcr.io/[PROJECT_ID]/simpleclaw-bot:latest -f docker/Dockerfile .
     docker push gcr.io/[PROJECT_ID]/simpleclaw-bot:latest
     ```
 
@@ -75,8 +75,8 @@ Building Docker images directly on a 1GB RAM `e2-micro` instance is discouraged 
     SSH into the VM and run:
     ```bash
     cd simpleclaw
-    sudo docker-compose pull
-    sudo docker-compose up -d
+    sudo docker-compose -f docker/docker-compose.yml pull
+    sudo docker-compose -f docker/docker-compose.yml up -d
     ```
 
 ### 🛠️ Low-RAM Deployment (Learnings)

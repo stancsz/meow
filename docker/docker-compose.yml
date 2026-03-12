@@ -7,26 +7,28 @@ services:
     # Using host network mode allows the agent to reach the internet 
     # and local ports more easily on many Linux distros.
     network_mode: host 
-    env_file: .env
+    env_file: ../.env
     environment:
       - ROLE=worker
     volumes:
-      - ./local.db:/app/local.db
-      - ./memory:/app/memory
-      - ./skills:/app/skills
-      - ./src:/app/src
+      - ../.agents/local.db:/app/local.db
+      - ../.agents/memory:/app/memory
+      - ../.agents/skills:/app/skills
+      - ../src:/app/src
 
   management-server:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: simpleclaw-ui
     restart: unless-stopped
     ports:
       - "3000:3000"
-    env_file: .env
+    env_file: ../.env
     environment:
       - ROLE=server
     volumes:
-      - ./server/local.db:/app/server/local.db
-      - ./local.db:/app/local.db
+      - ../server/local.db:/app/server/local.db
+      - ../.agents/local.db:/app/local.db
     # Disabled by default to save RAM on production
     profiles: ["ui"] 

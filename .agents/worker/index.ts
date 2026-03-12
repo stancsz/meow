@@ -1,4 +1,4 @@
-import { startClaw } from "../src/index.ts";
+import { startClaw } from "../../src/index.ts";
 
 async function runWorker() {
   console.log("Starting Managed SimpleClaw Worker...");

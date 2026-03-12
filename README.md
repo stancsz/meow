@@ -25,7 +25,7 @@ SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level
 
 - **🌐 Agentic Browser**: Integrated `agent-browser` capabilities allow your AI to navigate the web, interact with elements, and extract data just like a human.
 - **🛠️ Modular Plugins**: Easily extend capabilities with plugins for **Discord**, **WhatsApp**, **Messenger**, and more.
-- **🧠 Skill System**: Inject specialized knowledge or workflows via Markdown files in the `skills/` directory. Supports Anthropic-style `SKILL.md` format.
+- **🧠 Skill System**: Inject specialized knowledge or workflows via Markdown files in the `.agents/skills/` directory. Supports Anthropic-style `SKILL.md` format.
 - **🐳 Cloud Ready**: Pre-configured Terraform and Docker setups for "Free Tier" deployment on Google Cloud.
 - **🔒 Security First**: Integrated **Triple Lock** security and IPI sanitization for AI safety.
 - **💾 Local First**: Zero-config SQLite support for rapid development without complex database setups.
@@ -37,7 +37,7 @@ SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level
 - `cli/`: LLM-integrated terminal interface for interacting with your agent.
 - `src/core/`: The "Brain" and execution logic of the framework.
 - `src/plugins/`: Extensible tools and platform integrations (Browser, Discord, etc.).
-- `skills/`: Markdown-based expertise for the agent (e.g., Exploratory Testing).
+- `.agents/skills/`: Markdown-based expertise for the agent (e.g., Exploratory Testing).
 - `terraform/`: Infrastructure-as-Code for GCP Free Tier deployment.
 - `server/`: Next.js management dashboard for bot orchestration.
 
@@ -66,14 +66,14 @@ Ready to go live? Check our [Setup & Deployment Guide](docs/setup_guide.md).
 ## 📖 Documentation
 
 - [Setup & GCP Deployment Strategy](docs/setup_guide.md)
-- [How to add Agent Skills](skills/README.md)
-- [Browser Skill Documentation](skills/browser.md)
+- [How to add Agent Skills](.agents/skills/README.md)
+- [Browser Skill Documentation](.agents/skills/browser.md)
 
 ---
 
 ## 🧩 Default Skills
 
-The following skills are pre-installed in the `skills/` vault:
+The following skills are pre-installed in the `.agents/skills/` vault:
 - **Web Browsing**: Full-page navigation and interaction.
 - **Dogfooding**: Exploratory QA testing for web apps.
 - **Shell Management**: Advanced system operations.

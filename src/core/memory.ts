@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const MEMORY_DIR = join(__dirname, "../../memory");
+const MEMORY_DIR = join(__dirname, "../../.agents/memory");
 const MAIN_MEMORY_FILE = join(MEMORY_DIR, "memory.md");
 
 export async function loadLongTermMemory(): Promise<string> {
