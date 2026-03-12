@@ -1,11 +1,13 @@
 import "dotenv/config";
 import { extensionRegistry } from "./core/extensions.ts";
 import { enforceSecurityLocks } from "./security/triple_lock.ts";
+import { loadPlugins } from "./core/loader.ts";
 import { createServer } from "node:http";
 
 const port = 3018;
 
 export async function startClaw(config: any = {}) {
+  await loadPlugins();
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://localhost:${port}`);
 
