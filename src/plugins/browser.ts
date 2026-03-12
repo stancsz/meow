@@ -10,20 +10,14 @@ export const plugin: Extension = {
     // Simplistic mapping to agent-browser CLI
     // In a real scenario, we might want to use the agent-browser library more robustly
     try {
-      const bunPath = process.platform === "win32" ? "bun" : `${process.env.HOME || "/home/stanc"}/.bun/bin/bun`;
-      const localBin = process.platform === "win32" 
-        ? ".\\node_modules\\.bin\\agent-browser.cmd" 
-        : "./node_modules/.bin/agent-browser";
-
       let command: string;
+      const binPath = "/app/node_modules/.bin/agent-browser";
+      const winBinPath = ".\\node_modules\\.bin\\agent-browser.cmd";
       
-      // Multi-stage execution strategy
       if (process.platform === "win32") {
-        command = `bunx agent-browser `;
+        command = `${winBinPath} `;
       } else {
-        // On Linux/GCP, we try to run it via bun directly to avoid shebang 'node' issues
-        // We assume the real entry point is in node_modules/agent-browser/bin/agent-browser.js
-        command = `${bunPath} run ./node_modules/agent-browser/bin/agent-browser.js `;
+        command = `${binPath} `;
       }
 
       switch (action) {
@@ -49,26 +43,40 @@ export const plugin: Extension = {
           return `Unknown browser action: ${action}`;
       }
 
+      const userAgents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+      ];
+      const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+
       console.log(`🌐 Browser Skill: Executing "${command}"`);
       
-      const env = { 
-        ...process.env,
-        PATH: `${process.env.HOME || "/home/stanc"}/.bun/bin:${process.env.PATH}`
-      };
-
       try {
-        const output = execSync(command, { env, timeout: 60000 }).toString();
+        const output = execSync(command, { 
+          cwd: process.platform === "win32" ? process.cwd() : "/app",
+          timeout: 60000,
+          env: { 
+            ...process.env, 
+            USER_AGENT: randomUA,
+            AGENT_BROWSER_HEADLESS: "true" 
+          },
+          stdio: ['ignore', 'pipe', 'pipe'] 
+        }).toString().trim();
+        
+        if (!output) {
+          return "Action completed successfully (no text output).";
+        }
         return output;
       } catch (innerError: any) {
-        // Fallback to simple bunx if the direct path failed
-        console.warn(`⚠️ First browser attempt failed, trying fallback...`);
-        const fallbackCommand = `bunx agent-browser ${command.split('agent-browser.js ')[1]}`;
-        const output = execSync(fallbackCommand, { env, timeout: 60000 }).toString();
-        return output;
+        const stderr = innerError.stderr?.toString() || "";
+        const stdout = innerError.stdout?.toString() || "";
+        console.error(`❌ Browser command failed:`, innerError.message, stderr);
+        return `TOOL_ERROR: Browser execution failed. \nStdout: ${stdout}\nStderr: ${stderr}\nError: ${innerError.message}`;
       }
     } catch (error: any) {
       console.error(`❌ Browser Error:`, error.message);
-      return `TOOL_ERROR: Browser failed. Error: ${error.message}. TIP: If this was a search, try searching wttr.in or using a different URL.`;
+      return `TOOL_ERROR: Browser failed. Error: ${error.message}`;
     }
   },
 };

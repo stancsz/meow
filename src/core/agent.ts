@@ -3,6 +3,7 @@ import { loadSkillsContext } from "./skills.ts";
 import { executeNativeTool } from "./executor.ts";
 import "dotenv/config";
 import { loadLongTermMemory, updateMemory } from "./memory.ts";
+import os from "node:os";
 
 // Initialize OpenAI with configuration
 const openai = new OpenAI({
@@ -18,7 +19,7 @@ export interface AgentOptions {
 
 export async function runAgentLoop(userMessage: string, options: AgentOptions = {}) {
   const model = options.model || process.env.AGENT_MODEL || "gpt-5-nano";
-  const maxIterations = options.maxIterations || 15;
+  const maxIterations = options.maxIterations || 10; // Lower default for responsiveness
   
   const tools = [
     {
@@ -45,7 +46,6 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
         },
       },
     },
-    // ... rest of tools
     {
       type: "function",
       function: {
@@ -83,25 +83,20 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
 
   const skillsContext = await loadSkillsContext();
   const memoryContext = await loadLongTermMemory();
+  const platform = os.platform();
 
   const messages: any[] = [
     { 
       role: "system", 
-      content: `You are SimpleClaw, an ELITE autonomous research and execution agent. 
+      content: `You are SimpleClaw, an autonomous versatile agent.
       
-      **Core Philosophy: "NEVER GIVE UP"**
-      1. **Self-Healing**: If a tool fails (e.g., "command not found", "connection refused", "timeout"), YOU MUST FIX IT. Do not report the error to the user as a final state. Analyze the error message and try a different tool or a different parameter.
-      2. **Extreme Autonomy**: You do not offer options or ask for permission. You are paid to SOLVE the problem, not to ask how to solve it. If you need info, find it. If one URL is down, find another.
-      3. **High-Density Output**: Your final response must be extremely professional, non-sloppy, and contains zero placeholders.
+      **Current Platform**: ${platform}
       
-      **Reasoning Protocol:**
-      1. **Think**: What is the goal? What failed? Why?
-      2. **Plan**: How can I bypass this failure? (e.g., use 'shell' to check if a file exists if 'read' failed).
-      3. **Act**: Execute the next step.
-      
-      **Operating Instructions:**
-      1. **Memory**: Use your memory to avoid repeating mistakes. If a tool fails once, remember what you tried and try something else.
-      2. **Browser**: Use the browser tool for web research. If it fails, try searching wttr.in or using CURL via shell as a fallback.
+      **Tool Usage Policy**:
+      1. **Optionality**: You have access to tools, but you are NOT required to use them. Use a tool ONLY if you decide it is necessary to fulfill the user's request (e.g., searching for real-time data, reading a local file, or executing a command).
+      2. **Direct First**: If you can answer the user's question or complete their request using your baseline knowledge, do so directly. 
+      3. **Discretion**: You decide when a tool is helpful. Do not force tool usage for simple conversational turns, greetings, or common knowledge.
+      4. **Efficiency**: Aim for the most direct and helpful path. One good direct answer is better than a multi-step tool loop that leads to the same place.
       
       ${memoryContext}
       ${skillsContext}` 
@@ -127,14 +122,14 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
     messages.push(aiMessage);
 
     if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
-      console.log(`🛠️ [CORE AGENT] Iteration ${iterations}: Executing ${aiMessage.tool_calls.length} tools...`);
+      console.log(`🛠️ Iteration ${iterations}: Executing ${aiMessage.tool_calls.length} tools...`);
       
       for (const toolCall of aiMessage.tool_calls as any[]) {
         const { name, arguments: argsString } = toolCall.function;
         const args = JSON.parse(argsString);
         
         if (options.onIteration) {
-          await options.onIteration(`🛠️ Executing ${name}...`);
+          await options.onIteration(`🛠️ Using ${name}...`);
         }
 
         let result;
@@ -144,14 +139,8 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
           } else {
             result = await executeNativeTool(name, args);
           }
-          
-          // Detect if result looks like an error
-          if (typeof result === "string" && (result.toLowerCase().includes("not found") || result.toLowerCase().includes("error"))) {
-            console.warn(`⚠️ Tool ${name} returned a potential error: ${result}`);
-          }
         } catch (err: any) {
           result = `TOOL_ERROR: ${err.message}`;
-          console.error(`❌ Tool execution error:`, err.message);
         }
         
         messages.push({
@@ -162,8 +151,6 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
       }
     } else {
       finalContent = aiMessage.content || "";
-      // If the agent is just giving up or reporting an error as the final answer, we might want to nudge it.
-      // But for now, we'll trust the elite prompt.
       break;
     }
   }
@@ -172,6 +159,6 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
     content: finalContent,
     iterations: iterations,
     messages: messages,
-    completed: iterations < maxIterations
+    completed: iterations < maxIterations || finalContent !== ""
   };
 }

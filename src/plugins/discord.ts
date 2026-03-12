@@ -20,6 +20,10 @@ client.once("clientReady", async (c) => {
   console.log(`🚀 Discord Bot logged in as ${c.user?.tag}`);
   isBotReady = true;
 
+  // Debug: list all guilds the bot is in
+  const guilds = c.guilds.cache.map(g => `${g.name} (${g.id})`).join(", ");
+  console.log(`🏠 Joined Guilds: ${guilds}`);
+
   try {
     const guildId = process.env.DISCORD_GUILD_ID;
     const channelId = process.env.DISCORD_CHANNEL_ID;
@@ -27,14 +31,14 @@ client.once("clientReady", async (c) => {
     if (guildId && channelId) {
       const guild = c.guilds.cache.get(guildId);
       if (!guild) {
-        console.error(`❌ Bot is NOT in guild ${guildId}. Please invite it!`);
+        console.error(`❌ Bot is NOT in guild ${guildId}. Found in: ${guilds}`);
         return;
       }
 
       const channel = await c.channels.fetch(channelId);
       if (channel && channel.isTextBased()) {
         await (channel as any).send("Hello! SimpleClaw is now online and monitoring this channel. 🦀");
-        console.log(`✅ Posted startup message to channel ${channelId}`);
+        console.log(`✅ Posted startup message to channel ${channelId} in guild ${guild.name}`);
       }
     }
   } catch (error: any) {
@@ -45,16 +49,14 @@ client.once("clientReady", async (c) => {
 import { runAgentLoop } from "../core/agent.ts";
 
 client.on("messageCreate", async (message) => {
-  const channelId = (process.env.DISCORD_CHANNEL_ID || "").trim();
-
   if (message.author.bot) return;
 
+  const channelId = (process.env.DISCORD_CHANNEL_ID || "").trim();
   const isMentioned = client.user && message.mentions.has(client.user);
   const isDirectChannel = message.channelId === channelId;
 
-  console.log(`📡 Message received: "${message.content}" from ${message.author.tag} in channel ${message.channelId}`);
-  console.log(`🔍 Intent Match: isMentioned=${isMentioned}, isDirectChannel=${isDirectChannel} (Target: ${channelId})`);
-
+  console.log(`📡 Message from ${message.author.tag}: "${message.content}"`);
+  
   if (!isMentioned && !isDirectChannel) return;
 
   // Guardian Lock implementation
@@ -73,7 +75,17 @@ client.on("messageCreate", async (message) => {
     });
 
     if (result.content) {
-      await message.reply(result.content);
+      // Discord has a 2000 character limit per message.
+      const content = result.content;
+      if (content.length <= 2000) {
+        await message.reply(content);
+      } else {
+        // Chunk the message
+        for (let i = 0; i < content.length; i += 2000) {
+          const chunk = content.substring(i, i + 2000);
+          await message.channel.send(chunk);
+        }
+      }
     } else if (!result.completed) {
       await message.reply("⚠️ Reached maximum task depth. Stopping.");
     }

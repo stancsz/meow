@@ -9,20 +9,17 @@ This skill enables SimpleClaw to navigate and interact with web pages using `age
 - **screenshot()**: Get a visual screenshot (if supported).
 - **wait()**: Wait for elements to load or animations to finish.
 
-## Guidance for Flights & Search
-1. **Search Engines first**: If you don't know the exact URL, start by navigating to `https://www.google.com/search?q=flights+from+Calgary+to+Hong+Kong`.
-2. **Examine Snapshots**: After every action, call `snapshot()` to see the new state of the page. Look for text like "$", travel times, and airline names.
-3. **Be Persistent**: If a selector doesn't work, try another one or look for broader elements.
-4. **Summary Format**: When returning flight info, provide a clean summary including:
-   - Price range (e.g., $400 - $1200 CAD)
-   - Airlines (e.g., Air Canada, Cathay Pacific)
-   - Travel duration
-   - Cheapest months
-   - Reference URLs
+## Bypassing Anti-Bot Protection
+If you see "Unusual traffic", "CAPTCHA", or "Access Denied":
+1.  **Direct travel URLs**: Construct URLs directly for sites like Google Flights, Kayak, or Expedia instead of searching on Google/Bing.
+    -   *Google Flights*: `https://www.google.com/travel/flights/search?q=flights+from+[ORIGIN]+to+[DEST]+on+[DATE]`
+    -   *Kayak*: `https://www.kayak.com/flights/[ORIG_CODE]-[DEST_CODE]/[DATE]`
+2.  **Alternative Search**: Try `https://duckduckgo.com/?q=flights+from+YYC+to+HKG`. It is often more lenient than Google.
+3.  **Snapshot first**: Use `snapshot()` immediately upon navigation to check if you are blocked. If blocked, immediately pivot to a different site/strategy.
 
 ## Example Workflow
-1. `browser({ action: "navigate", url: "https://www.google.com/search?q=flights+from+YYC+to+HKG" })`
+1. `browser({ action: "navigate", url: "https://www.google.com/travel/flights/search?q=flights+from+YYC+to+HKG+on+2026-05-15" })`
 2. `browser({ action: "snapshot" })`
-3. (Optional) `browser({ action: "click", selector: "..." })` if you need to expand results.
+3. (If blocked) `browser({ action: "navigate", url: "https://www.kayak.com/flights/YYC-HKG/2026-05-15" })`
 4. Finalize with a professional summary.
 

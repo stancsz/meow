@@ -29,7 +29,20 @@ terraform apply -var="project_id=YOUR_PROJECT"
 npx tsx cli/index.ts
 ```
 
-5. Run Management Server (Dev mode)
+5. Run in Docker (Recommended for local dev)
+The Docker setup now mounts `./src` as a volume, allowing for fast iterations.
+```bash
+# Start the bot worker in the background
+docker compose up bot-worker -d
+
+# Apply code changes without rebuilding (fast)
+docker compose restart bot-worker
+
+# Rebuild only if you change package.json or Dockerfile
+docker compose up bot-worker -d --build
+```
+
+6. Run Management Server (Dev mode)
 ```bash
 cd server
 npm run dev
