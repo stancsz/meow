@@ -17,7 +17,12 @@ export interface AgentOptions {
   onIteration?: (message: string) => Promise<void> | void;
 }
 
-export async function runAgentLoop(userMessage: string, options: AgentOptions = {}) {
+export interface ConversationMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export async function runAgentLoop(userMessage: string, options: AgentOptions = {}, history: ConversationMessage[] = []) {
   const model = options.model || process.env.AGENT_MODEL || "gpt-5-nano";
   const maxIterations = options.maxIterations || 10; // Lower default for responsiveness
   
@@ -92,15 +97,17 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
       
       **Current Platform**: ${platform}
       
-      **Tool Usage Policy**:
-      1. **Optionality**: You have access to tools, but you are NOT required to use them. Use a tool ONLY if you decide it is necessary to fulfill the user's request (e.g., searching for real-time data, reading a local file, or executing a command).
-      2. **Direct First**: If you can answer the user's question or complete their request using your baseline knowledge, do so directly. 
-      3. **Discretion**: You decide when a tool is helpful. Do not force tool usage for simple conversational turns, greetings, or common knowledge.
-      4. **Efficiency**: Aim for the most direct and helpful path. One good direct answer is better than a multi-step tool loop that leads to the same place.
+      **Operational Protocol**:
+      1. **Check History**: Always scan the provided conversation history for context, previous answers, or user preferences before taking any other action.
+      2. **Bias for Action**: Your goal is to EXECUTING. If a request is clear enough based on the history or current message, START. Do not ask for confirmation.
+      3. **Assume & Execute**: Make reasonable assumptions for missing details. If you need more info later, you can mention it in your final report.
+      4. **Tool First for Data**: If a task involves real-world data (flights, weather, search), use the 'browser' tool immediately.
+      5. **Conciseness**: Keep your conversational output minimal. Your primary value is the result of your tool use.
       
       ${memoryContext}
       ${skillsContext}` 
     },
+    ...history,
     { role: "user", content: userMessage }
   ];
 

@@ -65,14 +65,23 @@ client.on("messageCreate", async (message) => {
   try {
     await message.channel.sendTyping();
 
+    // Fetch history for context
+    const historyCount = 10;
+    const historyMessages = await message.channel.messages.fetch({ limit: historyCount });
+    const history = Array.from(historyMessages.values())
+      .filter(m => m.id !== message.id) // Exclude current message
+      .reverse()
+      .map(m => ({
+        role: (m.author.id === client.user?.id ? "assistant" : "user") as "assistant" | "user",
+        content: m.content
+      }));
+
     const result = await runAgentLoop(sanitizedContent, {
       model: "gpt-5-nano",
       onIteration: async (status) => {
-        // Optional: you could send status updates here, 
-        // but for now we just log to console and keep typing
         await message.channel.sendTyping();
       }
-    });
+    }, history);
 
     if (result.content) {
       // Discord has a 2000 character limit per message.
