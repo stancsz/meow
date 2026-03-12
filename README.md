@@ -1,20 +1,23 @@
 # 🦀 SimpleClaw
 
-**The Lightweight, Agentic Automation Framework.**
+**The featherweight agent with heavyweight power.**
 
 <img src="docs/image.png" alt="SimpleClaw Logo" width="200">
 
+SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level autonomy** on a **Free Tier** budget. Optimized for AWS/GCP free instances, it bridges the gap between raw LLMs and real-world execution through native **Agentic Browsing**, **MCP** integration, and a modular **Skill** vault.
+
 > [!IMPORTANT]
-> **Quick Start:** Ask your agent to run `bash https://github.com/stancsz/simpleclaw/blob/main/setup.sh` to get started instantly.
+> **Quick Start:** Ask your agent to run:
+> ```bash
+> bash https://github.com/stancsz/simpleclaw/blob/main/setup.sh
+> ```
+> to get started instantly.
 
 > [!TIP]
 > **⚡ 121 Lines of Pure Power.** The core engine in `src/core` is so lean, it fits in just 121 lines of dense, optimized code.
 >
-> SimpleClaw is one of the very few **OpenCLAW-equivalent** frameworks that runs effectively on **AWS/GCP Free Tiers**, supporting full browser automation and advanced agentic "claw" features without the heavy infrastructure overhead.
+> SimpleClaw is one of the very few **OpenCLAW-equivalent** frameworks that delivers high-tier agentic browser automation and advanced tools without demanding heavy infrastructure.
 
-
-
-SimpleClaw is a minimalist yet powerful multi-agent framework designed to bridge the gap between AI models and real-world tools. It features a modular plugin system, integrated web browsing, and a robust "Skill" library modeled after state-of-the-art agentic architectures.
 
 ---
 
