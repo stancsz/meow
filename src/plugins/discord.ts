@@ -56,9 +56,9 @@ client.on("messageCreate", async (message) => {
   const isMentioned = client.user && message.mentions.has(client.user);
   const isDirectChannel = message.channelId === process.env.DISCORD_CHANNEL_ID;
 
-  if (!isMentioned && !isDirectChannel) return;
+  console.log(`📩 [${(message.channel as any).name || message.channelId}] ${message.author.tag}: "${message.content}" (Mentioned: ${!!isMentioned}, Direct: ${isDirectChannel})`);
 
-  console.log(`📩 Message from ${message.author.tag}: "${message.content}"`);
+  if (!isMentioned && !isDirectChannel) return;
 
   // Guardian Lock implementation
   const sanitizedContent = aiIpiSanitizer(message.content);
