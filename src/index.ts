@@ -1,40 +1,84 @@
+import "dotenv/config";
 import { extensionRegistry } from "./core/extensions.ts";
-import { loadPlugins } from "./core/loader.ts";
 import { enforceSecurityLocks } from "./security/triple_lock.ts";
-import { config as agentBrainConfig } from "./config/agent_brain.ts";
+import { createServer } from "node:http";
 
-export async function startClaw(configOverride: any = {}) {
-  console.log("Starting SimpleClaw Agent Server...");
+const port = 3018;
 
-  // Override the default config object natively, so plugins/extensions using it
-  // read the updated remote values.
-  Object.assign(agentBrainConfig, configOverride);
+export async function startClaw() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || "/", `http://localhost:${port}`);
 
-  console.log("Agent Brain Configuration:", JSON.stringify(agentBrainConfig));
+    // Construct a partial Request object for the extensions
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+    }
 
-  // Load all external plugins/extensions
-  await loadPlugins();
+    // Simple Request mock for plugins
+    const requestObject = {
+      url: url.toString(),
+      method: req.method,
+      headers: headers,
+      json: async () => {
+        return new Promise((resolve) => {
+          let body = "";
+          req.on("data", (chunk) => (body += chunk));
+          req.on("end", () => {
+            try {
+              resolve(JSON.parse(body));
+            } catch (e) {
+              resolve({});
+            }
+          });
+        });
+      },
+    } as Request;
 
-  const server = Bun.serve({
-    port: 3000,
-    async fetch(req) {
-      const url = new URL(req.url);
-      return (
-        enforceSecurityLocks(req) ||
-        (await extensionRegistry.findWebhook(url.pathname)?.execute(req)) ||
-        new Response(JSON.stringify({ error: "Not Found", path: url.pathname }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        })
-      );
-    },
+    const securityError = enforceSecurityLocks(requestObject);
+    if (securityError) {
+      res.writeHead(securityError.status, { "Content-Type": "application/json" });
+      res.end(await securityError.text());
+      return;
+    }
+
+    const extension = extensionRegistry.findWebhook(url.pathname);
+    if (extension) {
+      const response = await extension.execute(requestObject);
+      res.writeHead(response.status, { "Content-Type": "application/json" });
+      res.end(await response.text());
+    } else {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Not Found", path: url.pathname }));
+    }
   });
 
-  console.log(`Listening on http://localhost:${server.port}`);
+  server.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`❌ Port ${port} is already in use. Exiting to prevent ghost processes.`);
+      process.exit(1);
+    } else {
+      console.error("❌ Server error:", err);
+    }
+  });
+
+  server.listen(port, async () => {
+    console.log(`🚀 SimpleClaw Server listening on http://localhost:${port}`);
+    
+    // Start active plugins only AFTER server is up
+    const activePlugins = extensionRegistry.getAll();
+    for (const plugin of activePlugins) {
+      if (plugin.start) {
+        console.log(`🔌 Starting plugin: ${plugin.name}...`);
+        await plugin.start();
+      }
+    }
+  });
+
   return server;
 }
 
 // Start standalone if executed directly
-if (import.meta.main) {
+if (import.meta.main || process.argv[1]?.endsWith("index.ts")) {
   await startClaw();
 }
