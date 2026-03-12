@@ -11,28 +11,15 @@ await loadPlugins();
 
 const server = Bun.serve({
   port: 3000,
-  async fetch(req: Request) {
-    // 1. Triple-Lock Security Verification
-    const securityRejection = enforceSecurityLocks(req);
-    if (securityRejection) {
-      return securityRejection;
-    }
-
-    // 2. Routing logic
+  async fetch(req) {
     const url = new URL(req.url);
-
-    // Check if any registered webhook plugin handles this path
-    const webhook = extensionRegistry.findWebhook(url.pathname);
-    if (webhook) {
-      return await webhook.execute(req);
-    }
-
-    return new Response(
-      JSON.stringify({ error: "Not Found", path: url.pathname }),
-      {
+    return (
+      enforceSecurityLocks(req) ||
+      (await extensionRegistry.findWebhook(url.pathname)?.execute(req)) ||
+      new Response(JSON.stringify({ error: "Not Found", path: url.pathname }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
-      },
+      })
     );
   },
 });
