@@ -19,13 +19,28 @@ export interface AgentDispatchSubmitInput {
   dedupeKey?: string;
 }
 
-export interface DispatchTaskHandle {
+export type DispatchTaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export interface DispatchTaskSnapshot {
   id: string;
   source: string;
   scope: string;
   prompt: string;
-  startedAt: number;
+  status: DispatchTaskStatus;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  error?: Error;
+  dedupeKey?: string;
+}
+
+export interface DispatchTaskHandle extends DispatchTaskSnapshot {
   promise: Promise<AgentLoopResult>;
+  cancel: () => boolean;
+}
+
+interface InternalDispatchTaskHandle extends DispatchTaskHandle {
+  cancelRequested: boolean;
 }
 
 export type RuntimeDispatchEvent =
@@ -33,22 +48,45 @@ export type RuntimeDispatchEvent =
   | { type: "taskStarted"; taskId: string; source: string; scope: string; prompt: string }
   | { type: "taskCompleted"; taskId: string; source: string; scope: string; result: AgentLoopResult }
   | { type: "taskFailed"; taskId: string; source: string; scope: string; error: Error }
+  | { type: "taskCancelled"; taskId: string; source: string; scope: string; reason: string }
   | { type: "taskDeduped"; taskId: string; source: string; scope: string; dedupeKey: string }
   | ({ taskId: string; source: string; scope: string } & AgentEvent);
 
 export interface AgentDispatcher {
   submit: (input: AgentDispatchSubmitInput) => Promise<AgentLoopResult>;
   getInFlightTasks: () => DispatchTaskHandle[];
+  getTaskSnapshots: () => DispatchTaskSnapshot[];
+  cancelTask: (taskId: string) => boolean;
   hasConflictingTask: (scope: string, dedupeKey?: string) => boolean;
+}
+
+export type AgentLoopRunner = (
+  userMessage: string,
+  options?: AgentOptions,
+  history?: ConversationMessage[],
+) => Promise<AgentLoopResult>;
+
+export interface AgentDispatcherDependencies {
+  runAgentLoop?: AgentLoopRunner;
 }
 
 interface ScopeQueueState {
   tail: Promise<unknown>;
 }
 
-export function createAgentDispatcher(): AgentDispatcher {
+function createCancelledResult(history: ConversationMessage[] = []): AgentLoopResult {
+  return {
+    content: "",
+    iterations: 0,
+    messages: history,
+    completed: false,
+  };
+}
+
+export function createAgentDispatcher(dependencies: AgentDispatcherDependencies = {}): AgentDispatcher {
+  const agentLoopRunner = dependencies.runAgentLoop ?? runAgentLoop;
   const scopeQueues = new Map<string, ScopeQueueState>();
-  const inFlightTasks = new Map<string, DispatchTaskHandle>();
+  const taskHandles = new Map<string, InternalDispatchTaskHandle>();
   const activeDedupeKeys = new Set<string>();
 
   const emit = async (
@@ -63,13 +101,16 @@ export function createAgentDispatcher(): AgentDispatcher {
       return true;
     }
 
-    return Array.from(inFlightTasks.values()).some((task) => task.scope === scope);
+    return Array.from(taskHandles.values()).some(
+      (task) => (task.status === "queued" || task.status === "running") && task.scope === scope,
+    );
   };
 
   return {
     submit: async (input) => {
       const taskId = randomUUID();
       const dedupeToken = input.dedupeKey ? `${input.scope}:${input.dedupeKey}` : undefined;
+      const createdAt = Date.now();
 
       if (dedupeToken && activeDedupeKeys.has(dedupeToken)) {
         await emit(input, {
@@ -79,30 +120,35 @@ export function createAgentDispatcher(): AgentDispatcher {
           scope: input.scope,
           dedupeKey: input.dedupeKey!,
         });
-        return {
-          content: "",
-          iterations: 0,
-          messages: input.history ?? [],
-          completed: true,
-        };
+        return createCancelledResult(input.history ?? []);
       }
 
       if (dedupeToken) {
         activeDedupeKeys.add(dedupeToken);
       }
 
-      await emit(input, {
-        type: "taskQueued",
-        taskId,
-        source: input.source,
-        scope: input.scope,
-        prompt: input.prompt,
-      });
-
       const scopeState = scopeQueues.get(input.scope) ?? { tail: Promise.resolve() };
       scopeQueues.set(input.scope, scopeState);
 
+      let handle!: InternalDispatchTaskHandle;
+
       const run = async (): Promise<AgentLoopResult> => {
+        if (handle.cancelRequested) {
+          handle.status = "cancelled";
+          handle.completedAt = Date.now();
+          await emit(input, {
+            type: "taskCancelled",
+            taskId,
+            source: input.source,
+            scope: input.scope,
+            reason: "cancelled before execution",
+          });
+          return createCancelledResult(input.history ?? []);
+        }
+
+        handle.status = "running";
+        handle.startedAt = Date.now();
+
         await emit(input, {
           type: "taskStarted",
           taskId,
@@ -114,6 +160,7 @@ export function createAgentDispatcher(): AgentDispatcher {
         const agentOptions: AgentOptions = {
           model: input.model,
           maxIterations: input.maxIterations,
+          source: input.source,
           emitEvent: async (event) => {
             await emit(input, {
               ...event,
@@ -134,19 +181,10 @@ export function createAgentDispatcher(): AgentDispatcher {
           },
         };
 
-        const promise = runAgentLoop(input.prompt, agentOptions, input.history ?? []);
-        const handle: DispatchTaskHandle = {
-          id: taskId,
-          source: input.source,
-          scope: input.scope,
-          prompt: input.prompt,
-          startedAt: Date.now(),
-          promise,
-        };
-        inFlightTasks.set(taskId, handle);
-
         try {
-          const result = await promise;
+          const result = await agentLoopRunner(input.prompt, agentOptions, input.history ?? []);
+          handle.status = "completed";
+          handle.completedAt = Date.now();
           await emit(input, {
             type: "taskCompleted",
             taskId,
@@ -157,6 +195,9 @@ export function createAgentDispatcher(): AgentDispatcher {
           return result;
         } catch (error: any) {
           const normalizedError = error instanceof Error ? error : new Error(String(error));
+          handle.status = "failed";
+          handle.error = normalizedError;
+          handle.completedAt = Date.now();
           await emit(input, {
             type: "taskFailed",
             taskId,
@@ -166,21 +207,66 @@ export function createAgentDispatcher(): AgentDispatcher {
           });
           throw normalizedError;
         } finally {
-          inFlightTasks.delete(taskId);
           if (dedupeToken) {
             activeDedupeKeys.delete(dedupeToken);
           }
         }
       };
 
-      const scheduled = scopeState.tail.then(run, run);
-      scopeState.tail = scheduled.then(
+      await emit(input, {
+        type: "taskQueued",
+        taskId,
+        source: input.source,
+        scope: input.scope,
+        prompt: input.prompt,
+      });
+
+      const promise = scopeState.tail.then(run, run);
+      scopeState.tail = promise.then(
         () => undefined,
         () => undefined,
       );
-      return scheduled;
+
+      handle = {
+        id: taskId,
+        source: input.source,
+        scope: input.scope,
+        prompt: input.prompt,
+        status: "queued",
+        createdAt,
+        dedupeKey: input.dedupeKey,
+        promise,
+        cancelRequested: false,
+        cancel: () => {
+          if (handle.status !== "queued") {
+            return false;
+          }
+          handle.cancelRequested = true;
+          return true;
+        },
+      };
+
+      taskHandles.set(taskId, handle);
+
+      try {
+        return await promise;
+      } finally {
+        if (handle.status === "queued" || handle.status === "running") {
+          handle.status = "cancelled";
+          handle.completedAt = Date.now();
+        }
+      }
     },
-    getInFlightTasks: () => Array.from(inFlightTasks.values()),
+    getInFlightTasks: () =>
+      Array.from(taskHandles.values()).filter(
+        (task) => task.status === "queued" || task.status === "running",
+      ),
+    getTaskSnapshots: () =>
+      Array.from(taskHandles.values()).map(({ promise, cancel, cancelRequested, ...snapshot }) => snapshot),
+    cancelTask: (taskId) => {
+      const handle = taskHandles.get(taskId);
+      return handle ? handle.cancel() : false;
+    },
     hasConflictingTask,
   };
 }

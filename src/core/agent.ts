@@ -1,8 +1,13 @@
-import OpenAI from "openai";
 import { loadSkillsContext } from "./skills.ts";
 import { executeNativeTool } from "./executor.ts";
-import "dotenv/config";
 import { loadLongTermMemory, updateMemory } from "./memory.ts";
+import {
+  buildSystemPrompt,
+  resolveAgentTaskKind,
+  shouldAllowMemoryWrite,
+  shouldEnableBootstrapProtocol,
+  shouldPreferDirectResponse,
+} from "./policy.ts";
 import os from "node:os";
 
 export interface HeartbeatAgentOutcome {
@@ -31,30 +36,10 @@ export interface AgentLoopResult {
   completed: boolean;
 }
 
-async function emitAgentEvent(
-  options: AgentOptions,
-  event: AgentEvent,
-): Promise<void> {
-  await options.emitEvent?.(event);
-}
-
-function stringifyToolResult(result: unknown): string {
-  return typeof result === "string" ? result : JSON.stringify(result);
-}
-
-function sanitizeToolArgs(args: unknown): Record<string, unknown> {
-  return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
-}
-
-// Initialize OpenAI with configuration
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-});
-
 export interface AgentOptions {
   model?: string;
   maxIterations?: number;
+  source?: string;
   onIteration?: (message: string) => Promise<void> | void;
   emitEvent?: (event: AgentEvent) => Promise<void> | void;
   heartbeat?: {
@@ -73,15 +58,54 @@ export interface ConversationMessage {
   content: string;
 }
 
-export async function runAgentLoop(
-  userMessage: string,
-  options: AgentOptions = {},
-  history: ConversationMessage[] = [],
-): Promise<AgentLoopResult> {
-  const model = options.model || process.env.AGENT_MODEL || "gpt-5-nano";
-  const maxIterations = options.maxIterations || 10;
+type OpenAIClient = {
+  chat: {
+    completions: {
+      create: (input: {
+        model: string;
+        messages: any[];
+        tools: any;
+      }) => Promise<{
+        choices: Array<{
+          message?: {
+            content?: string | null;
+            tool_calls?: any[];
+          };
+        }>;
+      }>;
+    };
+  };
+};
 
-  const tools = [
+let openaiClientPromise: Promise<OpenAIClient> | undefined;
+
+async function getOpenAIClient(): Promise<OpenAIClient> {
+  if (!openaiClientPromise) {
+    openaiClientPromise = import("openai").then(({ default: OpenAI }) => {
+      return new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+        baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      }) as OpenAIClient;
+    });
+  }
+
+  return await openaiClientPromise;
+}
+
+function stringifyToolResult(result: unknown): string {
+  return typeof result === "string" ? result : JSON.stringify(result);
+}
+
+function sanitizeToolArgs(args: unknown): Record<string, unknown> {
+  return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+}
+
+async function emitAgentEvent(options: AgentOptions, event: AgentEvent): Promise<void> {
+  await options.emitEvent?.(event);
+}
+
+function buildToolDefinitions() {
+  return [
     {
       type: "function",
       function: {
@@ -125,9 +149,9 @@ export async function runAgentLoop(
         description: "Write content to a file on disk",
         parameters: {
           type: "object",
-          properties: { 
+          properties: {
             path: { type: "string", description: "Path to the file" },
-            content: { type: "string", description: "Content to write" }
+            content: { type: "string", description: "Content to write" },
           },
           required: ["path", "content"],
         },
@@ -141,10 +165,10 @@ export async function runAgentLoop(
         parameters: {
           type: "object",
           properties: {
-            action: { 
-              type: "string", 
+            action: {
+              type: "string",
               enum: ["navigate", "click", "type", "snapshot", "screenshot", "wait"],
-              description: "The action to perform" 
+              description: "The action to perform",
             },
             url: { type: "string", description: "The URL for navigate action" },
             selector: { type: "string", description: "CSS selector for click/type action" },
@@ -155,37 +179,62 @@ export async function runAgentLoop(
       },
     },
   ];
+}
+
+let dotenvConfigPromise: Promise<unknown> | undefined;
+
+async function ensureDotenvLoaded(): Promise<void> {
+  if (!dotenvConfigPromise) {
+    dotenvConfigPromise = import("dotenv/config").catch(() => undefined);
+  }
+
+  await dotenvConfigPromise;
+}
+
+export async function runAgentLoop(
+  userMessage: string,
+  options: AgentOptions = {},
+  history: ConversationMessage[] = [],
+): Promise<AgentLoopResult> {
+  await ensureDotenvLoaded();
+
+  const model = options.model || process.env.AGENT_MODEL || "gpt-5-nano";
+  const maxIterations = options.maxIterations || 10;
+  const toolDefinitions = buildToolDefinitions();
 
   const skillsContext = await loadSkillsContext();
   const memoryContext = await loadLongTermMemory();
   const platform = os.platform();
+  const taskKind = resolveAgentTaskKind({
+    source: options.source,
+    prompt: userMessage,
+  });
+  const preferDirectResponse = shouldPreferDirectResponse({
+    source: options.source,
+    prompt: userMessage,
+  });
+  const systemPrompt = buildSystemPrompt({
+    kind: taskKind,
+    platform,
+    memoryContext,
+    skillsContext,
+  });
 
   const messages: any[] = [
-    { 
-      role: "system", 
-      content: `You are SimpleClaw, an autonomous versatile agent.
-      
-      **Current Platform**: ${platform}
-      
-      **Operational Protocol**:
-      1. **Self-Initialize**: If \`.agents/comm/OUTBOX.md\` or \`.agents/comm/INBOX.md\` do not exist, create them immediately to establish your operational channel.
-      2. **Check Context**: Read \`.agents/comm/OUTBOX.md\` for pending instructions and \`.agents/comm/INBOX.md\` for recent status/learnings before acting.
-      3. **Bias for Action**: If a task is assigned in OUTBOX, START. If no task is found, monitor for updates or check logs.
-      4. **Report Back**: Document progress, results, or new patterns in \`.agents/comm/INBOX.md\`. 
-      5. **Shared Knowledge**: If you implement a fix or hit a blocker, update \`🧠 System Learnings\` in \`.agents/comm/INBOX.md\`.
-      5. **Assume & Execute**: Make reasonable assumptions for missing details.
-      6. **Tool First for Data**: If a task involves real-world data, use the 'browser' tool immediately.
-      7. **Extreme Autonomy**: You have 'read', 'write', and 'shell' tools. If built-in tools fail, write custom scripts to disk and execute them. Never say "I can't fix it".
-      8. **Conciseness**: Keep conversational output minimal.
-      9. **Tool Restraint**: For simple conversational prompts that do not require filesystem, shell, browser, or memory changes, respond directly without using tools.
-      10. **One-Time Bootstrap**: Do not repeatedly check or recreate \`.agents/comm\` files unless the user explicitly asks or a task depends on them.
-
-      ${memoryContext}
-      ${skillsContext}`
-    },
+    { role: "system", content: systemPrompt },
+    ...(preferDirectResponse
+      ? [{ role: "system", content: "This is a simple interactive prompt. Answer directly unless tool use is clearly necessary." }]
+      : []),
+    ...(shouldEnableBootstrapProtocol(taskKind)
+      ? [{ role: "system", content: "Bootstrap and `.agents/comm` coordination are enabled for this task when relevant." }]
+      : []),
     ...history,
-    { role: "user", content: userMessage }
+    { role: "user", content: userMessage },
   ];
+
+  const activeTools = toolDefinitions.filter((tool) =>
+    shouldAllowMemoryWrite(taskKind, tool.function.name),
+  );
 
   let iterations = 0;
   let finalContent = "";
@@ -198,6 +247,8 @@ export async function runAgentLoop(
     maxIterations,
   });
 
+  const openai = await getOpenAIClient();
+
   while (iterations < maxIterations) {
     iterations++;
     await emitAgentEvent(options, {
@@ -208,11 +259,13 @@ export async function runAgentLoop(
     const response = await openai.chat.completions.create({
       model,
       messages,
-      tools: tools as any,
+      tools: activeTools as any,
     });
 
     const aiMessage = response.choices[0]?.message;
-    if (!aiMessage) break;
+    if (!aiMessage) {
+      break;
+    }
 
     messages.push(aiMessage);
 
@@ -241,18 +294,32 @@ export async function runAgentLoop(
         let result: unknown;
         try {
           if (name === "remember") {
-            result = await updateMemory(args.info);
+            if (!shouldAllowMemoryWrite(taskKind, name)) {
+              result = "TOOL_ERROR: remember is not allowed for this task policy";
+            } else {
+              result = await updateMemory(args.info);
+            }
           } else {
             result = await executeNativeTool(name, args);
           }
-          await emitAgentEvent(options, {
-            type: "toolCompleted",
-            iteration: iterations,
-            toolName: name,
-            result: stringifyToolResult(result),
-          });
-        } catch (err: any) {
-          const message = err instanceof Error ? err.message : String(err);
+
+          if (String(result).startsWith("TOOL_ERROR:")) {
+            await emitAgentEvent(options, {
+              type: "toolFailed",
+              iteration: iterations,
+              toolName: name,
+              error: String(result),
+            });
+          } else {
+            await emitAgentEvent(options, {
+              type: "toolCompleted",
+              iteration: iterations,
+              toolName: name,
+              result: stringifyToolResult(result),
+            });
+          }
+        } catch (error: any) {
+          const message = error instanceof Error ? error.message : String(error);
           result = `TOOL_ERROR: ${message}`;
           await emitAgentEvent(options, {
             type: "toolFailed",
@@ -268,15 +335,16 @@ export async function runAgentLoop(
           content: stringifyToolResult(result),
         });
       }
-    } else {
-      finalContent = aiMessage.content || "";
-      await emitAgentEvent(options, {
-        type: "finalResponse",
-        iteration: iterations,
-        content: finalContent,
-      });
-      break;
+      continue;
     }
+
+    finalContent = aiMessage.content || "";
+    await emitAgentEvent(options, {
+      type: "finalResponse",
+      iteration: iterations,
+      content: finalContent,
+    });
+    break;
   }
 
   if (!finalContent && iterations >= maxIterations) {
