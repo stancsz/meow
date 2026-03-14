@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { aiIpiSanitizer } from "../security/triple_lock.ts";
 import type { Extension } from "../core/extensions.ts";
-import { runAgentLoop } from "../core/agent.ts";
+import { createAgentDispatcher, type RuntimeDispatchEvent } from "../core/dispatcher.ts";
 import "dotenv/config";
 
 const client = new Client({
@@ -12,7 +12,64 @@ const client = new Client({
   ],
 });
 
+const dispatcher = createAgentDispatcher();
+const DISCORD_SCOPE_PREFIX = "discord:channel:";
 let isBotReady = false;
+
+async function handleDiscordEvent(event: RuntimeDispatchEvent, message: any): Promise<void> {
+  switch (event.type) {
+    case "taskStarted":
+    case "iterationStarted":
+    case "iterationProgress":
+    case "toolStarted":
+      await message.channel.sendTyping();
+      break;
+    case "taskFailed":
+      await message.reply(`⚠️ Error: ${event.error.message}`);
+      break;
+    default:
+      break;
+  }
+}
+
+async function sendDiscordReply(message: any, content: string): Promise<void> {
+  if (content.length <= 2000) {
+    await message.reply(content);
+    return;
+  }
+
+  for (let i = 0; i < content.length; i += 2000) {
+    await message.channel.send(content.substring(i, i + 2000));
+  }
+}
+
+async function buildDiscordHistory(message: any, botUserId?: string) {
+  const historyMessages = await message.channel.messages.fetch({ limit: 10 });
+  return Array.from(historyMessages.values())
+    .filter((m) => m.id !== message.id)
+    .reverse()
+    .map((m) => ({
+      role: (m.author.id === botUserId ? "assistant" : "user") as "assistant" | "user",
+      content: m.content,
+    }));
+}
+
+async function dispatchDiscordMessage(message: any, content: string, botUserId?: string) {
+  const result = await dispatcher.submit({
+    source: "discord",
+    prompt: content,
+    scope: `${DISCORD_SCOPE_PREFIX}${message.channelId}`,
+    history: await buildDiscordHistory(message, botUserId),
+    model: "gpt-5-nano",
+    onEvent: (event) => handleDiscordEvent(event, message),
+  });
+
+  if (result.content) {
+    await sendDiscordReply(message, result.content);
+  } else if (!result.completed) {
+    await message.reply("⚠️ Reached maximum task depth. Stopping.");
+  }
+}
 
 client.once("clientReady", async (c) => {
   console.log(`🚀 Discord Bot logged in as ${c.user?.tag}`);
@@ -58,41 +115,7 @@ client.on("messageCreate", async (message) => {
 
   try {
     await message.channel.sendTyping();
-
-    const historyCount = 10;
-    const historyMessages = await message.channel.messages.fetch({ limit: historyCount });
-    const history = Array.from(historyMessages.values())
-      .filter((m) => m.id !== message.id)
-      .reverse()
-      .map((m) => ({
-        role: (m.author.id === client.user?.id ? "assistant" : "user") as "assistant" | "user",
-        content: m.content,
-      }));
-
-    const result = await runAgentLoop(
-      sanitizedContent,
-      {
-        model: "gpt-5-nano",
-        onIteration: async () => {
-          await message.channel.sendTyping();
-        },
-      },
-      history,
-    );
-
-    if (result.content) {
-      const content = result.content;
-      if (content.length <= 2000) {
-        await message.reply(content);
-      } else {
-        for (let i = 0; i < content.length; i += 2000) {
-          const chunk = content.substring(i, i + 2000);
-          await message.channel.send(chunk);
-        }
-      }
-    } else if (!result.completed) {
-      await message.reply("⚠️ Reached maximum task depth. Stopping.");
-    }
+    await dispatchDiscordMessage(message, sanitizedContent, client.user?.id);
   } catch (error: any) {
     console.error("❌ Error:", error.message);
     await message.reply(`⚠️ Error: ${error.message}`);
@@ -113,6 +136,8 @@ export const plugin: Extension = {
   name: "discord",
   type: "webhook",
   route: "/discord",
+  activation: "transport",
+  runtimeModes: ["server", "hybrid"],
   start: startBot,
   execute: async (): Promise<Response> => {
     return new Response(

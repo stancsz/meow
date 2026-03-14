@@ -2,9 +2,49 @@ import OpenAI from "openai";
 import { loadSkillsContext } from "./skills.ts";
 import { executeNativeTool } from "./executor.ts";
 import "dotenv/config";
-import { maybeStartHeartbeatLoop } from "./heartbeat.ts";
 import { loadLongTermMemory, updateMemory } from "./memory.ts";
 import os from "node:os";
+
+export interface HeartbeatAgentOutcome {
+  status: "noop" | "invoked";
+  reason: string;
+}
+
+export type AgentEvent =
+  | { type: "taskStarted"; prompt: string; historyLength: number; model: string; maxIterations: number }
+  | { type: "iterationStarted"; iteration: number }
+  | { type: "iterationProgress"; iteration: number; message: string }
+  | { type: "toolStarted"; iteration: number; toolName: string; args: Record<string, unknown> }
+  | { type: "toolCompleted"; iteration: number; toolName: string; result: string }
+  | { type: "toolFailed"; iteration: number; toolName: string; error: string }
+  | { type: "finalResponse"; iteration: number; content: string }
+  | { type: "maxIterationsReached"; iterations: number }
+  | { type: "heartbeatEvaluated"; outcome: HeartbeatAgentOutcome }
+  | { type: "heartbeatNoop"; outcome: HeartbeatAgentOutcome }
+  | { type: "heartbeatSkipped"; reason: string }
+  | { type: "autonomousTaskCompleted"; content: string };
+
+export interface AgentLoopResult {
+  content: string;
+  iterations: number;
+  messages: any[];
+  completed: boolean;
+}
+
+async function emitAgentEvent(
+  options: AgentOptions,
+  event: AgentEvent,
+): Promise<void> {
+  await options.emitEvent?.(event);
+}
+
+function stringifyToolResult(result: unknown): string {
+  return typeof result === "string" ? result : JSON.stringify(result);
+}
+
+function sanitizeToolArgs(args: unknown): Record<string, unknown> {
+  return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+}
 
 // Initialize OpenAI with configuration
 const openai = new OpenAI({
@@ -16,6 +56,7 @@ export interface AgentOptions {
   model?: string;
   maxIterations?: number;
   onIteration?: (message: string) => Promise<void> | void;
+  emitEvent?: (event: AgentEvent) => Promise<void> | void;
   heartbeat?: {
     enabled: boolean;
     intervalMs?: number;
@@ -32,16 +73,13 @@ export interface ConversationMessage {
   content: string;
 }
 
-export async function runAgentLoop(userMessage: string, options: AgentOptions = {}, history: ConversationMessage[] = []) {
+export async function runAgentLoop(
+  userMessage: string,
+  options: AgentOptions = {},
+  history: ConversationMessage[] = [],
+): Promise<AgentLoopResult> {
   const model = options.model || process.env.AGENT_MODEL || "gpt-5-nano";
-  const maxIterations = options.maxIterations || 10; // Lower default for responsiveness
-
-  await maybeStartHeartbeatLoop(options, async (prompt, runOptions) => {
-    await runAgentLoop(prompt, {
-      model: runOptions.model || model,
-      maxIterations: runOptions.maxIterations,
-    });
-  });
+  const maxIterations = options.maxIterations || 10;
 
   const tools = [
     {
@@ -139,9 +177,11 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
       6. **Tool First for Data**: If a task involves real-world data, use the 'browser' tool immediately.
       7. **Extreme Autonomy**: You have 'read', 'write', and 'shell' tools. If built-in tools fail, write custom scripts to disk and execute them. Never say "I can't fix it".
       8. **Conciseness**: Keep conversational output minimal.
-      
+      9. **Tool Restraint**: For simple conversational prompts that do not require filesystem, shell, browser, or memory changes, respond directly without using tools.
+      10. **One-Time Bootstrap**: Do not repeatedly check or recreate \`.agents/comm\` files unless the user explicitly asks or a task depends on them.
+
       ${memoryContext}
-      ${skillsContext}` 
+      ${skillsContext}`
     },
     ...history,
     { role: "user", content: userMessage }
@@ -150,12 +190,24 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
   let iterations = 0;
   let finalContent = "";
 
+  await emitAgentEvent(options, {
+    type: "taskStarted",
+    prompt: userMessage,
+    historyLength: history.length,
+    model,
+    maxIterations,
+  });
+
   while (iterations < maxIterations) {
     iterations++;
-    
+    await emitAgentEvent(options, {
+      type: "iterationStarted",
+      iteration: iterations,
+    });
+
     const response = await openai.chat.completions.create({
-      model: model,
-      messages: messages,
+      model,
+      messages,
       tools: tools as any,
     });
 
@@ -165,43 +217,79 @@ export async function runAgentLoop(userMessage: string, options: AgentOptions = 
     messages.push(aiMessage);
 
     if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
-      console.log(`🛠️ Iteration ${iterations}: Executing ${aiMessage.tool_calls.length} tools...`);
-      
+      await emitAgentEvent(options, {
+        type: "iterationProgress",
+        iteration: iterations,
+        message: `Executing ${aiMessage.tool_calls.length} tool(s)`,
+      });
+
       for (const toolCall of aiMessage.tool_calls as any[]) {
         const { name, arguments: argsString } = toolCall.function;
         const args = JSON.parse(argsString);
-        
+
         if (options.onIteration) {
           await options.onIteration(`🛠️ Using ${name}...`);
         }
 
-        let result;
+        await emitAgentEvent(options, {
+          type: "toolStarted",
+          iteration: iterations,
+          toolName: name,
+          args: sanitizeToolArgs(args),
+        });
+
+        let result: unknown;
         try {
           if (name === "remember") {
             result = await updateMemory(args.info);
           } else {
             result = await executeNativeTool(name, args);
           }
+          await emitAgentEvent(options, {
+            type: "toolCompleted",
+            iteration: iterations,
+            toolName: name,
+            result: stringifyToolResult(result),
+          });
         } catch (err: any) {
-          result = `TOOL_ERROR: ${err.message}`;
+          const message = err instanceof Error ? err.message : String(err);
+          result = `TOOL_ERROR: ${message}`;
+          await emitAgentEvent(options, {
+            type: "toolFailed",
+            iteration: iterations,
+            toolName: name,
+            error: message,
+          });
         }
-        
+
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
-          content: String(result),
+          content: stringifyToolResult(result),
         });
       }
     } else {
       finalContent = aiMessage.content || "";
+      await emitAgentEvent(options, {
+        type: "finalResponse",
+        iteration: iterations,
+        content: finalContent,
+      });
       break;
     }
   }
 
+  if (!finalContent && iterations >= maxIterations) {
+    await emitAgentEvent(options, {
+      type: "maxIterationsReached",
+      iterations,
+    });
+  }
+
   return {
     content: finalContent,
-    iterations: iterations,
-    messages: messages,
-    completed: iterations < maxIterations || finalContent !== ""
+    iterations,
+    messages,
+    completed: iterations < maxIterations || finalContent !== "",
   };
 }

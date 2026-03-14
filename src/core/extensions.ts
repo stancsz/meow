@@ -1,9 +1,13 @@
 export type ExtensionType = "skill" | "knowledgebase" | "mcp" | "webhook";
+export type RuntimeMode = "cli" | "server" | "hybrid";
+export type ExtensionActivation = "passive" | "transport";
 
 export interface Extension {
   name: string;
   type: ExtensionType;
   route?: string; // Only for webhook type
+  activation?: ExtensionActivation;
+  runtimeModes?: RuntimeMode[];
   start?: () => Promise<void>;
   execute: (args: any) => Promise<any> | any;
 }

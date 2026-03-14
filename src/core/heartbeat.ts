@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AgentDispatcher, AgentDispatchSubmitInput, RuntimeDispatchEvent } from "./dispatcher.ts";
 import type { AgentOptions } from "./agent.ts";
 import { loadLongTermMemory } from "./memory.ts";
 
@@ -88,15 +89,8 @@ export async function maybeStartHeartbeatLoop(
   const intervalMs = options.heartbeat.intervalMs ?? getDefaultHeartbeatIntervalMs();
   const maxIterations = options.heartbeat.maxIterations ?? HEARTBEAT_MAX_ITERATIONS;
 
-  const tick = async () => {
-    if (heartbeatInFlight) {
-      await options.heartbeat?.onTickSkip?.();
-      return;
-    }
-
-    heartbeatInFlight = true;
+  startHeartbeatLoop(async () => {
     await options.heartbeat?.onTickStart?.();
-
     try {
       const evaluation = await evaluateHeartbeat();
       if (evaluation.outcome.status === "invoked" && evaluation.prompt) {
@@ -108,6 +102,105 @@ export async function maybeStartHeartbeatLoop(
       await options.heartbeat?.onTickComplete?.(evaluation.outcome);
     } catch (error: any) {
       await options.heartbeat?.onTickError?.(error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+  }, intervalMs, async () => {
+    await options.heartbeat?.onTickSkip?.();
+  });
+
+  return intervalMs;
+}
+
+export function startHeartbeatScheduler(
+  dispatcher: AgentDispatcher,
+  input: Omit<AgentDispatchSubmitInput, "prompt" | "onEvent"> & {
+    onEvent?: (event: RuntimeDispatchEvent) => Promise<void> | void;
+  },
+  intervalMs = getDefaultHeartbeatIntervalMs(),
+): number | null {
+  if (heartbeatInitialized) {
+    return null;
+  }
+
+  startHeartbeatLoop(async () => {
+    const evaluation = await evaluateHeartbeat();
+    await input.onEvent?.({
+      type: "heartbeatEvaluated",
+      outcome: evaluation.outcome,
+      taskId: "heartbeat",
+      source: input.source,
+      scope: input.scope,
+    });
+
+    if (evaluation.outcome.status !== "invoked" || !evaluation.prompt) {
+      await input.onEvent?.({
+        type: "heartbeatNoop",
+        outcome: evaluation.outcome,
+        taskId: "heartbeat",
+        source: input.source,
+        scope: input.scope,
+      });
+      return;
+    }
+
+    if (dispatcher.hasConflictingTask(input.scope, input.dedupeKey ?? "heartbeat")) {
+      await input.onEvent?.({
+        type: "heartbeatSkipped",
+        reason: "conflicting task already active for heartbeat scope",
+        taskId: "heartbeat",
+        source: input.source,
+        scope: input.scope,
+      });
+      return;
+    }
+
+    await dispatcher.submit({
+      ...input,
+      prompt: evaluation.prompt,
+      maxIterations: evaluation.maxIterations ?? input.maxIterations ?? HEARTBEAT_MAX_ITERATIONS,
+      dedupeKey: input.dedupeKey ?? "heartbeat",
+      onEvent: input.onEvent,
+    });
+  }, intervalMs, async () => {
+    await input.onEvent?.({
+      type: "heartbeatSkipped",
+      reason: "prior heartbeat run still active",
+      taskId: "heartbeat",
+      source: input.source,
+      scope: input.scope,
+    });
+  });
+
+  return intervalMs;
+}
+
+export function stopHeartbeatScheduler(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+  }
+  heartbeatTimer = null;
+  heartbeatInFlight = false;
+  heartbeatInitialized = false;
+}
+
+export function resetHeartbeatLoopForTests(): void {
+  stopHeartbeatScheduler();
+}
+
+function startHeartbeatLoop(
+  tickHandler: () => Promise<void>,
+  intervalMs: number,
+  onSkip?: () => Promise<void> | void,
+): void {
+  const tick = async () => {
+    if (heartbeatInFlight) {
+      await onSkip?.();
+      return;
+    }
+
+    heartbeatInFlight = true;
+    try {
+      await tickHandler();
     } finally {
       heartbeatInFlight = false;
     }
@@ -117,16 +210,6 @@ export async function maybeStartHeartbeatLoop(
     void tick();
   }, intervalMs);
   heartbeatInitialized = true;
-  return intervalMs;
-}
-
-export function resetHeartbeatLoopForTests(): void {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-  }
-  heartbeatTimer = null;
-  heartbeatInFlight = false;
-  heartbeatInitialized = false;
 }
 
 async function readOptionalMarkdownFile(path: string): Promise<OptionalMarkdownFile> {

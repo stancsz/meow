@@ -6,6 +6,8 @@ import type { Extension } from "../core/extensions.ts";
 export const plugin: Extension = {
   name: "messenger",
   type: "webhook",
+  activation: "passive",
+  runtimeModes: ["server", "hybrid"],
   route: "/messenger",
   execute: async (req: Request): Promise<Response> => {
     if (req.method !== "POST") {
