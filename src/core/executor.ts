@@ -22,10 +22,14 @@ export interface CapabilityExecutorDependencies {
   catalog: CapabilityCatalog;
 }
 
+export type CapabilityExecutionOutcomeKind = "success" | "unknown" | "disabled" | "denied" | "runtime_failure";
+
 export interface CapabilityExecutionOutcome {
   ok: boolean;
+  kind: CapabilityExecutionOutcomeKind;
   status: "completed" | "blocked" | "partial";
   output: string;
+  message?: string;
   data?: unknown;
 }
 
@@ -42,8 +46,10 @@ export function createCapabilityExecutor(dependencies: CapabilityExecutorDepende
       if (!capability) {
         return {
           ok: false,
+          kind: "unknown",
           status: "blocked",
           output: getStructuredCapabilityUnknown(capabilityName),
+          message: `Unknown capability: ${capabilityName}`,
         };
       }
 
@@ -51,21 +57,36 @@ export function createCapabilityExecutor(dependencies: CapabilityExecutorDepende
       if (decision.status === "disabled") {
         return {
           ok: false,
+          kind: "disabled",
           status: "blocked",
           output: getStructuredCapabilityDisabled(capabilityName, decision.reason),
+          message: decision.reason,
         };
       }
 
       if (decision.status === "denied") {
         return {
           ok: false,
+          kind: "denied",
           status: "blocked",
           output: getStructuredCapabilityDenial(capabilityName, decision.reason),
+          message: decision.reason,
         };
       }
 
-      const result = await capability.handler(args, context);
-      return normalizeCapabilityResult(result);
+      try {
+        const result = await capability.handler(args, context);
+        return normalizeCapabilityResult(result);
+      } catch (error: any) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          kind: "runtime_failure",
+          status: "blocked",
+          output: `TOOL_ERROR: ${message}`,
+          message,
+        };
+      }
     },
     executeLegacy: async (toolName: string, args: Record<string, unknown>) => {
       const result = await executeNativeTool(toolName, args);
@@ -81,6 +102,7 @@ export function createCapabilityExecutor(dependencies: CapabilityExecutorDepende
 function normalizeCapabilityResult(result: CapabilityResult): CapabilityExecutionOutcome {
   return {
     ok: result.status !== "blocked",
+    kind: result.status === "blocked" ? "runtime_failure" : "success",
     status: result.status,
     output: typeof result.content === "string" ? stripAnsi(result.content) : JSON.stringify(result.content),
     data: result.data,

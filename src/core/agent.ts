@@ -6,6 +6,7 @@ import {
   shouldEnableBootstrapProtocol,
   shouldPreferDirectResponse,
 } from "./policy.ts";
+import type { CapabilityExecutionOutcome } from "./executor.ts";
 import type {
   CapabilityCatalog,
   CapabilityExecutionContext,
@@ -31,6 +32,8 @@ export type AgentEvent =
   | { type: "heartbeatNoop"; outcome: HeartbeatAgentOutcome }
   | { type: "heartbeatSkipped"; reason: string }
   | { type: "autonomousTaskCompleted"; content: string }
+  | { type: "capabilityUnknown"; iteration: number; capabilityName: string; reason: string }
+  | { type: "capabilityDisabled"; iteration: number; capabilityName: string; reason: string }
   | { type: "capabilityDenied"; iteration: number; capabilityName: string; reason: string }
   | { type: "workerDelegationStarted"; worker: string; objective: string; attempt: number }
   | { type: "workerDelegationCompleted"; worker: string; status: string; summary: string; attempt: number };
@@ -54,7 +57,7 @@ export interface AgentOptions {
     capabilityName: string,
     args: Record<string, unknown>,
     context: CapabilityExecutionContext,
-  ) => Promise<{ ok: boolean; status: string; output: string; data?: unknown }>;
+  ) => Promise<CapabilityExecutionOutcome>;
   toolDefinitions?: CapabilityToolDefinition[];
   heartbeat?: {
     enabled: boolean;
@@ -94,7 +97,7 @@ type OpenAIClient = {
 let openaiClientPromise: Promise<OpenAIClient> | undefined;
 let dotenvConfigPromise: Promise<unknown> | undefined;
 
-async function getOpenAIClient(): Promise<OpenAIClient> {
+export async function getOpenAIClient(): Promise<OpenAIClient> {
   if (!openaiClientPromise) {
     openaiClientPromise = import("openai").then(({ default: OpenAI }) => {
       return new OpenAI({
@@ -125,6 +128,66 @@ function sanitizeToolArgs(args: unknown): Record<string, unknown> {
 
 async function emitAgentEvent(options: AgentOptions, event: AgentEvent): Promise<void> {
   await options.emitEvent?.(event);
+}
+
+function getOutcomeToolMessage(outcome: CapabilityExecutionOutcome): string {
+  switch (outcome.kind) {
+    case "unknown":
+      return `CAPABILITY_UNKNOWN: ${outcome.output}`;
+    case "disabled":
+      return `CAPABILITY_DISABLED: ${outcome.output}`;
+    case "denied":
+      return `CAPABILITY_DENIED: ${outcome.output}`;
+    case "runtime_failure":
+      return outcome.output.startsWith("TOOL_ERROR:") ? outcome.output : `TOOL_ERROR: ${outcome.output}`;
+    case "success":
+      return outcome.output;
+  }
+}
+
+async function emitCapabilityOutcomeEvent(
+  options: AgentOptions,
+  iteration: number,
+  capabilityName: string,
+  outcome: CapabilityExecutionOutcome,
+): Promise<void> {
+  const reason = outcome.message ?? outcome.output;
+  switch (outcome.kind) {
+    case "unknown":
+      await emitAgentEvent(options, {
+        type: "capabilityUnknown",
+        iteration,
+        capabilityName,
+        reason,
+      });
+      break;
+    case "disabled":
+      await emitAgentEvent(options, {
+        type: "capabilityDisabled",
+        iteration,
+        capabilityName,
+        reason,
+      });
+      break;
+    case "denied":
+      await emitAgentEvent(options, {
+        type: "capabilityDenied",
+        iteration,
+        capabilityName,
+        reason,
+      });
+      break;
+    case "runtime_failure":
+      await emitAgentEvent(options, {
+        type: "toolFailed",
+        iteration,
+        toolName: capabilityName,
+        error: reason,
+      });
+      break;
+    case "success":
+      break;
+  }
 }
 
 async function resolveRuntimeContext(userMessage: string, options: AgentOptions): Promise<RuntimeCapabilityContext> {
@@ -247,21 +310,10 @@ export async function runAgentLoop(
           }
 
           const outcome = await options.capabilityExecutor(name, args, { runtime: runtimeContext });
-          result = outcome.output;
+          result = getOutcomeToolMessage(outcome);
 
           if (!outcome.ok) {
-            await emitAgentEvent(options, {
-              type: "toolFailed",
-              iteration: iterations,
-              toolName: name,
-              error: result,
-            });
-            await emitAgentEvent(options, {
-              type: "capabilityDenied",
-              iteration: iterations,
-              capabilityName: name,
-              reason: result,
-            });
+            await emitCapabilityOutcomeEvent(options, iterations, name, outcome);
           } else {
             await emitAgentEvent(options, {
               type: "toolCompleted",

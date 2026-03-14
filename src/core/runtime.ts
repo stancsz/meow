@@ -40,6 +40,7 @@ export interface GovernedAgentRuntime {
   catalog: CapabilityCatalog;
   tools: ReturnType<typeof capabilityToToolDefinition>[];
   createContext: (input: { source?: string; prompt: string }) => Promise<RuntimeCapabilityContext>;
+  resolveToolsForRun: (context: RuntimeCapabilityContext) => ReturnType<typeof capabilityToToolDefinition>[];
   executeCapability: ReturnType<typeof createCapabilityExecutor>["execute"];
   auditLog: string[];
 }
@@ -73,6 +74,7 @@ export async function startRuntime(options: RuntimeStartOptions = {}): Promise<R
         source: agentOptions.source,
         prompt: userMessage,
       });
+      const toolDefinitions = governed.resolveToolsForRun(runtimeContext);
       return await runAgentLoop(
         userMessage,
         {
@@ -80,7 +82,7 @@ export async function startRuntime(options: RuntimeStartOptions = {}): Promise<R
           runtimeContext,
           capabilityCatalog: governed.catalog,
           capabilityExecutor: governed.executeCapability,
-          toolDefinitions: governed.tools,
+          toolDefinitions,
         },
         history,
       );
@@ -155,7 +157,6 @@ export async function createGovernedRuntime(
   const catalog = createCapabilityCatalog(await buildCapabilityDefinitions(mode));
   const executor = createCapabilityExecutor({ catalog });
   const seedContext = await buildRuntimeCapabilityContext({ mode, dispatcher, prompt: "", source: "startup" });
-  const visible = getVisibleCapabilities(catalog.getAll(), seedContext);
   const auditLog = getCapabilityAuditLog(catalog.getAll(), seedContext);
 
   for (const line of auditLog) {
@@ -164,8 +165,9 @@ export async function createGovernedRuntime(
 
   return {
     catalog,
-    tools: visible.map(capabilityToToolDefinition),
+    tools: getVisibleCapabilities(catalog.getAll(), seedContext).map(capabilityToToolDefinition),
     createContext: async ({ source, prompt }) => buildRuntimeCapabilityContext({ mode, dispatcher, source, prompt }),
+    resolveToolsForRun: (context) => getVisibleCapabilities(catalog.getAll(), context).map(capabilityToToolDefinition),
     executeCapability: executor.execute,
     auditLog,
   };

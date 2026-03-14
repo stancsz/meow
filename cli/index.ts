@@ -143,6 +143,12 @@ export function createCliTransport(dispatcher: AgentDispatcher): CliTransport {
       case "toolFailed":
         printDurable("Status", `Tool ${event.toolName} failed: ${event.error}`, colors.yellow);
         break;
+      case "capabilityUnknown":
+        printDurable("Policy", `${event.capabilityName} unknown: ${event.reason}`, colors.yellow);
+        break;
+      case "capabilityDisabled":
+        printDurable("Policy", `${event.capabilityName} disabled: ${event.reason}`, colors.yellow);
+        break;
       case "capabilityDenied":
         printDurable("Policy", `${event.capabilityName} denied: ${event.reason}`, colors.yellow);
         break;

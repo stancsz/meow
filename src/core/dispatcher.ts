@@ -42,14 +42,31 @@ export type WorkerDispatchEvent =
       attempt: number;
     };
 
-export type PolicyDispatchEvent = {
-  type: "capabilityDenied";
-  taskId: string;
-  source: string;
-  scope: string;
-  capabilityName: string;
-  reason: string;
-};
+export type PolicyDispatchEvent =
+  | {
+      type: "capabilityUnknown";
+      taskId: string;
+      source: string;
+      scope: string;
+      capabilityName: string;
+      reason: string;
+    }
+  | {
+      type: "capabilityDisabled";
+      taskId: string;
+      source: string;
+      scope: string;
+      capabilityName: string;
+      reason: string;
+    }
+  | {
+      type: "capabilityDenied";
+      taskId: string;
+      source: string;
+      scope: string;
+      capabilityName: string;
+      reason: string;
+    };
 
 export type DispatchTaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 

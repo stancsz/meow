@@ -4,11 +4,14 @@ import {
   type AgentLoopRunner,
   type RuntimeDispatchEvent,
 } from "./src/core/dispatcher.ts";
+import type { AgentEvent } from "./src/core/agent.ts";
 import { extensionRegistry, type Extension } from "./src/core/extensions.ts";
 import { createCapabilityCatalog } from "./src/core/capabilities.ts";
 import {
   canExecuteCapability,
   getCapabilityAuditLog,
+  getStructuredCapabilityDisabled,
+  getStructuredCapabilityDenial,
   getStructuredCapabilityUnknown,
   getVisibleCapabilities,
 } from "./src/core/policy.ts";
@@ -185,14 +188,15 @@ describe("capability executor", () => {
     dispatcher: createAgentDispatcher({ runAgentLoop: async () => ({ content: "", iterations: 0, messages: [], completed: true }) }),
   };
 
-  test("unknown capability returns structured error", async () => {
+  test("unknown capability returns structured unknown outcome", async () => {
     const executor = createCapabilityExecutor({ catalog: createCapabilityCatalog([]) });
     const result = await executor.execute("missing", {}, { runtime });
     expect(result.ok).toBe(false);
+    expect(result.kind).toBe("unknown");
     expect(result.output).toBe(getStructuredCapabilityUnknown("missing"));
   });
 
-  test("denied capability never reaches handler", async () => {
+  test("disabled capability returns structured disabled outcome", async () => {
     const handler = mock(async () => ({ status: "completed" as const, content: "should not run" }));
     const executor = createCapabilityExecutor({
       catalog: createCapabilityCatalog([
@@ -209,10 +213,57 @@ describe("capability executor", () => {
 
     const result = await executor.execute("shell", {}, { runtime });
     expect(result.ok).toBe(false);
+    expect(result.kind).toBe("disabled");
+    expect(result.output).toBe(getStructuredCapabilityDisabled("shell", "approval class restricted is not enabled"));
     expect(handler).not.toHaveBeenCalled();
   });
 
-  test("approved capability returns normalized output", async () => {
+  test("denied capability returns structured denied outcome", async () => {
+    const handler = mock(async () => ({ status: "completed" as const, content: "should not run" }));
+    const executor = createCapabilityExecutor({
+      catalog: createCapabilityCatalog([
+        {
+          name: "remember",
+          description: "Remember",
+          inputSchema: { type: "object", properties: {}, required: [] },
+          category: "native",
+          approvalClass: "memory",
+          handler,
+        },
+      ]),
+    });
+
+    const deniedRuntime = { ...runtime, taskKind: "interactive" as const };
+    const result = await executor.execute("remember", {}, { runtime: deniedRuntime });
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("disabled");
+    expect(result.output).toBe(getStructuredCapabilityDisabled("remember", "memory writes are disabled for this task kind"));
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  test("runtime failures return runtime_failure outcome", async () => {
+    const executor = createCapabilityExecutor({
+      catalog: createCapabilityCatalog([
+        {
+          name: "read",
+          description: "Read",
+          inputSchema: { type: "object", properties: {}, required: [] },
+          category: "native",
+          approvalClass: "default",
+          handler: async () => {
+            throw new Error("boom");
+          },
+        },
+      ]),
+    });
+
+    const result = await executor.execute("read", {}, { runtime });
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("runtime_failure");
+    expect(result.output).toBe("TOOL_ERROR: boom");
+  });
+
+  test("approved capability returns normalized success outcome", async () => {
     const executor = createCapabilityExecutor({
       catalog: createCapabilityCatalog([
         {
@@ -228,6 +279,7 @@ describe("capability executor", () => {
 
     const result = await executor.execute("read", {}, { runtime });
     expect(result.ok).toBe(true);
+    expect(result.kind).toBe("success");
     expect(result.output).toBe("done");
   });
 });
@@ -261,6 +313,176 @@ describe("runtime defaults", () => {
     expect(governed.tools.some((tool) => tool.function.name === "delegate_to_opencode")).toBe(true);
     expect(governed.tools.some((tool) => tool.function.name === "shell")).toBe(false);
     expect(governed.auditLog.length).toBeGreaterThan(0);
+  });
+
+  test("resolves visible tools per run context", async () => {
+    const governed = await createGovernedRuntime(
+      "cli",
+      createAgentDispatcher({ runAgentLoop: async () => ({ content: "", iterations: 0, messages: [], completed: true }) }),
+    );
+
+    const interactiveContext = await governed.createContext({ source: "cli", prompt: "hello" });
+    const heartbeatContext = await governed.createContext({ source: "heartbeat", prompt: "continue background work" });
+
+    const interactiveTools = governed.resolveToolsForRun(interactiveContext).map((tool) => tool.function.name);
+    const heartbeatTools = governed.resolveToolsForRun(heartbeatContext).map((tool) => tool.function.name);
+
+    expect(interactiveTools).not.toContain("remember");
+    expect(heartbeatTools).toContain("remember");
+    expect(interactiveTools).toContain("read");
+    expect(heartbeatTools).toContain("read");
+  });
+});
+
+describe("dispatcher forwards capability events", () => {
+  test("forwards unknown, disabled, denied, and runtime failure events distinctly", async () => {
+    const eventTypes: RuntimeDispatchEvent["type"][] = [];
+    const runner: AgentLoopRunner = async (_prompt, options) => {
+      await options?.emitEvent?.({
+        type: "capabilityUnknown",
+        iteration: 1,
+        capabilityName: "missing",
+        reason: "Unknown capability: missing",
+      });
+      await options?.emitEvent?.({
+        type: "capabilityDisabled",
+        iteration: 1,
+        capabilityName: "remember",
+        reason: "disabled for this run",
+      });
+      await options?.emitEvent?.({
+        type: "capabilityDenied",
+        iteration: 1,
+        capabilityName: "browser",
+        reason: "denied by policy",
+      });
+      await options?.emitEvent?.({
+        type: "toolFailed",
+        iteration: 1,
+        toolName: "read",
+        error: "boom",
+      });
+      return { content: "done", iterations: 1, messages: [], completed: true };
+    };
+
+    const dispatcher = createAgentDispatcher({ runAgentLoop: runner });
+    await dispatcher.submit({
+      source: "test",
+      scope: "scope:events",
+      prompt: "test",
+      onEvent: (event) => {
+        eventTypes.push(event.type);
+      },
+    });
+
+    expect(eventTypes).toContain("capabilityUnknown");
+    expect(eventTypes).toContain("capabilityDisabled");
+    expect(eventTypes).toContain("capabilityDenied");
+    expect(eventTypes).toContain("toolFailed");
+  });
+});
+
+
+describe("delegation orchestration", () => {
+  test("same-scope work serializes and duplicate work dedupes", async () => {
+    const started: string[] = [];
+    const gate = createDeferred<void>();
+    const runner: AgentLoopRunner = async (prompt) => {
+      started.push(prompt);
+      if (prompt.includes("first")) {
+        await gate.promise;
+      }
+      return { content: prompt, iterations: 1, messages: [], completed: true };
+    };
+
+    const dispatcher = createAgentDispatcher({ runAgentLoop: runner });
+
+    const first = dispatcher.submit({
+      source: "delegate",
+      scope: "worker:opencode:test",
+      prompt: "first delegation",
+      dedupeKey: "same",
+    });
+
+    const duplicate = dispatcher.submit({
+      source: "delegate",
+      scope: "worker:opencode:test",
+      prompt: "duplicate delegation",
+      dedupeKey: "same",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    gate.resolve();
+
+    const duplicateResult = await duplicate;
+    await first;
+
+    expect(duplicateResult.completed).toBe(false);
+    expect(started).toEqual(["first delegation"]);
+  });
+});
+
+describe("agent capability result formatting", () => {
+  const baseRuntime = {
+    mode: "cli" as const,
+    taskKind: "interactive" as const,
+    prompt: "test",
+    memoryContext: "memory",
+    skillsContext: "skills",
+    platform: process.platform,
+    dispatcher: createAgentDispatcher({ runAgentLoop: async () => ({ content: "", iterations: 0, messages: [], completed: true }) }),
+  };
+
+  function formatOutcomeForConversation(outcome: {
+    kind: "unknown" | "disabled" | "denied" | "runtime_failure";
+    output: string;
+  }): string {
+    switch (outcome.kind) {
+      case "unknown":
+        return `CAPABILITY_UNKNOWN: ${outcome.output}`;
+      case "disabled":
+        return `CAPABILITY_DISABLED: ${outcome.output}`;
+      case "denied":
+        return `CAPABILITY_DENIED: ${outcome.output}`;
+      case "runtime_failure":
+        return outcome.output.startsWith("TOOL_ERROR:") ? outcome.output : `TOOL_ERROR: ${outcome.output}`;
+    }
+  }
+
+  test("formats unknown outcomes distinctly", () => {
+    expect(
+      formatOutcomeForConversation({
+        kind: "unknown",
+        output: getStructuredCapabilityUnknown("remember"),
+      }),
+    ).toStartWith("CAPABILITY_UNKNOWN:");
+  });
+
+  test("formats disabled outcomes distinctly", () => {
+    expect(
+      formatOutcomeForConversation({
+        kind: "disabled",
+        output: getStructuredCapabilityDisabled("remember", "disabled for this run"),
+      }),
+    ).toStartWith("CAPABILITY_DISABLED:");
+  });
+
+  test("formats denied outcomes distinctly", () => {
+    expect(
+      formatOutcomeForConversation({
+        kind: "denied",
+        output: getStructuredCapabilityDenial("remember", "denied by policy"),
+      }),
+    ).toStartWith("CAPABILITY_DENIED:");
+  });
+
+  test("formats runtime failures as tool errors", () => {
+    expect(
+      formatOutcomeForConversation({
+        kind: "runtime_failure",
+        output: "TOOL_ERROR: boom",
+      }),
+    ).toBe("TOOL_ERROR: boom");
   });
 });
 
