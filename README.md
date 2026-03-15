@@ -7,11 +7,14 @@
 SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level autonomy** on a **Free Tier** budget. Optimized for AWS/GCP free instances, it bridges the gap between raw LLMs and real-world execution through native **Agentic Browsing**, **MCP** integration, and a modular **Skill** vault.
 
 > [!IMPORTANT]
-> **Quick Start:** Ask your agent to run:
+> **Quick Start:** One-command installation:
 > ```bash
-> bash https://github.com/stancsz/simpleclaw/blob/main/setup.sh
+> curl -fsSL https://raw.githubusercontent.com/stancsz/simpleclaw/main/setup.sh | bash
 > ```
-> to get started instantly.
+> Or download and run:
+> ```bash
+> ./setup.sh
+> ```
 
 > [!TIP]
 > **⚡ 121 Lines of Pure Power.** The core engine in `src/core` is so lean, it fits in just 121 lines of dense, optimized code.
@@ -47,15 +50,19 @@ SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level
 
 ### 1. Local Development
 ```bash
+# One-command setup
+./setup.sh
+
+# Or manually:
 # Install dependencies
-npm install
+bun install
 
 # Setup environment
 cp .env.example .env
-# Edit .env with your OPENAI_API_KEY
+# Edit .env with your OPENAI_API_KEY or DEEPSEEK_API_KEY
 
-# Launch the CLI
-npx tsx cli/index.ts
+# Start SimpleClaw
+bun run start
 ```
 
 ### 2. Deployment
