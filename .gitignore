@@ -75,9 +75,10 @@ terraform.rc
 !/runtime.test.ts
 !/loop/
 !/setup.sh
+!/.github/
 
 # memory (keep local unless explicitly shared)
 .agents/memory/
 
 # but track protocol-related memory if needed
-!/.agents/memory/memory.md
+!/.agents/memory/memory.md
