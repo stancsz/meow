@@ -112,7 +112,9 @@ export async function getOpenAIClient(): Promise<OpenAIClient> {
 
 async function ensureDotenvLoaded(): Promise<void> {
   if (!dotenvConfigPromise) {
-    dotenvConfigPromise = import("dotenv/config").catch(() => undefined);
+    dotenvConfigPromise = import("dotenv").then((dotenv) => {
+      dotenv.config({ override: true });
+    }).catch(() => undefined);
   }
 
   await dotenvConfigPromise;
@@ -234,6 +236,7 @@ export async function runAgentLoop(
     memoryContext: runtimeContext.memoryContext,
     skillsContext: runtimeContext.skillsContext,
     visibleCapabilityNames,
+    model,
   });
 
   const messages: any[] = [

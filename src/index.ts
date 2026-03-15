@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ override: true });
 import { startRuntime, resolveRuntimeMode, type RuntimeStartOptions } from "./core/runtime.ts";
 
 export async function startClaw(config: RuntimeStartOptions = {}) {

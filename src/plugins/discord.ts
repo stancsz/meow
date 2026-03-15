@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, Message } from "discord.js";
 import { aiIpiSanitizer } from "../security/triple_lock.ts";
 import type { Extension } from "../core/extensions.ts";
 import { createAgentDispatcher, type RuntimeDispatchEvent } from "../core/dispatcher.ts";
@@ -16,13 +16,15 @@ const dispatcher = createAgentDispatcher();
 const DISCORD_SCOPE_PREFIX = "discord:channel:";
 let isBotReady = false;
 
-async function handleDiscordEvent(event: RuntimeDispatchEvent, message: any): Promise<void> {
+async function handleDiscordEvent(event: RuntimeDispatchEvent, message: Message): Promise<void> {
   switch (event.type) {
     case "taskStarted":
     case "iterationStarted":
     case "iterationProgress":
     case "toolStarted":
-      await message.channel.sendTyping();
+      if (message.channel.isTextBased()) {
+        await (message.channel as any).sendTyping();
+      }
       break;
     case "taskFailed":
       await message.reply(`⚠️ Error: ${event.error.message}`);
@@ -32,29 +34,31 @@ async function handleDiscordEvent(event: RuntimeDispatchEvent, message: any): Pr
   }
 }
 
-async function sendDiscordReply(message: any, content: string): Promise<void> {
+async function sendDiscordReply(message: Message, content: string): Promise<void> {
   if (content.length <= 2000) {
     await message.reply(content);
     return;
   }
 
   for (let i = 0; i < content.length; i += 2000) {
-    await message.channel.send(content.substring(i, i + 2000));
+    if (message.channel.isTextBased()) {
+      await (message.channel as any).send(content.substring(i, i + 2000));
+    }
   }
 }
 
-async function buildDiscordHistory(message: any, botUserId?: string) {
+async function buildDiscordHistory(message: Message, botUserId?: string) {
   const historyMessages = await message.channel.messages.fetch({ limit: 10 });
   return Array.from(historyMessages.values())
-    .filter((m) => m.id !== message.id)
+    .filter((m: Message) => m.id !== message.id)
     .reverse()
-    .map((m) => ({
+    .map((m: Message) => ({
       role: (m.author.id === botUserId ? "assistant" : "user") as "assistant" | "user",
       content: m.content,
     }));
 }
 
-async function dispatchDiscordMessage(message: any, content: string, botUserId?: string) {
+async function dispatchDiscordMessage(message: Message, content: string, botUserId?: string) {
   const result = await dispatcher.submit({
     source: "discord",
     prompt: content,

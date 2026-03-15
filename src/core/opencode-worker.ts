@@ -89,13 +89,40 @@ function parseWorkerOutput(stdout: string, stderr: string): OpenCodeDelegationRe
   };
 }
 
-async function runOpenCodeTask(task: OpenCodeDelegationTask): Promise<OpenCodeDelegationResult> {
-  const command = process.env.SIMPLECLAW_OPENCODE_COMMAND || "opencode";
-  const args = (process.env.SIMPLECLAW_OPENCODE_ARGS || "run --json")
-    .split(/\s+/)
-    .filter(Boolean);
+async function findOpenCodeCommand(): Promise<{ command: string; args: string[] }> {
+  const envCommand = process.env.SIMPLECLAW_OPENCODE_COMMAND;
+  if (envCommand) {
+    const args = (process.env.SIMPLECLAW_OPENCODE_ARGS || "run --format json").split(/\s+/).filter(Boolean);
+    return { command: envCommand, args };
+  }
 
-  const { stdout, stderr } = await execFileAsync(command, [...args, buildInstruction(task)], {
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("opencode --version", { stdio: "ignore" });
+    return { command: "opencode", args: ["run", "--format", "json"] };
+  } catch {
+    // Fallback to npx
+    return { command: "npx", args: ["-y", "opencode-ai", "run", "--format", "json"] };
+  }
+}
+
+async function runOpenCodeTask(task: OpenCodeDelegationTask, emit?: (event: any) => void): Promise<OpenCodeDelegationResult> {
+  const { command, args } = await findOpenCodeCommand();
+  const finalArgs = [...args];
+  
+  // Try to pass the model if configured
+  const model = process.env.AGENT_MODEL;
+  if (model && !finalArgs.includes("-m") && !finalArgs.includes("--model")) {
+      // Note: opencode usually expects provider/model but we'll try passing it directly
+      // as deepseek-chat if it's deepseek
+      finalArgs.push("-m", model);
+  }
+
+  if (command === "npx") {
+    emit?.({ type: "iterationProgress", message: "🚀 opencode not found locally. Using dynamic setup via npx..." });
+  }
+
+  const { stdout, stderr } = await execFileAsync(command, [...finalArgs, buildInstruction(task)], {
     cwd: process.cwd(),
     env: process.env,
   });
@@ -155,7 +182,7 @@ export async function delegateToOpenCode(
     });
 
     try {
-      lastResult = await runOpenCodeTask(task);
+      lastResult = await runOpenCodeTask(task, (event) => context.runtime.emitRuntimeEvent?.(event));
       await context.runtime.emitRuntimeEvent?.({
         type: "workerDelegationCompleted",
         taskId: `delegate:${attempts}`,

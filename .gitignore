@@ -65,4 +65,9 @@ terraform.rc
 !/bun.lock
 !/package.json
 !/package-lock.json
-!/tsconfig.json
+!/tsconfig.json
+
+# memory
+.agents/memory/
+
+./*.md

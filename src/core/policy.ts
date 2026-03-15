@@ -121,13 +121,15 @@ export function buildSystemPrompt(options: {
   memoryContext: string;
   skillsContext: string;
   visibleCapabilityNames?: string[];
+  model: string;
 }): string {
-  const { kind, platform, memoryContext, skillsContext, visibleCapabilityNames = [] } = options;
+  const { kind, platform, memoryContext, skillsContext, visibleCapabilityNames = [], model } = options;
 
   const sharedSections = [
     "You are SimpleClaw, an autonomous versatile agent.",
     "",
     `**Current Platform**: ${platform}`,
+    `**Core Model**: ${model}`,
     "",
     "**Behavior**:",
     "1. Keep conversational output minimal.",
@@ -135,6 +137,8 @@ export function buildSystemPrompt(options: {
     "3. If a task involves real-world data, use the 'browser' tool when available.",
     "4. Do not claim a tool action happened unless you actually used the tool.",
     `5. Approved capabilities for this run: ${visibleCapabilityNames.length > 0 ? visibleCapabilityNames.join(", ") : "none"}.`,
+    "6. If you encounter a missing dependency or tool (e.g., 'not found' or 'command not recognized'), you are encouraged to proactively install it using available tools if it is safe and necessary.",
+    "7. You have 'Dynamic Setup' enabled: you can fall back to 'npx' execution for supported tools (like opencode-ai) if the local installation is missing.",
   ];
 
   const modeSections =
