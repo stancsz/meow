@@ -10,11 +10,23 @@ export async function loadSkillsContext(): Promise<string> {
   let fullContext = "\n\n### AGENT SKILLS\n";
 
   try {
-    const files = await readdir(skillsDir);
+    // Read top-level .md files
+    const files = await readdir(skillsDir, { withFileTypes: true });
+    
     for (const file of files) {
-      if (file.endsWith(".md") && file !== "README.md") {
-        const content = await readFile(join(skillsDir, file), "utf-8");
-        fullContext += `\n--- SKILL: ${file} ---\n${content}\n`;
+      if (file.isFile() && file.name.endsWith(".md") && file.name !== "README.md") {
+        const content = await readFile(join(skillsDir, file.name), "utf-8");
+        fullContext += `\n--- SKILL: ${file.name} ---\n${content}\n`;
+      } else if (file.isDirectory()) {
+        // Check for SKILL.md in subdirectories
+        const skillPath = join(skillsDir, file.name, "SKILL.md");
+        try {
+          const content = await readFile(skillPath, "utf-8");
+          fullContext += `\n--- SKILL: ${file.name} ---\n${content}\n`;
+        } catch (error) {
+          // SKILL.md not found in this directory, skip
+          continue;
+        }
       }
     }
   } catch (error) {

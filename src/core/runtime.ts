@@ -291,6 +291,43 @@ async function buildCapabilityDefinitions(mode: RuntimeMode): Promise<Capability
       },
     },
     {
+      name: "write",
+      description: "Write content to a file",
+      inputSchema: {
+        type: "object",
+        properties: { 
+          path: { type: "string" },
+          content: { type: "string" }
+        },
+        required: ["path", "content"],
+      },
+      category: "native",
+      runtimeModes: ["cli", "hybrid", "server"],
+      approvalClass: "default",
+      handler: async (args) => {
+        const { executeNativeTool } = await import("./executor.ts");
+        return { status: "completed", content: String(await executeNativeTool("write", args)) };
+      },
+    },
+    {
+      name: "shell",
+      description: "Execute a shell command",
+      inputSchema: {
+        type: "object",
+        properties: { 
+          cmd: { type: "string" }
+        },
+        required: ["cmd"],
+      },
+      category: "native",
+      runtimeModes: ["cli", "hybrid", "server"],
+      approvalClass: "default",
+      handler: async (args) => {
+        const { executeNativeTool } = await import("./executor.ts");
+        return { status: "completed", content: String(await executeNativeTool("shell", args)) };
+      },
+    },
+    {
       name: "remember",
       description: "Store durable information in long-term memory",
       inputSchema: {
@@ -331,37 +368,48 @@ async function buildCapabilityDefinitions(mode: RuntimeMode): Promise<Capability
     },
   ];
 
-  const browserExtension = extensionRegistry.get("browser");
-  const browserCapabilities: CapabilityDefinition[] = browserExtension
-    ? [
-        {
-          name: "browser",
-          description: "Interact with the browser extension when enabled",
-          inputSchema: {
-            type: "object",
-            properties: {
-              action: {
-                type: "string",
-                enum: ["navigate", "click", "type", "snapshot", "screenshot", "wait"],
-              },
-              url: { type: "string" },
-              selector: { type: "string" },
-              text: { type: "string" },
-            },
-            required: ["action"],
-          },
-          category: "extension",
-          runtimeModes: browserExtension.runtimeModes ?? [mode],
-          approvalClass: "network",
-          handler: async (args) => ({
-            status: "completed",
-            content: JSON.stringify(await browserExtension.execute(args)),
-          }),
+  // Get all registered extensions and convert them to capabilities
+  const extensionCapabilities: CapabilityDefinition[] = [];
+  const extensions = extensionRegistry.getAll();
+  
+  for (const extension of extensions) {
+    // Skip extensions that aren't skills (like webhooks, knowledgebases)
+    if (extension.type !== "skill") continue;
+    
+    // Create capability definition for each skill extension
+    extensionCapabilities.push({
+      name: extension.name,
+      description: `Execute ${extension.name} skill`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: { type: "string" },
+          // Add other properties dynamically based on extension type
+          ...(extension.name === "browser" ? {
+            url: { type: "string" },
+            selector: { type: "string" },
+            text: { type: "string" },
+          } : {}),
+          ...(extension.name === "screencap" ? {
+            format: { type: "string", enum: ["png", "jpeg", "jpg"] },
+            filename: { type: "string" },
+            display: { type: "number" },
+            screen: { type: "number" },
+          } : {}),
         },
-      ]
-    : [];
+        required: ["action"],
+      },
+      category: "extension",
+      runtimeModes: extension.runtimeModes ?? [mode],
+      approvalClass: extension.name === "browser" ? "network" : "default",
+      handler: async (args) => ({
+        status: "completed",
+        content: JSON.stringify(await extension.execute(args)),
+      }),
+    });
+  }
 
-  return [...nativeCapabilities, ...browserCapabilities];
+  return [...nativeCapabilities, ...extensionCapabilities];
 }
 
 export function resolveRuntimeMode(mode?: RuntimeMode): RuntimeMode {

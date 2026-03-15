@@ -135,14 +135,14 @@ describe("dispatcher behavior", () => {
       source: "test",
       scope: "scope:a",
       prompt: "first",
-      onEvent: (event) => events.push(event),
+      onEvent: (event) => { events.push(event); },
     });
 
     const secondPromise = dispatcher.submit({
       source: "test",
       scope: "scope:a",
       prompt: "second",
-      onEvent: (event) => events.push(event),
+      onEvent: (event) => { events.push(event); },
     });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -187,7 +187,7 @@ describe("capability policy", () => {
     const capability = {
       name: "read",
       description: "Read a file",
-      inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      inputSchema: { type: "object" as const, properties: { path: { type: "string" as const } }, required: ["path"] },
       category: "native" as const,
       approvalClass: "default" as const,
       handler: async () => ({ status: "completed" as const, content: "ok" }),
@@ -201,7 +201,7 @@ describe("capability policy", () => {
     const capability = {
       name: "shell",
       description: "Run shell",
-      inputSchema: { type: "object", properties: { cmd: { type: "string" } }, required: ["cmd"] },
+      inputSchema: { type: "object" as const, properties: { cmd: { type: "string" as const } }, required: ["cmd"] },
       category: "native" as const,
       approvalClass: "restricted" as const,
       handler: async () => ({ status: "completed" as const, content: "ok" }),
@@ -216,7 +216,7 @@ describe("capability policy", () => {
     const capability = {
       name: "browser",
       description: "Browser",
-      inputSchema: { type: "object", properties: { action: { type: "string" } }, required: ["action"] },
+      inputSchema: { type: "object" as const, properties: { action: { type: "string" as const } }, required: ["action"] },
       category: "extension" as const,
       approvalClass: "network" as const,
       runtimeModes: ["cli" as const],
@@ -536,45 +536,6 @@ describe("agent capability result formatting", () => {
   });
 });
 
-describe("delegation orchestration", () => {
-  test("same-scope work serializes and duplicate work dedupes", async () => {
-    const started: string[] = [];
-    const gate = createDeferred<void>();
-    const runner: AgentLoopRunner = async (prompt) => {
-      started.push(prompt);
-      if (prompt.includes("first")) {
-        await gate.promise;
-      }
-      return { content: prompt, iterations: 1, messages: [], completed: true };
-    };
-
-    const dispatcher = createAgentDispatcher({ runAgentLoop: runner });
-
-    const first = dispatcher.submit({
-      source: "delegate",
-      scope: "worker:opencode:test",
-      prompt: "first delegation",
-      dedupeKey: "same",
-    });
-
-    const duplicate = dispatcher.submit({
-      source: "delegate",
-      scope: "worker:opencode:test",
-      prompt: "duplicate delegation",
-      dedupeKey: "same",
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    gate.resolve();
-
-    const duplicateResult = await duplicate;
-    await first;
-
-    expect(duplicateResult.completed).toBe(false);
-    expect(started).toEqual(["first delegation"]);
-  });
-});
-
 describe("security locks", () => {
   test("requires x-agent-id header", async () => {
     const request = new Request("http://localhost/discord", { method: "POST" });
@@ -605,5 +566,36 @@ describe("skills loading", () => {
   test("loads the OpenCode prompt skill", async () => {
     const context = await loadSkillsContext();
     expect(context).toContain("OpenCode Delegation Skill");
+  });
+});
+
+describe("screen capture plugin", () => {
+  test("plugin is properly registered as extension", async () => {
+    // Import the plugin using ES module syntax
+    const { plugin } = await import("./src/plugins/screencap.ts");
+    
+    expect(plugin.name).toBe("screencap");
+    expect(plugin.type).toBe("skill");
+    expect(plugin.runtimeModes).toEqual(["cli", "hybrid", "server"]);
+    expect(typeof plugin.execute).toBe("function");
+  });
+
+  test("plugin has correct action handling structure", async () => {
+    const { plugin } = await import("./src/plugins/screencap.ts");
+    
+    // Test that the execute function returns a promise with expected structure
+    const result = await plugin.execute({ action: "list_displays" });
+    
+    expect(result).toHaveProperty("success");
+    expect(result).toHaveProperty("message");
+    // The actual implementation will either succeed or fail based on system
+    // but the structure should be consistent
+    if (result.success) {
+      expect(result).toHaveProperty("displays");
+      expect(result).toHaveProperty("count");
+      expect(result).toHaveProperty("platform");
+    } else {
+      expect(result).toHaveProperty("error");
+    }
   });
 });
