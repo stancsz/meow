@@ -8,6 +8,11 @@ import chalk from "chalk";
 async function main() {
     console.log(chalk.blue.bold("🔍 SimpleClaw Smart Code Review & Merge: Initializing..."));
 
+    // 0. Setup Git Identity
+    console.log(chalk.cyan("Setting up git identity..."));
+    execSync('git config --global user.name "simpleclaw"');
+    execSync('git config --global user.email "simpleclaw@users.noreply.github.com"');
+
     // 1. Fetch Open PRs
     console.log(chalk.cyan("Fetching open PRs..."));
     let prsJson = "";
