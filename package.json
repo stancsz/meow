@@ -25,6 +25,7 @@
     "electron:dev": "NODE_ENV=development electron .",
     "electron:build": "npm run build:server && electron-builder",
     "build:server": "cd server && npm run build",
+    "deploy:worker": "firebase deploy --only functions:worker",
     "package:win": "electron-builder --win",
     "package:mac": "electron-builder --mac",
     "package:linux": "electron-builder --linux"
@@ -34,6 +35,7 @@
     "agent-browser": "^0.17.1",
     "discord.js": "^14.25.1",
     "dotenv": "^17.3.1",
+    "firebase-functions": "^7.1.1",
     "openai": "^6.27.0",
     "screenshot-desktop": "^1.15.3",
     "yaml": "^2.8.2"
