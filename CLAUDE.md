@@ -53,7 +53,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 
 ## BACKLOG (Swarm Architecture)
 - [x] **Phase 0 — Orchestrator CF:** Single Cloud Function: text prompt → `swarm.yaml` manifest
-- [ ] **Phase 0 — Worker Template:** Ephemeral CF that boots, loads JIT skill, fetches KMS-decrypted credential, executes, terminates
+- [x] **Phase 0 — Worker Template:** Ephemeral CF that boots, loads JIT skill, fetches KMS-decrypted credential, executes, terminates
 - [ ] **Phase 0 — KMS Flow:** GCP Cloud KMS key ring setup + encrypt/decrypt service for Supabase `service_role` keys
 - [ ] **Phase 0 — Motherboard Schema:** Apply `SWARM_SPEC.md §9.2` SQL schema to a managed Supabase project
 - [ ] **Phase 0 — Minimal UI:** Text input → plan display → approve button (Next.js dashboard in `server/`)
