@@ -83,3 +83,4 @@ terraform.rc
 
 # but track protocol-related memory if needed
 !/.agents/memory/memory.md
+*.zip

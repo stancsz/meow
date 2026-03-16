@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-16] Cycle #22 ✅ Implemented Move 4: Realign Terraform to Serverless. Removed e2-micro VM and related networking resources from `terraform/main.tf` and replaced them with serverless `google_cloudfunctions2_function` for the Orchestrator and Worker templates. Configured KMS and IAM bindings so the functions use the dedicated KMS service account to decrypt credentials.
 - [2026-03-16] Cycle #21 ✅ Implemented Move 2: Sovereign Motherboard SQL Schema & Local DB via `bun:sqlite` with full table migrations (`001_motherboard.sql`), a `DBClient` wrapper, modified `orchestrator.ts` to checkpoint user sessions, and comprehensive local database tests in `db.test.ts`.
 - [2026-03-16] Cycle #20 ✅ Implemented real LLM intent parsing for Move 1. Added OpenAI SDK, configured function calling for `SwarmManifest`, implemented DAG validation in `orchestrator.ts`, and updated `orchestrator.test.ts`.
 - [2026-03-16] Cycle #19 ✅ Finished Phase 0 Orchestrator Cloud Function implementation. Created `src/core/types.ts`, refactored `src/core/orchestrator.ts` to output `PlanDiffApprove` schema with multiple DAG steps, created `examples/swarm.example.yaml`, and implemented the `server/src/app/api/orchestrator/route.ts` API wrapper.
@@ -60,6 +61,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 0 — Motherboard Schema:** Apply `SWARM_SPEC.md §9.2` SQL schema to a managed Supabase project / local SQLite equivalent
 - [ ] **Phase 0 — Worker Dispatch + Execution Loop:** Shift priority here for Move 3
 - [ ] **Phase 0 — KMS Flow:** GCP Cloud KMS key ring setup + encrypt/decrypt service for Supabase `service_role` keys
+- [x] **Move 4: Realign Terraform to Serverless**
 - [ ] **Phase 0 — Minimal UI:** Text input → plan display → approve button (Next.js dashboard in `server/`)
 - [ ] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
