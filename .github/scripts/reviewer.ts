@@ -17,7 +17,8 @@ async function main() {
     console.log(chalk.cyan("Fetching open PRs..."));
     let prsJson = "";
     try {
-        prsJson = execSync("gh pr list --json number,title,author,headRefName,mergeable --state open", { encoding: "utf-8" });
+        // Only fetch PRs targeting the 'development' branch
+        prsJson = execSync("gh pr list --base development --json number,title,author,headRefName,mergeable --state open", { encoding: "utf-8" });
     } catch (e) {
         console.error(chalk.red("❌ Failed to fetch PRs. Make sure gh CLI is installed and authenticated."));
         process.exit(1);
@@ -53,6 +54,11 @@ async function main() {
         
         // Get diff against development
         const diff = execSync("git diff origin/development...HEAD", { encoding: "utf-8" });
+
+        if (!diff.trim()) {
+            console.log(chalk.yellow(`⚠️ PR #${pr.number} has no diff against development. Skipping...`));
+            continue;
+        }
 
         const systemPrompt = `You are the "Principal Integrity Officer" for SimpleClaw.
 Your job is to review Pull Requests and decide whether to MERGE or CLOSE them.
@@ -140,7 +146,10 @@ ${diff}
             console.log(chalk.cyan("Closing PR..."));
             const commentFile = path.resolve(process.cwd(), "pr_comment.tmp");
             fs.writeFileSync(commentFile, review.comment);
-            execSync(`gh pr close ${pr.number} -F "${commentFile}"`);
+            // Post comment first (which supports -F)
+            execSync(`gh pr comment ${pr.number} -F "${commentFile}"`);
+            // Then close without redundancy
+            execSync(`gh pr close ${pr.number}`);
             fs.unlinkSync(commentFile);
         }
 
