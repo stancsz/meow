@@ -77,6 +77,107 @@ resource "google_compute_instance" "vm_instance" {
   tags = ["http-server", "https-server"]
 }
 
+# Cloud Storage Bucket for Cloud Function Source Code
+resource "google_storage_bucket" "function_source_bucket" {
+  name     = "${var.project_id}-gcf-source"
+  location = var.region
+
+  uniform_bucket_level_access = true
+}
+
+# Archive the source code
+data "archive_file" "kms_service_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../src/kms-service"
+  output_path = "${path.module}/../src/kms-service.zip"
+  excludes    = ["node_modules", "lib"]
+}
+
+# Upload the zip to the bucket
+resource "google_storage_bucket_object" "kms_service_zip" {
+  name   = "kms-service-${data.archive_file.kms_service_zip.output_md5}.zip"
+  bucket = google_storage_bucket.function_source_bucket.name
+  source = data.archive_file.kms_service_zip.output_path
+}
+
+# Encrypt Function
+resource "google_cloudfunctions2_function" "encrypt_function" {
+  name        = "encrypt"
+  location    = var.region
+  description = "KMS Encrypt Function"
+
+  build_config {
+    runtime     = "nodejs20"
+    entry_point = "encrypt"
+    source {
+      storage_source {
+        bucket = google_storage_bucket.function_source_bucket.name
+        object = google_storage_bucket_object.kms_service_zip.name
+      }
+    }
+  }
+
+  service_config {
+    max_instance_count = 10
+    available_memory   = "256M"
+    timeout_seconds    = 60
+
+    # Use the dedicated KMS service account
+    service_account_email = google_service_account.kms_functions_sa.email
+
+    environment_variables = {
+      KMS_KEY_NAME = google_kms_crypto_key.supabase_service_role_key.id
+    }
+  }
+
+  depends_on = [
+    google_kms_crypto_key_iam_member.crypto_key_encrypter_decrypter
+  ]
+}
+
+# Decrypt Function
+resource "google_cloudfunctions2_function" "decrypt_function" {
+  name        = "decrypt"
+  location    = var.region
+  description = "KMS Decrypt Function"
+
+  build_config {
+    runtime     = "nodejs20"
+    entry_point = "decrypt"
+    source {
+      storage_source {
+        bucket = google_storage_bucket.function_source_bucket.name
+        object = google_storage_bucket_object.kms_service_zip.name
+      }
+    }
+  }
+
+  service_config {
+    max_instance_count = 10
+    available_memory   = "256M"
+    timeout_seconds    = 60
+
+    # Use the dedicated KMS service account
+    service_account_email = google_service_account.kms_functions_sa.email
+
+    environment_variables = {
+      KMS_KEY_NAME = google_kms_crypto_key.supabase_service_role_key.id
+    }
+  }
+
+  depends_on = [
+    google_kms_crypto_key_iam_member.crypto_key_encrypter_decrypter
+  ]
+}
+
 output "instance_ip" {
   value = google_compute_instance.vm_instance.network_interface[0].access_config[0].nat_ip
+}
+
+output "encrypt_function_uri" {
+  value = google_cloudfunctions2_function.encrypt_function.service_config[0].uri
+}
+
+output "decrypt_function_uri" {
+  value = google_cloudfunctions2_function.decrypt_function.service_config[0].uri
 }

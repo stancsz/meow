@@ -76,6 +76,7 @@ terraform.rc
 !/loop/
 !/setup.sh
 !/.github/
+!/scripts/
 
 # memory (keep local unless explicitly shared)
 .agents/memory/

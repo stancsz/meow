@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 # AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-15] Cycle #19 ✅ Implemented KMS Flow for secure credential encryption/decrypt
 - [2026-03-15] Cycle #18 ✅ Started Orchestrator Cloud Function implementation for Phase 0
 - [2026-03-15 16:48] Cycle #17 ✅
 - [2026-03-15 17:00] Cycle #17 ✅
@@ -53,7 +54,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 ## BACKLOG (Swarm Architecture)
 - [x] **Phase 0 — Orchestrator CF:** Single Cloud Function: text prompt → `swarm.yaml` manifest
 - [ ] **Phase 0 — Worker Template:** Ephemeral CF that boots, loads JIT skill, fetches KMS-decrypted credential, executes, terminates
-- [ ] **Phase 0 — KMS Flow:** GCP Cloud KMS key ring setup + encrypt/decrypt service for Supabase `service_role` keys
+- [x] **Phase 0 — KMS Flow:** GCP Cloud KMS key ring setup + encrypt/decrypt service for Supabase `service_role` keys
 - [ ] **Phase 0 — Motherboard Schema:** Apply `SWARM_SPEC.md §9.2` SQL schema to a managed Supabase project
 - [ ] **Phase 0 — Minimal UI:** Text input → plan display → approve button (Next.js dashboard in `server/`)
 - [ ] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault
