@@ -2,7 +2,7 @@ import { expect, test, describe, beforeAll, afterAll, mock } from "bun:test";
 import * as ff from '@google-cloud/functions-framework';
 import { validateManifest, orchestratorHandler } from './orchestrator';
 import { SwarmManifest } from "./types";
-import * as llm from './llm';
+import * as llm from './orchestrator';
 
 // Import to register the function
 import './orchestrator';
@@ -236,7 +236,7 @@ describe("Orchestrator Cloud Function (Mocked LLM DAG Cycle Test)", () => {
 
     test("Cyclic DAG → rejection test in handler", async () => {
         // Mock parseIntentToManifest for this test only
-        mock.module('./llm', () => ({
+        mock.module('./orchestrator', () => ({
             parseIntentToManifest: async (intent: string, availableSkills: string[]): Promise<SwarmManifest> => {
                 return {
                     version: "1.0",
@@ -285,7 +285,7 @@ describe("Orchestrator Cloud Function (Mocked LLM DAG Cycle Test)", () => {
         expect(responseBody.error).toBe('Generated manifest failed validation.');
 
         // Cleanup module mock for next tests
-        mock.module('./llm', () => ({
+        mock.module('./orchestrator', () => ({
              parseIntentToManifest: originalParse
         }));
     });
@@ -352,5 +352,35 @@ describe("Manifest Validation Unit Tests", () => {
         const availableSkills = ['skill-a'];
 
         expect(validateManifest(manifestMissingDep, availableSkills)).toBe(false);
+    });
+});
+
+describe("LLM parser configuration", () => {
+    let originalOpenAIKey: string | undefined;
+    let originalDeepseekKey: string | undefined;
+
+    beforeAll(() => {
+        originalOpenAIKey = process.env.OPENAI_API_KEY;
+        originalDeepseekKey = process.env.DEEPSEEK_API_KEY;
+    });
+
+    afterAll(() => {
+        if (originalOpenAIKey) process.env.OPENAI_API_KEY = originalOpenAIKey;
+        else delete process.env.OPENAI_API_KEY;
+
+        if (originalDeepseekKey) process.env.DEEPSEEK_API_KEY = originalDeepseekKey;
+        else delete process.env.DEEPSEEK_API_KEY;
+    });
+
+    test("throws an error when no API key is set", async () => {
+        delete process.env.OPENAI_API_KEY;
+        delete process.env.DEEPSEEK_API_KEY;
+
+        try {
+            await llm.parseIntentToManifest("Test", ["skill"]);
+            expect(false).toBe(true); // Should not reach here
+        } catch (error: any) {
+            expect(error.message).toContain("Missing API key");
+        }
     });
 });
