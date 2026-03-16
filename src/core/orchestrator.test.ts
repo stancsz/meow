@@ -6,14 +6,26 @@ import * as llm from './llm';
 
 // Import to register the function
 import './orchestrator';
+import { DBClient } from '../db/client';
+import * as fs from 'fs';
+import * as path from 'path';
 
 describe("Orchestrator Cloud Function (Real LLM)", () => {
     let originalOpenAIKey: string | undefined;
     let originalDeepseekKey: string | undefined;
+    let originalDbUrl: string | undefined;
+    const testDbPath = 'sqlite://orchestrator_test.db';
 
     beforeAll(() => {
         originalOpenAIKey = process.env.OPENAI_API_KEY;
         originalDeepseekKey = process.env.DEEPSEEK_API_KEY;
+        originalDbUrl = process.env.DATABASE_URL;
+        process.env.DATABASE_URL = testDbPath;
+
+        // Setup local DB for tests
+        const dbClient = new DBClient(testDbPath);
+        const migrationSql = fs.readFileSync(path.join(process.cwd(), 'src', 'db', 'migrations', '001_motherboard.sql'), 'utf-8');
+        dbClient.applyMigration(migrationSql);
     });
 
     afterAll(() => {
@@ -22,6 +34,13 @@ describe("Orchestrator Cloud Function (Real LLM)", () => {
 
         if (originalDeepseekKey) process.env.DEEPSEEK_API_KEY = originalDeepseekKey;
         else delete process.env.DEEPSEEK_API_KEY;
+
+        if (originalDbUrl) process.env.DATABASE_URL = originalDbUrl;
+        else delete process.env.DATABASE_URL;
+
+        if (fs.existsSync('orchestrator_test.db')) {
+            fs.unlinkSync('orchestrator_test.db');
+        }
     });
 
     test("handles valid POST request with generic intent", async () => {

@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-16] Cycle #22 ✅ Completed Move 2: Verified Motherboard SQL Schema + Local DB. Updated DBClient to run standard `exec` migrations and process JSON properly. Updated `orchestrator.ts` and `orchestrator.test.ts` to properly wire up DB operations and pass test suite locally.
 - [2026-03-16] Cycle #21 ✅ Implemented Move 2: Sovereign Motherboard SQL Schema & Local DB via `bun:sqlite` with full table migrations (`001_motherboard.sql`), a `DBClient` wrapper, modified `orchestrator.ts` to checkpoint user sessions, and comprehensive local database tests in `db.test.ts`.
 - [2026-03-16] Cycle #20 ✅ Implemented real LLM intent parsing for Move 1. Added OpenAI SDK, configured function calling for `SwarmManifest`, implemented DAG validation in `orchestrator.ts`, and updated `orchestrator.test.ts`.
 - [2026-03-16] Cycle #19 ✅ Finished Phase 0 Orchestrator Cloud Function implementation. Created `src/core/types.ts`, refactored `src/core/orchestrator.ts` to output `PlanDiffApprove` schema with multiple DAG steps, created `examples/swarm.example.yaml`, and implemented the `server/src/app/api/orchestrator/route.ts` API wrapper.

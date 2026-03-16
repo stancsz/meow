@@ -22,13 +22,8 @@ export class DBClient {
       return;
     }
     if (this.db) {
-        // SQLite doesn't do multiple statements natively well in bun without `run`, so we split by ';'
-        const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
-        this.db.transaction(() => {
-           for (const stmt of statements) {
-               this.db!.run(stmt);
-           }
-        })();
+        // exec is preferred for multiple statements
+        this.db.exec(sql);
     }
   }
 
@@ -70,8 +65,12 @@ export class DBClient {
     if (this.db) {
         const row = this.db.query(`SELECT * FROM orchestrator_sessions WHERE id = ?`).get(sessionId) as any;
         if (row) {
-             row.context = JSON.parse(row.context);
-             row.manifest = JSON.parse(row.manifest);
+             try {
+                 if (typeof row.context === 'string') row.context = JSON.parse(row.context);
+                 if (typeof row.manifest === 'string') row.manifest = JSON.parse(row.manifest);
+             } catch (e) {
+                 console.error("Failed to parse JSON for session", sessionId, e);
+             }
         }
         return row;
     }
