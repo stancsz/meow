@@ -1,0 +1,175 @@
+name: SimpleClaw Job
+
+on:
+  workflow_dispatch:
+    inputs:
+      objective:
+        description: 'What should the agent do?'
+        required: true
+      target_repo:
+        description: 'Target repository (owner/repo). If empty, works on SimpleClaw.'
+        required: false
+      target_branch:
+        description: 'Target branch for the target repository'
+        default: 'main'
+      skills_source:
+        description: 'Optional: Repository with custom skills'
+        required: false
+      skills_path:
+        description: 'Path within skills_source repository to .agents/skills folder'
+        default: '.agents/skills'
+      env_vars_json:
+        description: 'Optional: JSON string of environment variables { "KEY": "VAL" }. MASKED IN LOGS.'
+        required: false
+      model:
+        description: 'AI Model (e.g. deepseek-reasoner, gpt-4o)'
+        default: 'deepseek-reasoner'
+  workflow_call:
+    inputs:
+      objective:
+        type: string
+        required: true
+      target_repo:
+        type: string
+        required: false
+      target_branch:
+        type: string
+        required: false
+        default: 'main'
+      skills_source:
+        type: string
+        required: false
+      skills_path:
+        type: string
+        required: false
+        default: '.agents/skills'
+      env_vars_json:
+        type: string
+        required: false
+      model:
+        type: string
+        required: false
+        default: 'deepseek-reasoner'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Normalize Inputs
+        run: |
+          echo "OBJECTIVE=${{ inputs.objective || github.event.inputs.objective }}" >> $GITHUB_ENV
+          echo "TARGET_REPO=${{ inputs.target_repo || github.event.inputs.target_repo }}" >> $GITHUB_ENV
+          echo "TARGET_BRANCH=${{ inputs.target_branch || github.event.inputs.target_branch || 'main' }}" >> $GITHUB_ENV
+          echo "SKILLS_SOURCE=${{ inputs.skills_source || github.event.inputs.skills_source }}" >> $GITHUB_ENV
+          echo "SKILLS_PATH=${{ inputs.skills_path || github.event.inputs.skills_path || '.agents/skills' }}" >> $GITHUB_ENV
+          echo "ENV_VARS_JSON=${{ inputs.env_vars_json || github.event.inputs.env_vars_json }}" >> $GITHUB_ENV
+          echo "INPUT_MODEL=${{ inputs.model || github.event.inputs.model || 'deepseek-reasoner' }}" >> $GITHUB_ENV
+
+      - name: Checkout SimpleClaw (The Brain)
+        uses: actions/checkout@v4
+        with:
+          path: simpleclaw
+
+      - name: Checkout Target Repo (The Code)
+        if: ${{ env.TARGET_REPO != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          ref: ${{ env.TARGET_BRANCH }}
+          path: target_repo
+          token: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Checkout Skills (The Tools)
+        if: ${{ env.SKILLS_SOURCE != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SKILLS_SOURCE }}
+          path: temp_skills
+
+      - name: Inject Dynamic Environment Variables
+        if: ${{ env.ENV_VARS_JSON != '' }}
+        run: |
+          echo "Parsing dynamic environment variables..."
+          echo '${{ env.ENV_VARS_JSON }}' > env_vars.json
+          node -e "
+            const fs = require('fs');
+            const vars = JSON.parse(fs.readFileSync('env_vars.json', 'utf8'));
+            for (const [key, value] of Object.entries(vars)) {
+              console.log('::add-mask::' + value);
+              fs.appendFileSync(process.env.GITHUB_ENV, key + '=' + value + '\n');
+              console.log('Injected and masked: ' + key);
+            }
+          "
+          rm env_vars.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: simpleclaw/package-lock.json
+
+      - name: Prepare Workspace
+        run: |
+          if [ -d "target_repo" ]; then
+            WORKING_DIR="target_repo"
+          else
+            WORKING_DIR="simpleclaw"
+          fi
+          echo "WORKING_DIR=$WORKING_DIR" >> $GITHUB_ENV
+          
+          # Initialize Open Claw directories in the working repository
+          mkdir -p $WORKING_DIR/.agents/skills
+          mkdir -p $WORKING_DIR/.agents/memory
+          mkdir -p $WORKING_DIR/.agents/soul
+          
+          # Hot load skills
+          if [ -d "temp_skills" ]; then
+            echo "Hot loading skills..."
+            SKILLS_SRC="temp_skills/${{ env.SKILLS_PATH }}"
+            if [ -d "$SKILLS_SRC" ]; then
+              cp -r $SKILLS_SRC/* $WORKING_DIR/.agents/skills/
+              echo "Skills loaded into $WORKING_DIR/.agents/skills"
+            else
+              echo "Warning: Skills path $SKILLS_SRC not found in source repo."
+            fi
+          fi
+          
+          # Ensure dummy memory and soul exist if not provided by target repo
+          if [ ! -f "$WORKING_DIR/.agents/memory/memory.md" ]; then
+            echo "Initializing default memory.md"
+            echo "# Memory" > $WORKING_DIR/.agents/memory/memory.md
+            echo "## Knowledge Entries" >> $WORKING_DIR/.agents/memory/memory.md
+          fi
+
+      - name: Install Dependencies
+        run: |
+          cd simpleclaw
+          npm install -g tsx
+          npm install
+          
+          # Also install target repo deps if they exist and are needed
+          cd ../$WORKING_DIR
+          if [ -f package.json ]; then 
+            npm install || echo "Warning: Failed to install target repo dependencies. Continuing..."
+          fi
+
+      - name: Run Standalone Agent
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          OBJECTIVE: ${{ env.OBJECTIVE }}
+          AGENT_MODEL: ${{ env.INPUT_MODEL }}
+          SIMPLECLAW_HOME: ${{ github.workspace }}/simpleclaw
+          MAX_ITERATIONS: 15
+        run: |
+          cd $WORKING_DIR
+          echo "Executing Agent in CWD: $(pwd)"
+          tsx $SIMPLECLAW_HOME/.github/scripts/simpleclaw-job.ts

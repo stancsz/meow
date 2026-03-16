@@ -19,6 +19,7 @@ export interface RuntimeCapabilityContext {
   source?: string;
   prompt: string;
   memoryContext: string;
+  soulContext: string;
   skillsContext: string;
   platform: string;
   dispatcher: AgentDispatcher;

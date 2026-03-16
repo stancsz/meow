@@ -7,20 +7,20 @@ import { JulesClient } from "./jules.js";
 import chalk from "chalk";
 
 async function main() {
-    console.log(chalk.blue.bold("🤖 SimpleClaw Smart Job Delegator: Initializing..."));
+    console.log(chalk.blue.bold("SimpleClaw Smart Job Delegator: Initializing..."));
 
-    console.log(chalk.cyan("🔍 Fetching latest state from development..."));
+    console.log(chalk.cyan("Fetching latest state from development..."));
     execSync("git fetch origin development");
     const claudeMd = execSync("git show origin/development:CLAUDE.md", { encoding: "utf-8" });
     const specMd = execSync("git show origin/development:SPEC.md", { encoding: "utf-8" });
     const swarmSpec = execSync("git show origin/development:SWARM_SPEC.md", { encoding: "utf-8" });
 
-    console.log(chalk.cyan("🔍 Fetching open Pull Requests..."));
+    console.log(chalk.cyan("Fetching open Pull Requests..."));
     let prsJson = "";
     try {
         prsJson = execSync("gh pr list --json number,title,author,headRefName --state open", { encoding: "utf-8" });
     } catch (e) {
-        console.warn(chalk.yellow("⚠️ Failed to fetch PRs using gh CLI. Proceeding without PR context."));
+        console.warn(chalk.yellow("Failed to fetch PRs using gh CLI. Proceeding without PR context."));
     }
     const prs = prsJson ? JSON.parse(prsJson) : [];
 
@@ -68,7 +68,7 @@ Delegated work MUST be meaningful and advance the project towards the "Beautiful
   "should_delegate": true
 }`;
 
-    console.log(chalk.cyan("🧠 Reasoning about the next steps..."));
+    console.log(chalk.cyan("Reasoning about the next steps..."));
     const response = await llm.generate(systemPrompt, "What is the absolute next task we should delegate to Jules?");
 
     let decision;
@@ -77,7 +77,7 @@ Delegated work MUST be meaningful and advance the project towards the "Beautiful
         if (!jsonMatch) throw new Error("No JSON block found in LLM response");
         decision = JSON.parse(jsonMatch[0]);
     } catch (e: any) {
-        console.error(chalk.red("❌ Failed to parse LLM decision:"), e.message);
+        console.error(chalk.red("Failed to parse LLM decision:"), e.message);
         console.log(chalk.gray("Raw Output:"), response);
         process.exit(1);
     }
@@ -89,7 +89,7 @@ Delegated work MUST be meaningful and advance the project towards the "Beautiful
         console.log(chalk.white("\nNext Task:"), chalk.yellow(decision.task.description));
         
         // Delegation via Jules
-        console.log(chalk.cyan("📤 Delegating to Jules via API..."));
+        console.log(chalk.cyan("Delegating to Jules via API..."));
         
         const jules = new JulesClient();
         const instruction = `${decision.task.description}\n\nIMPORTANT: Read CLAUDE.md first. Update the AGENT WORKSPACE with your progress and mark tasks as done in the BACKLOG if applicable. Provide a clear summary of your work for the reviewer.`;
@@ -97,14 +97,14 @@ Delegated work MUST be meaningful and advance the project towards the "Beautiful
         const result = await jules.delegateTask(instruction);
 
         if (result.success) {
-            console.log(chalk.green.bold("✅ Success:"), result.message);
+            console.log(chalk.green.bold("Success:"), result.message);
             process.exit(0); // Exit immediately after delegation
         } else {
-            console.error(chalk.red("❌ Jules delegation failed:"), result.message);
+            console.error(chalk.red("Jules delegation failed:"), result.message);
             process.exit(1);
         }
     } else {
-        console.log(chalk.yellow("⏸️ Decision: No new tasks to delegate at this time."));
+        console.log(chalk.yellow("Decision: No new tasks to delegate at this time."));
     }
 }
 

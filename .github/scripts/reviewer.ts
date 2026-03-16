@@ -6,7 +6,7 @@ import { createLLM } from "./deepseek.js";
 import chalk from "chalk";
 
 async function main() {
-    console.log(chalk.blue.bold("🔍 SimpleClaw Smart Code Review & Merge: Initializing..."));
+    console.log(chalk.blue.bold("SimpleClaw Smart Code Review & Merge: Initializing..."));
 
     // 0. Setup Git Identity
     console.log(chalk.cyan("Setting up git identity..."));
@@ -20,13 +20,13 @@ async function main() {
         // Fetch all open PRs
         prsJson = execSync("gh pr list --json number,title,author,headRefName,mergeable,baseRefName --state open", { encoding: "utf-8" });
     } catch (e) {
-        console.error(chalk.red("❌ Failed to fetch PRs. Make sure gh CLI is installed and authenticated."));
+        console.error(chalk.red("Failed to fetch PRs. Make sure gh CLI is installed and authenticated."));
         process.exit(1);
     }
 
     const prs = JSON.parse(prsJson);
     if (prs.length === 0) {
-        console.log(chalk.green("✅ No open PRs found."));
+        console.log(chalk.green("No open PRs found."));
         return;
     }
 
@@ -38,7 +38,7 @@ async function main() {
         console.log(chalk.gray(`Author: ${pr.author?.login || 'unknown'}`));
 
         if (pr.mergeable !== "MERGEABLE") {
-            console.log(chalk.yellow(`⚠️ PR #${pr.number} is not mergeable (conflicts). Closing...`));
+            console.log(chalk.yellow(`Warning: PR #${pr.number} is not mergeable (conflicts). Closing...`));
             execSync(`gh pr close ${pr.number} --comment "Closing PR because it has merge conflicts with the main branch. Please resolve conflicts and try again."`);
             continue;
         }
@@ -47,7 +47,7 @@ async function main() {
         console.log(chalk.cyan(`Checking out PR #${pr.number}...`));
         execSync(`gh pr checkout ${pr.number}`);
         
-        console.log(chalk.cyan(`🔍 Fetching mission parameters from ${pr.baseRefName}...`));
+        console.log(chalk.cyan(`Fetching mission parameters from ${pr.baseRefName}...`));
         execSync(`git fetch origin ${pr.baseRefName}`);
         const claudeMd = execSync(`git show origin/${pr.baseRefName}:CLAUDE.md`, { encoding: "utf-8" });
         const specMd = execSync(`git show origin/${pr.baseRefName}:SPEC.md`, { encoding: "utf-8" });
@@ -56,7 +56,7 @@ async function main() {
         const diff = execSync(`git diff origin/${pr.baseRefName}...HEAD`, { encoding: "utf-8" });
 
         if (!diff.trim()) {
-            console.log(chalk.yellow(`⚠️ PR #${pr.number} has no diff against development. Skipping...`));
+            console.log(chalk.yellow(`Warning: PR #${pr.number} has no diff against development. Skipping...`));
             continue;
         }
 
@@ -89,7 +89,7 @@ ${diff}
   "comment": "Final public review comment for the PR, explaining the decision clearly."
 }`;
 
-        console.log(chalk.cyan(`🧠 Reviewing PR #${pr.number}...`));
+        console.log(chalk.cyan(`Reviewing PR #${pr.number}...`));
         const reviewResponse = await llm.generate(systemPrompt, `Should we merge PR #${pr.number}?`);
 
         let review;
@@ -98,7 +98,7 @@ ${diff}
             if (!jsonMatch) throw new Error("No JSON block found");
             review = JSON.parse(jsonMatch[0]);
         } catch (e: any) {
-            console.error(chalk.red("❌ Review failed for PR #" + pr.number));
+            console.error(chalk.red("Review failed for PR #" + pr.number));
             continue;
         }
 
@@ -107,14 +107,14 @@ ${diff}
 
         if (review.decision === "merge") {
             // Post the LLM-generated review comment as an approval log
-            console.log(chalk.cyan("💬 Posting review comment..."));
+            console.log(chalk.cyan("Posting review comment..."));
             try {
                 const commentFile = path.resolve(process.cwd(), "pr_comment.tmp");
                 fs.writeFileSync(commentFile, review.comment);
                 execSync(`gh pr comment ${pr.number} -F "${commentFile}"`);
                 fs.unlinkSync(commentFile);
             } catch (e) {
-                console.warn(chalk.yellow("⚠️ Failed to post comment."));
+                console.warn(chalk.yellow("Failed to post comment."));
             }
 
             // Update CLAUDE.md with a merge note if requested
@@ -147,13 +147,13 @@ ${diff}
                         execSync(`git commit -m "docs: Note merge of PR #${pr.number} in CLAUDE.md"`);
                         console.log(chalk.cyan(`Pushing CLAUDE.md update to ${pr.baseRefName}...`));
                         execSync(`git push origin ${pr.baseRefName}`);
-                        console.log(chalk.green("✅ PR Merged and CLAUDE.md updated."));
+                        console.log(chalk.green("PR Merged and CLAUDE.md updated."));
                     }
                 } else {
-                    console.warn(chalk.yellow("⚠️ Could not find AGENT WORKSPACE section in CLAUDE.md. Skipping history update."));
+                    console.warn(chalk.yellow("Could not find AGENT WORKSPACE section in CLAUDE.md. Skipping history update."));
                 }
             } catch (pushError: any) {
-                console.warn(chalk.red(`⚠️ Failed to update CLAUDE.md (likely branch protection on ${pr.baseRefName}):`), pushError.message);
+                console.warn(chalk.red(`Failed to update CLAUDE.md (likely branch protection on ${pr.baseRefName}):`), pushError.message);
                 console.log(chalk.yellow("Proceeding as the PR was already merged successfully."));
             }
         } else {

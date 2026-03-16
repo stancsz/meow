@@ -7,7 +7,7 @@
  * and delegating tasks to workers (muscle) rather than performing heavy lifting themselves.
  */
 import { loadSkillsContext } from "./skills.ts";
-import { loadLongTermMemory } from "./memory.ts";
+import { loadLongTermMemory, loadSoul } from "./memory.ts";
 import {
   buildSystemPrompt,
   resolveAgentTaskKind,
@@ -207,12 +207,14 @@ async function resolveRuntimeContext(userMessage: string, options: AgentOptions)
 
   const skillsContext = await loadSkillsContext();
   const memoryContext = await loadLongTermMemory();
+  const soulContext = await loadSoul();
   return {
     mode: "cli",
     taskKind: resolveAgentTaskKind({ source: options.source, prompt: userMessage }),
     source: options.source,
     prompt: userMessage,
     memoryContext,
+    soulContext,
     skillsContext,
     platform: process.platform,
     dispatcher: {
@@ -242,6 +244,7 @@ export async function runAgentLoop(
     kind: taskKind,
     platform: runtimeContext.platform,
     memoryContext: runtimeContext.memoryContext,
+    soulContext: runtimeContext.soulContext,
     skillsContext: runtimeContext.skillsContext,
     visibleCapabilityNames,
     model,

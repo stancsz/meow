@@ -6,7 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export async function loadSkillsContext(): Promise<string> {
-  const skillsDir = join(__dirname, "../../.agents/skills");
+  const skillsDir = join(process.cwd(), ".agents/skills");
   let fullContext = "\n\n### AGENT SKILLS\n";
 
   try {

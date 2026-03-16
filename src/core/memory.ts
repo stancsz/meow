@@ -4,30 +4,58 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const MEMORY_DIR = join(__dirname, "../../.agents/memory");
+
+// Deterministic paths that prefer the current working directory for generic agent use
+const getAgentDir = (sub: string) => {
+  const cwdDir = join(process.cwd(), ".agents", sub);
+  const fallbackDir = join(__dirname, "../../.agents", sub);
+  // We prefer CWD if it has the directory or if we are in a generic run
+  return cwdDir; 
+};
+
+const MEMORY_DIR = getAgentDir("memory");
 const MAIN_MEMORY_FILE = join(MEMORY_DIR, "memory.md");
+const SOUL_DIR = getAgentDir("soul");
+const MAIN_SOUL_FILE = join(SOUL_DIR, "soul.md");
 
 export async function loadLongTermMemory(): Promise<string> {
   try {
-    let memoryContent = "\n\n### LONG-TERM MEMORY\n";
+    let memoryContent = "";
     
     // Read the main memory file
-    const mainContent = await readFile(MAIN_MEMORY_FILE, "utf-8");
-    memoryContent += `\n--- MAIN MEMORY ---\n${mainContent}\n`;
-    
-    // Read other logs/files in memory dir
-    const files = await readdir(MEMORY_DIR);
-    for (const file of files) {
-      if (file.endsWith(".md") && file !== "memory.md") {
-        const content = await readFile(join(MEMORY_DIR, file), "utf-8");
-        memoryContent += `\n--- LOG: ${file} ---\n${content}\n`;
-      }
+    try {
+      const mainContent = await readFile(MAIN_MEMORY_FILE, "utf-8");
+      memoryContent += `\n### LONG-TERM MEMORY (memory.md)\n${mainContent}\n`;
+    } catch {
+      // Ignore if memory.md is missing
     }
     
-    return memoryContent;
+    // Read other logs/files in memory dir
+    try {
+      const files = await readdir(MEMORY_DIR);
+      for (const file of files) {
+        if (file.endsWith(".md") && file !== "memory.md") {
+          const content = await readFile(join(MEMORY_DIR, file), "utf-8");
+          memoryContent += `\n--- LOG: ${file} ---\n${content}\n`;
+        }
+      }
+    } catch {
+      // Ignore if dir is missing
+    }
+    
+    return memoryContent || "(Memory is currently empty)";
   } catch (error) {
-    console.warn("No memory file found or error reading memory.");
-    return "\n\n### LONG-TERM MEMORY\n(Memory is currently empty)\n";
+    console.warn("Error reading memory.");
+    return "(Memory is currently empty)";
+  }
+}
+
+export async function loadSoul(): Promise<string> {
+  try {
+    const soulContent = await readFile(MAIN_SOUL_FILE, "utf-8");
+    return `\n### AGENT SOUL (soul.md)\n${soulContent}\n`;
+  } catch {
+    return ""; // Soul is optional
   }
 }
 
