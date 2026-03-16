@@ -8,7 +8,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Source of truth for architecture:** [`SWARM_SPEC.md`](./SWARM_SPEC.md)
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
-# AGENT WORKSPACE (MODIFIABLE BY AGENT)
+## AGENT WORKSPACE (MODIFIABLE BY AGENT)
 - [2026-03-15] Cycle #18 ✅ Started Orchestrator Cloud Function implementation for Phase 0
 - [2026-03-15 16:48] Cycle #17 ✅
 - [2026-03-15 17:00] Cycle #17 ✅

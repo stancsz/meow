@@ -133,15 +133,28 @@ ${diff}
             // Use the LLM-generated summary for a better history log
             const note = `\n- [${date} ${timestamp}] Cycle Merged: ${review.summary} (#${pr.number})`;
             
-            // Find the AGENT WORKSPACE section
-            const newContent = updatedClaudeMd.replace("## AGENT WORKSPACE (MODIFIABLE BY AGENT)", `## AGENT WORKSPACE (MODIFIABLE BY AGENT)${note}`);
+            // Find the AGENT WORKSPACE section - support both # and ## headers
+            const headerRegex = /^(#+)\s*AGENT WORKSPACE \(MODIFIABLE BY AGENT\)/m;
+            let newContent = updatedClaudeMd;
+            
+            if (headerRegex.test(updatedClaudeMd)) {
+                newContent = updatedClaudeMd.replace(headerRegex, (match) => `${match}${note}`);
+            } else {
+                console.warn(chalk.yellow("⚠️ Could not find AGENT WORKSPACE section in CLAUDE.md. Appending to end."));
+                newContent = `${updatedClaudeMd}\n\n## AGENT WORKSPACE (MODIFIABLE BY AGENT)${note}`;
+            }
+            
             fs.writeFileSync(claudeMdPath, newContent);
             
-            execSync('git add CLAUDE.md');
-            execSync(`git commit -m "docs: Note merge of PR #${pr.number} in CLAUDE.md"`);
-            execSync(`git push origin ${pr.baseRefName}`);
-            
-            console.log(chalk.green("✅ PR Merged and CLAUDE.md updated."));
+            const diffCheck = execSync('git diff CLAUDE.md', { encoding: 'utf-8' });
+            if (diffCheck.trim()) {
+                execSync('git add CLAUDE.md');
+                execSync(`git commit -m "docs: Note merge of PR #${pr.number} in CLAUDE.md"`);
+                execSync(`git push origin ${pr.baseRefName}`);
+                console.log(chalk.green("✅ PR Merged and CLAUDE.md updated."));
+            } else {
+                console.log(chalk.yellow("⚠️ No changes to CLAUDE.md detected."));
+            }
         } else {
             console.log(chalk.cyan("Closing PR..."));
             const commentFile = path.resolve(process.cwd(), "pr_comment.tmp");
