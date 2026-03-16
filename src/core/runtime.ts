@@ -19,7 +19,7 @@ import {
   type RuntimeCapabilityContext,
 } from "./capabilities.ts";
 import { createCapabilityExecutor } from "./executor.ts";
-import { loadLongTermMemory, updateMemory } from "./memory.ts";
+import { loadLongTermMemory, loadSoul, updateMemory } from "./memory.ts";
 import { loadSkillsContext } from "./skills.ts";
 import { getCapabilityAuditLog, getVisibleCapabilities, resolveAgentTaskKind } from "./policy.ts";
 import { delegateToOpenCode } from "./opencode-worker.ts";
@@ -72,7 +72,7 @@ export interface RuntimeContext {
   server?: Server;
   governed: GovernedAgentRuntime;
   startupProfile?: RuntimeStartupProfile;
-  submitWork: (input: AgentDispatchSubmitInput) => Promise<void>;
+  submitWork: (input: AgentDispatchSubmitInput) => Promise<AgentLoopResult>;
   close: () => Promise<void>;
 }
 
@@ -214,7 +214,7 @@ export async function startRuntime(options: RuntimeStartOptions = {}): Promise<R
     governed,
     startupProfile,
     submitWork: async (input) => {
-      await dispatcher.submit(input);
+      return await dispatcher.submit(input);
     },
     close: async () => {
       for (const cleanup of cleanupTasks.reverse()) {
@@ -259,6 +259,7 @@ async function buildRuntimeCapabilityContext({
   prompt: string;
 }): Promise<RuntimeCapabilityContext> {
   const memoryContext = await loadLongTermMemory();
+  const soulContext = await loadSoul();
   const skillsContext = await loadSkillsContext();
   return {
     mode,
@@ -266,6 +267,7 @@ async function buildRuntimeCapabilityContext({
     source,
     prompt,
     memoryContext,
+    soulContext,
     skillsContext,
     platform: os.platform(),
     dispatcher,

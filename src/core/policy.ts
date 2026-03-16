@@ -119,14 +119,16 @@ export function buildSystemPrompt(options: {
   kind: AgentTaskKind;
   platform: string;
   memoryContext: string;
+  soulContext: string;
   skillsContext: string;
   visibleCapabilityNames?: string[];
   model: string;
 }): string {
-  const { kind, platform, memoryContext, skillsContext, visibleCapabilityNames = [], model } = options;
+  const { kind, platform, memoryContext, soulContext, skillsContext, visibleCapabilityNames = [], model } = options;
 
   const sharedSections = [
     "You are SimpleClaw, an autonomous versatile agent.",
+    soulContext ? `\n### IDENTITY & PERSONA\n${soulContext}\n` : "",
     "",
     `**Current Platform**: ${platform}`,
     `**Core Model**: ${model}`,

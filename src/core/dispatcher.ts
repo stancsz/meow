@@ -1,4 +1,5 @@
 
+import { randomUUID } from "node:crypto";
 import type { SwarmManifest, Task } from "./types.ts";
 import { DBClient } from "../db/client.ts";
 import { executeWorkerTask, type WorkerResult } from "../workers/template.ts";
@@ -377,9 +378,10 @@ export async function executeSwarmManifest(
       results[task.id] = result;
       deferredResolvers.get(task.id)?.resolve(result);
       return result;
-    } catch (error) {
+    } catch (error: any) {
+       const errResult: WorkerResult = { status: "error", error: error.message || String(error) };
        deferredResolvers.get(task.id)?.reject(error);
-       // Error is already captured by deferred promise, no need to re-throw
+       return errResult;
     }
   };
 

@@ -13,7 +13,7 @@ function execSafe(command: string, options: any = {}): string | null {
     try {
         return execSync(command, { encoding: "utf-8", ...options });
     } catch (e: any) {
-        console.warn(chalk.yellow(`\n⚠️  Command failed: ${command}`));
+        console.warn(chalk.yellow(`\nCommand failed: ${command}`));
         if (e.stderr) console.warn(chalk.gray(e.stderr.toString()));
         return null;
     }
@@ -33,7 +33,7 @@ function getPRMergeability(prNumber: number): string {
 }
 
 async function main() {
-    console.log(chalk.blue.bold("🔍 SimpleClaw Smart Code Review & Merge: Initializing..."));
+    console.log(chalk.blue.bold("SimpleClaw Smart Code Review & Merge: Initializing..."));
 
     // 0. Setup Git Identity
     console.log(chalk.cyan("Setting up git identity..."));
@@ -47,13 +47,13 @@ async function main() {
         // Fetch all open PRs
         prsJson = execSync("gh pr list --json number,title,author,headRefName,mergeable,baseRefName --state open", { encoding: "utf-8" });
     } catch (e) {
-        console.error(chalk.red("❌ Failed to fetch PRs. Make sure gh CLI is installed and authenticated."));
+        console.error(chalk.red("Failed to fetch PRs. Make sure gh CLI is installed and authenticated."));
         process.exit(1);
     }
 
     const prs = JSON.parse(prsJson);
     if (prs.length === 0) {
-        console.log(chalk.green("✅ No open PRs found."));
+        console.log(chalk.green("No open PRs found."));
         return;
     }
 
@@ -68,13 +68,13 @@ async function main() {
         
         // Handle UNKNOWN state by waiting briefly
         if (mergeability === "UNKNOWN") {
-            console.log(chalk.gray(`⏳ Mergeability is UNKNOWN for PR #${pr.number}. Waiting 5s...`));
+            console.log(chalk.gray(`Mergeability is UNKNOWN for PR #${pr.number}. Waiting 5s...`));
             execSync("sleep 5");
             mergeability = getPRMergeability(pr.number);
         }
 
         if (mergeability === "CONFLICTING") {
-            console.log(chalk.yellow(`⚠️ PR #${pr.number} is not mergeable (conflicts). Closing...`));
+            console.log(chalk.yellow(`Warning: PR #${pr.number} is not mergeable (conflicts). Closing...`));
             execSafe(`gh pr close ${pr.number} --comment "Closing PR because it has merge conflicts with the main branch. Please resolve conflicts and try again."`);
             continue;
         }
@@ -85,11 +85,11 @@ async function main() {
         const checkoutResult = execSafe(`gh pr checkout ${pr.number}`);
         
         if (checkoutResult === null) {
-            console.error(chalk.red(`❌ Failed to checkout PR #${pr.number}. Skipping...`));
+            console.error(chalk.red(`Failed to checkout PR #${pr.number}. Skipping...`));
             continue;
         }
         
-        console.log(chalk.cyan(`🔍 Fetching mission parameters from ${pr.baseRefName}...`));
+        console.log(chalk.cyan(`Fetching mission parameters from ${pr.baseRefName}...`));
         execSafe(`git fetch origin ${pr.baseRefName}`);
         const claudeMd = execSafe(`git show origin/${pr.baseRefName}:CLAUDE.md`) || "Error reading CLAUDE.md";
         const specMd = execSafe(`git show origin/${pr.baseRefName}:SPEC.md`) || "Error reading SPEC.md";
@@ -102,11 +102,11 @@ async function main() {
         const testResultsPath = path.resolve(process.cwd(), "test_results.log");
         if (fs.existsSync(testResultsPath)) {
             testResults = fs.readFileSync(testResultsPath, "utf-8");
-            console.log(chalk.cyan(`📝 Including test results (size: ${testResults.length} bytes)...`));
+            console.log(chalk.cyan(`Including test results (size: ${testResults.length} bytes)...`));
         }
 
         if (!diff.trim()) {
-            console.log(chalk.yellow(`⚠️ PR #${pr.number} has no diff against development. Skipping...`));
+            console.log(chalk.yellow(`Warning: PR #${pr.number} has no diff against development. Skipping...`));
             continue;
         }
 
@@ -160,7 +160,7 @@ ${testResults}
   ]
 } (If decision is not 'fix', leave 'fixes' as an empty array [])`;
 
-        console.log(chalk.cyan(`🧠 Reviewing PR #${pr.number}...`));
+        console.log(chalk.cyan(`Reviewing PR #${pr.number}...`));
         const reviewResponse = await llm.generate(systemPrompt, `Should we merge PR #${pr.number}?`);
 
         let review;
@@ -169,7 +169,7 @@ ${testResults}
             if (!jsonMatch) throw new Error("No JSON block found");
             review = JSON.parse(jsonMatch[0]);
         } catch (e: any) {
-            console.error(chalk.red("❌ Review failed for PR #" + pr.number));
+            console.error(chalk.red("Review failed for PR #" + pr.number));
             continue;
         }
 
@@ -180,24 +180,24 @@ ${testResults}
 
         if (review.decision === "merge" || review.decision === "fix") {
             if (review.decision === "fix" && review.fixes && review.fixes.length > 0) {
-                console.log(chalk.blue(`🛠️  Applying ${review.fixes.length} fixes...`));
+                console.log(chalk.blue(`Applying ${review.fixes.length} fixes...`));
                 for (const fix of review.fixes) {
                     try {
                         const filePath = path.resolve(process.cwd(), fix.file);
                         if (!fs.existsSync(filePath)) {
-                            console.warn(chalk.yellow(`⚠️ File not found: ${fix.file}`));
+                            console.warn(chalk.yellow(`Warning: File not found: ${fix.file}`));
                             continue;
                         }
                         let content = fs.readFileSync(filePath, "utf-8");
                         if (!content.includes(fix.original)) {
-                            console.warn(chalk.yellow(`⚠️ Could not find original text in ${fix.file}. Skipping this fix.`));
+                            console.warn(chalk.yellow(`Warning: Could not find original text in ${fix.file}. Skipping this fix.`));
                             continue;
                         }
                         content = content.replace(fix.original, fix.replacement);
                         fs.writeFileSync(filePath, content);
                         console.log(chalk.gray(`  - Fixed: ${fix.file} (${fix.explanation})`));
                     } catch (e: any) {
-                        console.error(chalk.red(`❌ Failed to apply fix to ${fix.file}: ${e.message}`));
+                        console.error(chalk.red(`Failed to apply fix to ${fix.file}: ${e.message}`));
                     }
                 }
 
@@ -208,7 +208,7 @@ ${testResults}
                     console.log(chalk.cyan(`Pushing fixes to ${pr.headRefName}...`));
                     execSync(`git push origin HEAD:${pr.headRefName}`);
                 } catch (e: any) {
-                    console.warn(chalk.yellow(`⚠️ Failed to push fixes: ${e.message}`));
+                    console.warn(chalk.yellow(`Warning: Failed to push fixes: ${e.message}`));
                 }
             }
 
@@ -221,7 +221,7 @@ ${testResults}
             }
 
             // Post the LLM-generated review comment as an approval log
-            console.log(chalk.cyan("💬 Posting review comment..."));
+            console.log(chalk.cyan("Posting review comment..."));
             const commentFile = path.resolve(process.cwd(), `pr_comment_${pr.number}.tmp`);
             fs.writeFileSync(commentFile, review.comment);
             execSafe(`gh pr comment ${pr.number} -F "${commentFile}"`);
@@ -256,16 +256,16 @@ ${testResults}
                             execSync(`git commit -m "docs: Note merge of PR #${pr.number} in CLAUDE.md"`);
                             console.log(chalk.cyan(`Pushing CLAUDE.md update to ${pr.baseRefName}...`));
                             execSafe(`git push origin ${pr.baseRefName}`);
-                            console.log(chalk.green("✅ PR Merged and CLAUDE.md updated."));
+                            console.log(chalk.green("PR Merged and CLAUDE.md updated."));
                         }
                     } else {
-                        console.warn(chalk.yellow("⚠️ Could not find AGENT WORKSPACE section in CLAUDE.md."));
+                        console.warn(chalk.yellow("Could not find AGENT WORKSPACE section in CLAUDE.md."));
                     }
                 } catch (pushError: any) {
-                    console.warn(chalk.red(`⚠️ Failed to update CLAUDE.md history: ${pushError.message}`));
+                    console.warn(chalk.red(`Failed to update CLAUDE.md history: ${pushError.message}`));
                 }
             } else {
-                console.error(chalk.red(`❌ Failed to merge PR #${pr.number}. It may have been modified or invalidated during review.`));
+                console.error(chalk.red(`Failed to merge PR #${pr.number}. It may have been modified or invalidated during review.`));
             }
         } else {
             console.log(chalk.cyan("Closing PR..."));
@@ -290,9 +290,9 @@ async function runWithRetry() {
             await main();
             return; // Success
         } catch (err) {
-            console.error(chalk.red(`⚠️  Attempt ${i} failed:`), err);
+            console.error(chalk.red(`Attempt ${i} failed:`), err);
             if (i === MAX_RETRIES) {
-                console.error(chalk.red.bold("❌ All retry attempts failed. Exiting."));
+                console.error(chalk.red.bold("All retry attempts failed. Exiting."));
                 process.exit(1);
             }
             console.log(chalk.gray(`Waiting ${RETRY_DELAY_MS / 1000}s before next attempt...`));
