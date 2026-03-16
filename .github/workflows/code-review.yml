@@ -31,8 +31,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install -g tsx chalk openai dotenv
-          if [ -f package.json ]; then bun install; fi
+          if [ -f package.json ]; then bun install || npm install; fi
 
       - name: Run Tests
         continue-on-error: true

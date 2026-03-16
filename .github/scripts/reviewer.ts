@@ -5,6 +5,33 @@ import { execSync } from "child_process";
 import { createLLM } from "./deepseek.js";
 import chalk from "chalk";
 
+/**
+ * Executes a command and returns the output or null if it fails,
+ * preventing the entire script from crashing on non-zero exit codes.
+ */
+function execSafe(command: string, options: any = {}): string | null {
+    try {
+        return execSync(command, { encoding: "utf-8", ...options });
+    } catch (e: any) {
+        console.warn(chalk.yellow(`\n⚠️  Command failed: ${command}`));
+        if (e.stderr) console.warn(chalk.gray(e.stderr.toString()));
+        return null;
+    }
+}
+
+/**
+ * Fetches the latest mergeability status for a PR.
+ */
+function getPRMergeability(prNumber: number): string {
+    const json = execSafe(`gh pr view ${prNumber} --json mergeable`);
+    if (!json) return "UNKNOWN";
+    try {
+        return JSON.parse(json).mergeable || "UNKNOWN";
+    } catch {
+        return "UNKNOWN";
+    }
+}
+
 async function main() {
     console.log(chalk.blue.bold("🔍 SimpleClaw Smart Code Review & Merge: Initializing..."));
 
@@ -37,9 +64,18 @@ async function main() {
         console.log(chalk.white(`PR #${pr.number}: ${pr.title}`));
         console.log(chalk.gray(`Author: ${pr.author?.login || 'unknown'}`));
 
-        if (pr.mergeable !== "MERGEABLE") {
+        let mergeability = pr.mergeable;
+        
+        // Handle UNKNOWN state by waiting briefly
+        if (mergeability === "UNKNOWN") {
+            console.log(chalk.gray(`⏳ Mergeability is UNKNOWN for PR #${pr.number}. Waiting 5s...`));
+            execSync("sleep 5");
+            mergeability = getPRMergeability(pr.number);
+        }
+
+        if (mergeability === "CONFLICTING") {
             console.log(chalk.yellow(`⚠️ PR #${pr.number} is not mergeable (conflicts). Closing...`));
-            execSync(`gh pr close ${pr.number} --comment "Closing PR because it has merge conflicts with the main branch. Please resolve conflicts and try again."`);
+            execSafe(`gh pr close ${pr.number} --comment "Closing PR because it has merge conflicts with the main branch. Please resolve conflicts and try again."`);
             continue;
         }
 
@@ -135,6 +171,7 @@ ${testResults}
             review.decision === "fix" ? chalk.blue("FIX & MERGE") : chalk.red("CLOSE"));
         console.log(chalk.gray("Rationale:"), review.thought);
 
+<<<<<<< Updated upstream
         if (review.decision === "merge" || review.decision === "fix") {
             if (review.decision === "fix" && review.fixes && review.fixes.length > 0) {
                 console.log(chalk.blue(`🛠️  Applying ${review.fixes.length} fixes...`));
@@ -167,66 +204,70 @@ ${testResults}
                 } catch (e: any) {
                     console.warn(chalk.yellow(`⚠️ Failed to push fixes: ${e.message}`));
                 }
+=======
+        if (review.decision === "merge") {
+            // Re-verify mergeability before final move
+            const finalCheck = getPRMergeability(pr.number);
+            if (finalCheck !== "MERGEABLE") {
+                console.warn(chalk.red(`🚫 PR #${pr.number} is no longer mergeable (Status: ${finalCheck}). Skipping merge.`));
+                execSync(`git checkout ${pr.baseRefName}`);
+                continue;
+>>>>>>> Stashed changes
             }
 
             // Post the LLM-generated review comment as an approval log
             console.log(chalk.cyan("💬 Posting review comment..."));
-            try {
-                const commentFile = path.resolve(process.cwd(), "pr_comment.tmp");
-                fs.writeFileSync(commentFile, review.comment);
-                execSync(`gh pr comment ${pr.number} -F "${commentFile}"`);
-                fs.unlinkSync(commentFile);
-            } catch (e) {
-                console.warn(chalk.yellow("⚠️ Failed to post comment."));
-            }
+            const commentFile = path.resolve(process.cwd(), `pr_comment_${pr.number}.tmp`);
+            fs.writeFileSync(commentFile, review.comment);
+            execSafe(`gh pr comment ${pr.number} -F "${commentFile}"`);
+            fs.unlinkSync(commentFile);
 
             // Update CLAUDE.md with a merge note if requested
             console.log(chalk.cyan("Merging PR (Squash Mode)..."));
-            execSync(`gh pr merge ${pr.number} --squash --delete-branch`);
+            const mergeResult = execSafe(`gh pr merge ${pr.number} --squash --delete-branch`);
             
-            // Go back to the base branch
-            execSync(`git checkout ${pr.baseRefName}`);
-            execSync(`git pull origin ${pr.baseRefName}`);
-            
-            // Update CLAUDE.md with a merge note
-            const claudeMdPath = path.resolve(process.cwd(), "CLAUDE.md");
-            const date = new Date().toISOString().split('T')[0];
-            const timestamp = new Date().toISOString().split('T')[1].substring(0, 5);
-            // Use the LLM-generated summary for a better history log
-            const note = `\n- [${date} ${timestamp}] Cycle Merged: ${review.summary} (#${pr.number})`;
-
-            try {
-                // Find the AGENT WORKSPACE section - support both # and ## headers
-                const headerRegex = /^(#+)\s*AGENT WORKSPACE \(MODIFIABLE BY AGENT\)/m;
-                let newContent = fs.readFileSync(claudeMdPath, "utf-8");
+            if (mergeResult !== null) {
+                // Go back to the base branch
+                execSync(`git checkout ${pr.baseRefName}`);
+                execSafe(`git pull origin ${pr.baseRefName}`);
                 
-                if (headerRegex.test(newContent)) {
-                    newContent = newContent.replace(headerRegex, (match) => `${match}${note}`);
-                    fs.writeFileSync(claudeMdPath, newContent);
+                // Update CLAUDE.md with a merge note
+                const claudeMdPath = path.resolve(process.cwd(), "CLAUDE.md");
+                const date = new Date().toISOString().split('T')[0];
+                const timestamp = new Date().toISOString().split('T')[1].substring(0, 5);
+                const note = `\n- [${date} ${timestamp}] Cycle Merged: ${review.summary} (#${pr.number})`;
+
+                try {
+                    const headerRegex = /^(#+)\s*AGENT WORKSPACE \(MODIFIABLE BY AGENT\)/m;
+                    let content = fs.readFileSync(claudeMdPath, "utf-8");
                     
-                    const diffCheck = execSync('git diff CLAUDE.md', { encoding: 'utf-8' });
-                    if (diffCheck.trim()) {
-                        execSync('git add CLAUDE.md');
-                        execSync(`git commit -m "docs: Note merge of PR #${pr.number} in CLAUDE.md"`);
-                        console.log(chalk.cyan(`Pushing CLAUDE.md update to ${pr.baseRefName}...`));
-                        execSync(`git push origin ${pr.baseRefName}`);
-                        console.log(chalk.green("✅ PR Merged and CLAUDE.md updated."));
+                    if (headerRegex.test(content)) {
+                        content = content.replace(headerRegex, (match) => `${match}${note}`);
+                        fs.writeFileSync(claudeMdPath, content);
+                        
+                        const diffCheck = execSync('git diff CLAUDE.md', { encoding: 'utf-8' });
+                        if (diffCheck.trim()) {
+                            execSync('git add CLAUDE.md');
+                            execSync(`git commit -m "docs: Note merge of PR #${pr.number} in CLAUDE.md"`);
+                            console.log(chalk.cyan(`Pushing CLAUDE.md update to ${pr.baseRefName}...`));
+                            execSafe(`git push origin ${pr.baseRefName}`);
+                            console.log(chalk.green("✅ PR Merged and CLAUDE.md updated."));
+                        }
+                    } else {
+                        console.warn(chalk.yellow("⚠️ Could not find AGENT WORKSPACE section in CLAUDE.md."));
                     }
-                } else {
-                    console.warn(chalk.yellow("⚠️ Could not find AGENT WORKSPACE section in CLAUDE.md. Skipping history update."));
+                } catch (pushError: any) {
+                    console.warn(chalk.red(`⚠️ Failed to update CLAUDE.md history: ${pushError.message}`));
                 }
-            } catch (pushError: any) {
-                console.warn(chalk.red(`⚠️ Failed to update CLAUDE.md (likely branch protection on ${pr.baseRefName}):`), pushError.message);
-                console.log(chalk.yellow("Proceeding as the PR was already merged successfully."));
+            } else {
+                console.error(chalk.red(`❌ Failed to merge PR #${pr.number}. It may have been modified or invalidated during review.`));
             }
         } else {
             console.log(chalk.cyan("Closing PR..."));
-            const commentFile = path.resolve(process.cwd(), "pr_comment.tmp");
+            const commentFile = path.resolve(process.cwd(), `pr_comment_close_${pr.number}.tmp`);
             fs.writeFileSync(commentFile, review.comment);
-            // Post comment first (which supports -F)
-            execSync(`gh pr comment ${pr.number} -F "${commentFile}"`);
-            // Then close without redundancy
-            execSync(`gh pr close ${pr.number}`);
+            execSafe(`gh pr comment ${pr.number} -F "${commentFile}"`);
+            execSafe(`gh pr close ${pr.number}`);
             fs.unlinkSync(commentFile);
         }
 
