@@ -1,6 +1,7 @@
 import { expect, test, describe, beforeEach, afterAll } from 'bun:test';
 import { NextRequest } from 'next/server';
-import { GET, POST, DELETE } from '../app/api/keys/route';
+import { GET, POST } from '../app/api/keys/route';
+import { DELETE } from '../app/api/keys/[id]/route';
 import { getDbClient } from '../../../src/db/client';
 
 describe('Keys API route tests', () => {
@@ -8,8 +9,14 @@ describe('Keys API route tests', () => {
     const MOCK_USER_ID = 'test-user';
 
     beforeEach(() => {
-        // Clear all keys from the DB
+        // Init the db
         const dbClient = getDbClient();
+        const fs = require('fs');
+        const path = require('path');
+        const migrationSql = fs.readFileSync(path.join(process.cwd(), 'src/db/migrations/001_motherboard.sql'), 'utf-8');
+        dbClient.applyMigration(migrationSql);
+
+        // Clear all keys from the DB
         const rows = (dbClient as any).db.query(`SELECT id FROM vault_user_secrets`).all();
         rows.forEach((row: any) => {
             dbClient.deleteSecret(MOCK_USER_ID, row.id);
@@ -65,11 +72,11 @@ describe('Keys API route tests', () => {
         const dbClient = getDbClient();
         const id = dbClient.addSecret(MOCK_USER_ID, 'anthropic_key', 'some-encrypted-string', 'anthropic');
 
-        const req = new NextRequest(`http://localhost:3000/api/keys?id=${id}`, {
+        const req = new NextRequest(`http://localhost:3000/api/keys/${id}`, {
             method: 'DELETE'
         });
 
-        const res = await DELETE(req);
+        const res = await DELETE(req, { params: { id } });
         const data = await res.json();
 
         expect(res.status).toBe(200);

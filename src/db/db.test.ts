@@ -125,8 +125,8 @@ describe("Database Client Tests (SQLite Local)", () => {
         // Seed a secret
         const secretId = crypto.randomUUID();
         rawDb.run(
-            `INSERT INTO vault_user_secrets (id, name, secret, provider) VALUES (?, ?, ?, ?)`,
-            [secretId, "test_key", "secret_value_123", "openai"]
+            `INSERT INTO vault_user_secrets (id, user_id, name, secret, provider) VALUES (?, ?, ?, ?, ?)`,
+            [secretId, "test-user-id", "test_key", "secret_value_123", "openai"]
         );
         rawDb.close();
 

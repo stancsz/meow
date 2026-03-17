@@ -48,6 +48,37 @@ describe('KMS Provider (Local)', () => {
     });
 });
 
+describe('BYOK Flow Simulation (Local)', () => {
+    let mockWorkerDb: Record<string, string> = {};
+
+    beforeEach(() => {
+        process.env.KMS_PROVIDER = 'local';
+        mockWorkerDb = {};
+    });
+
+    afterAll(() => {
+        delete process.env.KMS_PROVIDER;
+    });
+
+    it('should correctly encrypt a custom API key and decrypt it', async () => {
+        const kms = getKMSProvider();
+        const userProvidedKey = 'sk-proj-xyz123-super-secret-openai-key';
+
+        // Encrypt the user's secret
+        const encryptedKey = await kms.encrypt(userProvidedKey);
+
+        // Ensure it is encrypted
+        expect(encryptedKey).not.toEqual(userProvidedKey);
+        expect(encryptedKey.split(':').length).toBe(3);
+
+        // Decrypt the user's secret
+        const decryptedKey = await kms.decrypt(encryptedKey);
+
+        // Ensure it is decrypted correctly
+        expect(decryptedKey).toEqual(userProvidedKey);
+    });
+});
+
 describe('Worker Lifecycle Simulation (Local)', () => {
     let mockWorkerDb: Record<string, string> = {};
 
