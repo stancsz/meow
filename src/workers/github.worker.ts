@@ -1,4 +1,4 @@
-import * as fs from "fs";
+
 import { DBClient } from "../db/client.ts";
 import type { Task } from "../core/types.ts";
 import type { WorkerResult } from "./template.ts";
@@ -24,7 +24,7 @@ export async function executeGithubWorkerTask(
     if (task.skills && task.skills.length > 0) {
       try {
         // Read from src/skills instead of src/workers/skills as requested in the prompt
-        skillContent = fs.readFileSync(`src/skills/${task.skills[0]}.md`, "utf-8");
+        skillContent = await Bun.file(`src/skills/${task.skills[0]}.md`).text();
       } catch (err: any) {
         skillContent = "Skill file not found or failed to load.";
       }
