@@ -14,7 +14,7 @@
     "@supabase/supabase-js": "^2.99.1",
     "better-sqlite3": "^12.6.2",
     "lucide-react": "^0.577.0",
-    "next": "15.1.7",
+    "next": "^16.1.7",
     "openai": "^6.31.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
