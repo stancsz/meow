@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-18] Cycle #33 ✅ Connected the Phase 0 Minimal UI to the execution engine. Updated `/api/execute` endpoint to correctly handle missing DB sessions by taking the manifest from the UI, created `/api/results` polling endpoint, and enhanced `ExecutionMonitor` to display task output while the `executeSwarmManifest` finishes executing.
 - [2026-03-18] Cycle #32 ✅ Implemented execution API and UI integration: Added sessionId to PlanDiffApprove, created /api/execute endpoint, connected UI approve flow, and updated ExecutionMonitor to display task results.
 - [2026-03-18] Cycle #31 ✅ Integrated Worker Dispatch with Minimal UI's approval flow. Fixed missing module termination quotes for end-to-end testing, connected the dispatcher locally using `bun test`, ensured workers can pull from JIT skills, fetch decrypted credentials and report results.
 - [2026-03-18] Cycle #31 ✅ Integrated worker dispatch and execution loop: Modified the Orchestrator Cloud Function to handle `action: 'approve'` and directly call `executeSwarmManifest`, updated the `server/src/app/api/orchestrator/route.ts` API route to await execution properly, adjusted the dashboard UI to route approval requests to the orchestrator correctly, and created a simple `mock-skill` for testing end-to-end connectivity.

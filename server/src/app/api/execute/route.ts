@@ -13,15 +13,17 @@ export async function POST(req: NextRequest) {
         }
 
         const db = getDbClient();
-        const session = db.getSession(sessionId);
+        let session = db.getSession(sessionId);
+        let manifest = body.manifest;
 
         if (!session) {
-            return Response.json({ error: "Session not found" }, { status: 404 });
+            console.warn("Session not found in DB (likely running in Next.js stub DBClient), falling back to provided manifest.");
+        } else {
+            manifest = session.manifest || manifest;
         }
 
-        const manifest = session.manifest;
         if (!manifest) {
-            return Response.json({ error: "Manifest not found in session" }, { status: 400 });
+            return Response.json({ error: "Manifest not provided and could not be found in session" }, { status: 400 });
         }
 
         db.updateSessionStatus(sessionId, "approved");

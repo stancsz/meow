@@ -6,10 +6,12 @@ interface ExecutionMonitorProps {
   status: 'idle' | 'planning' | 'waiting_approval' | 'executing' | 'completed' | 'error';
   errorMessage?: string;
   taskResults?: any[];
+  sessionId?: string | null;
 }
 
-export default function ExecutionMonitor({ status, errorMessage, taskResults }: ExecutionMonitorProps) {
+export default function ExecutionMonitor({ status, errorMessage, taskResults, sessionId }: ExecutionMonitorProps) {
   const [dots, setDots] = useState('');
+  const [polledResults, setPolledResults] = useState<any[]>([]);
 
   useEffect(() => {
     if (status === 'planning' || status === 'executing') {
@@ -21,6 +23,35 @@ export default function ExecutionMonitor({ status, errorMessage, taskResults }: 
       setDots('');
     }
   }, [status]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    const fetchResults = async () => {
+      if (!sessionId) return;
+      try {
+        const res = await fetch(`/api/results?sessionId=${sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.results) {
+            setPolledResults(data.results);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch task results", err);
+      }
+    };
+
+    if (status === 'executing') {
+      interval = setInterval(fetchResults, 2000);
+    } else if (status === 'completed') {
+      fetchResults();
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [status, sessionId]);
 
   if (status === 'idle') return null;
 
@@ -73,6 +104,8 @@ export default function ExecutionMonitor({ status, errorMessage, taskResults }: 
 
   const display = getStatusDisplay();
 
+  const combinedResults = polledResults.length > 0 ? polledResults : (taskResults || []);
+
   return (
     <div style={{ marginTop: '1.5rem' }}>
       <div
@@ -93,11 +126,11 @@ export default function ExecutionMonitor({ status, errorMessage, taskResults }: 
         {display.text}
       </div>
 
-      {taskResults && taskResults.length > 0 && (
+      {combinedResults && combinedResults.length > 0 && (
         <div style={{ marginTop: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem' }}>
           <h3 style={{ marginBottom: '1rem' }}>Worker Results</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {taskResults.map((result, idx) => (
+            {combinedResults.map((result, idx) => (
               <div key={idx} style={{
                 padding: '0.75rem',
                 backgroundColor: 'var(--input-bg)',
