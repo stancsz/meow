@@ -108,9 +108,19 @@ let dotenvConfigPromise: Promise<unknown> | undefined;
 export async function getOpenAIClient(): Promise<OpenAIClient> {
   if (!openaiClientPromise) {
     openaiClientPromise = import("openai").then(({ default: OpenAI }) => {
+      const model = process.env.AGENT_MODEL || "";
+      let apiKey = process.env.OPENAI_API_KEY;
+      let baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+
+      if (model.includes("deepseek") && process.env.DEEPSEEK_API_KEY) {
+        apiKey = process.env.DEEPSEEK_API_KEY;
+        baseURL = "https://api.deepseek.com";
+      }
+
       return new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-        baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+        apiKey,
+        baseURL,
+        dangerouslyAllowBrowser: true,
       }) as OpenAIClient;
     });
   }
