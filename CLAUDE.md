@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-17 05:15] Cycle #28 ✅ Created comprehensive end-to-end integration test validating complete orchestrator → worker → motherboard pipeline. Added `test:integration` script to `package.json`, created test fixture for github issues skill, and added `src/core/integration.test.ts` checking KMS decryption, dispatcher loop, JIT skill loading and idempotency.
 - [2026-03-17 03:27] Cycle #27 ✅ Implemented end-to-end swarm integration test: Validated orchestrator → worker dispatch → KMS credential flow → skill execution → result logging. Created `test-api` skill, updated worker template to actually read skills and decrypt credentials from SQLite mock, and added `src/core/integration.test.ts`.
 - [2026-03-17 02:42] Cycle #26 ✅ Integrated Worker Dispatch with Minimal UI's approval flow. Created `server/src/app/api/execute/route.ts` API endpoint to handle plan execution using `executeSwarmManifest` and updated `server/src/app/page.tsx` to call this endpoint and reflect the actual execution status.
 - [2026-03-16 19:15] Cycle #25 ✅ Implemented Phase 0 Minimal UI: Created `server/src/app/page.tsx` dashboard, `PlanDisplay` and `ExecutionMonitor` components.
@@ -64,7 +65,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 0 — Orchestrator CF:** Single Cloud Function: text prompt → `swarm.yaml` manifest
 - [x] **Phase 0 — Worker Template:** Ephemeral CF that boots, loads JIT skill, fetches KMS-decrypted credential, executes, terminates
 - [x] **Phase 0 — Motherboard Schema:** Apply `SWARM_SPEC.md §9.2` SQL schema to a managed Supabase project / local SQLite equivalent
-- [x] **Phase 0 — Worker Dispatch + Execution Loop:** Shift priority here for Move 3
+- [x] **Phase 0 — Worker Dispatch + Execution Loop:** Shift priority here for Move 3. Phase 0 core functionality is now validated and ready for Phase 1 features.
 - [x] **Phase 0 — KMS Flow:** GCP Cloud KMS key ring setup + encrypt/decrypt service for Supabase `service_role` keys
 - [x] **Phase 0 — Minimal UI:** Text input → plan display → approve button (Next.js dashboard in `server/`)
 - [ ] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault
