@@ -15,7 +15,7 @@ export async function loadPlugins() {
     const files = await readdir(pluginsDir);
 
     for (const file of files) {
-      if (file.endsWith(") || file.endsWith(")) {
+      if (file.endsWith(".ts") || file.endsWith(".js")) {
         const pluginBaseName = file.replace(/\.(ts|js)$/, "");
         const envVarName = `ENABLE_${pluginBaseName.toUpperCase()}`;
         

@@ -1,10 +1,10 @@
 import { performance } from "node:perf_hooks";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
-import { extensionRegistry, type Extension, type RuntimeMode } from "./extensions;
-import { loadPlugins } from "./loader;
-import { enforceSecurityLocks } from "../security/triple_lock;
-import { createCliTransport, type CliTransport } from "../../cli/index;
+import { extensionRegistry, type Extension, type RuntimeMode } from "./extensions";
+import { loadPlugins } from "./loader";
+import { enforceSecurityLocks } from "../security/triple_lock";
+import { createCliTransport, type CliTransport } from "../../cli/index";
 import {
   createAgentDispatcher,
   type AgentDispatcher,
