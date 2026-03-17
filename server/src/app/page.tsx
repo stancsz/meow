@@ -59,7 +59,8 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: sessionId
+          sessionId: sessionId,
+          manifest: pda.plan
         }),
       });
 
@@ -116,7 +117,7 @@ export default function Home() {
           </form>
         </div>
 
-        <ExecutionMonitor status={status} errorMessage={errorMessage} taskResults={taskResults} />
+        <ExecutionMonitor status={status} errorMessage={errorMessage} taskResults={taskResults} sessionId={sessionId} />
 
         {pda && status !== 'error' && (
           <div style={{ marginTop: '2rem' }}>
