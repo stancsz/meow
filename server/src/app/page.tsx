@@ -54,12 +54,11 @@ export default function Home() {
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/orchestrator', {
+      const response = await fetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
-          action: 'approve',
           manifest: pda.plan, // Passing manifest as requested
           user_id: 'test-user', // Matching minimal auth
         }),
@@ -68,16 +67,14 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to approve plan');
+        throw new Error(data.error || 'Failed to execute plan');
       }
 
-      // Simulate execution time for Phase 0
-      setTimeout(() => {
-        setStatus('completed');
-      }, 3000);
+      setStatus('completed');
+      console.log('Execution results:', data.results);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'An unexpected error occurred during approval.');
+      setErrorMessage(err.message || 'An unexpected error occurred during execution.');
       setStatus('error');
     }
   };
