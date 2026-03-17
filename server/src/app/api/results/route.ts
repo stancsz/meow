@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getDbClient } from "../../../../../src/db/client";
+import { getDbClient } from "../../../../../../../src/db/client";
 
 export async function GET(req: NextRequest) {
     try {
@@ -12,8 +12,9 @@ export async function GET(req: NextRequest) {
 
         const db = getDbClient();
         const results = db.getTaskResults(sessionId);
+        const session = db.getSession(sessionId);
 
-        return Response.json({ status: "success", results }, { status: 200 });
+        return Response.json({ status: "success", results, sessionStatus: session?.status || "unknown" }, { status: 200 });
     } catch (error) {
         console.error("Error in results API route:", error);
         return Response.json({ error: "Internal server error" }, { status: 500 });
