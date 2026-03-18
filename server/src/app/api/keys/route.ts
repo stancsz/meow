@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
                     id: secretObj.id,
                     name: secretObj.name,
                     provider: secretObj.provider,
+                    expiresAt: secretObj.expiresAt,
                     maskedKey: maskedKey,
                     createdAt: secretObj.createdAt
                 };
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest) {
                     id: secretObj.id,
                     name: secretObj.name,
                     provider: secretObj.provider,
+                    expiresAt: secretObj.expiresAt,
                     maskedKey: 'sk-...error',
                     createdAt: secretObj.createdAt
                 };
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { provider, key, name } = body;
+        const { provider, key, name, expiresAt } = body;
 
         if (!provider || !key) {
             return Response.json({ error: "Provider and key are required" }, { status: 400 });
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest) {
         const secretName = name || `${provider}-key`;
 
         // Store the encrypted key in the vault
-        const secretId = dbClient.addSecret(MOCK_USER_ID, secretName, encryptedKey, provider);
+        const secretId = dbClient.addSecret(MOCK_USER_ID, secretName, encryptedKey, provider, expiresAt);
 
         return Response.json({ id: secretId, success: true }, { status: 201 });
     } catch (error: any) {

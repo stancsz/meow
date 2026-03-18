@@ -9,6 +9,7 @@ interface KeyRecord {
     provider: string;
     maskedKey: string;
     createdAt: string;
+    expiresAt?: string;
 }
 
 export default function KeysPage() {
@@ -16,6 +17,7 @@ export default function KeysPage() {
     const [provider, setProvider] = useState('OpenAI');
     const [apiKey, setApiKey] = useState('');
     const [keyName, setKeyName] = useState('');
+    const [expiresAt, setExpiresAt] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -48,12 +50,13 @@ export default function KeysPage() {
             const res = await fetch('/api/keys', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider, key: apiKey, name: keyName || `${provider} Key` }),
+                body: JSON.stringify({ provider, key: apiKey, name: keyName || `${provider} Key`, expiresAt: expiresAt || null }),
             });
 
             if (res.ok) {
                 setApiKey('');
                 setKeyName('');
+                setExpiresAt('');
                 await fetchKeys();
             } else {
                 const data = await res.json();
@@ -123,16 +126,28 @@ export default function KeysPage() {
                             </div>
                         </div>
 
-                        <div className="input-group" style={{ marginBottom: '1.5rem' }}>
-                            <label style={{ color: '#ccc', marginBottom: '0.5rem', display: 'block' }}>API Key</label>
-                            <input
-                                type="password"
-                                className="input-field"
-                                placeholder="sk-..."
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                                style={{ width: '100%', fontFamily: 'monospace' }}
-                            />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <div className="input-group">
+                                <label style={{ color: '#ccc', marginBottom: '0.5rem', display: 'block' }}>API Key</label>
+                                <input
+                                    type="password"
+                                    className="input-field"
+                                    placeholder="sk-..."
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    style={{ width: '100%', fontFamily: 'monospace' }}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label style={{ color: '#ccc', marginBottom: '0.5rem', display: 'block' }}>Expiry Date (optional)</label>
+                                <input
+                                    type="date"
+                                    className="input-field"
+                                    value={expiresAt}
+                                    onChange={(e) => setExpiresAt(e.target.value)}
+                                    style={{ width: '100%', color: expiresAt ? 'white' : '#888' }}
+                                />
+                            </div>
                         </div>
 
                         {error && <div style={{ color: '#ef4444', marginBottom: '1rem' }}>{error}</div>}
@@ -159,6 +174,7 @@ export default function KeysPage() {
                                         <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Name</th>
                                         <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Provider</th>
                                         <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Secret</th>
+                                        <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Expires</th>
                                         <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal', textAlign: 'right' }}>Actions</th>
                                     </tr>
                                 </thead>
@@ -168,6 +184,7 @@ export default function KeysPage() {
                                             <td style={{ padding: '1rem', color: '#fff' }}>{k.name}</td>
                                             <td style={{ padding: '1rem', color: '#00E5CC' }}>{k.provider}</td>
                                             <td style={{ padding: '1rem', fontFamily: 'monospace', color: '#aaa' }}>{k.maskedKey}</td>
+                                            <td style={{ padding: '1rem', color: '#aaa' }}>{k.expiresAt || 'Never'}</td>
                                             <td style={{ padding: '1rem', textAlign: 'right' }}>
                                                 <button
                                                     onClick={() => handleDeleteKey(k.id)}
