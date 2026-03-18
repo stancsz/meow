@@ -282,12 +282,15 @@ describe("Swarm End-to-End Integration Pipeline", () => {
       expect(executeResBody.status).toBe("dispatched");
       expect(executeResBody.executionId).toBe(sessionId);
 
-      // Wait for execution to finish
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Step 3: Result Logging Check
+      // Wait for execution to finish by polling the session status (up to 1s)
       const dbClientAny = db as any;
-      const session = dbClientAny.db.query("SELECT * FROM orchestrator_sessions WHERE id = ?").get(sessionId);
+      let session;
+      for (let i = 0; i < 100; i++) {
+        session = dbClientAny.db.query("SELECT * FROM orchestrator_sessions WHERE id = ?").get(sessionId);
+        if (session.status === "completed" || session.status === "error") break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      // Step 3: Result Logging Check
       expect(session.status).toBe("completed");
 
       const taskLogs = dbClientAny.db.query("SELECT * FROM task_results WHERE session_id = ?").all(sessionId);
