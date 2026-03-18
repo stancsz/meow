@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-18] Cycle #46 ✅ Implemented the BYOK UI for key management per user request. Renamed `/app/key-management` to `/app/keys`, updated `page.tsx` links, and verified `KeyManagement.tsx` component and API routes are correct. Marked the Phase 1 BYOK UI task as complete.
 - [2026-03-18] Cycle #45 ✅ Verified Phase 0 end-to-end integration. Ensured the UI approve button correctly invokes the `api/execute` endpoint for swarm dispatch and checked off the `Phase 0 — End-to-End Integration` task in the backlog.
 - [2026-03-16 19:30] Cycle #26 ✅ Connected UI approval to worker dispatch - users can now approve plans and trigger execution. Updated page.tsx and ExecutionMonitor.tsx to send approvals to /api/execute and poll /api/results.
 - [2026-03-18] Cycle #44 ✅ Implemented approval flow for worker dispatch. Refactored the orchestrator API route to natively intercept approval payloads and directly invoke `executeSwarmManifest` asynchronously to allow non-blocking UI polling. Modified the frontend dashboard UI's `handleApprove` to issue POST requests to `/api/orchestrator` instead of the obsolete `execute` sub-route, and removed the redundant `execute` subdirectory to clean up the backend.
@@ -90,7 +91,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 0 — End-to-End Integration:** Fully connected the UI approve button to the dispatcher execution flow.
 - [x] **Phase 1 — Real GitHub Worker Integration:** End-to-end validation with KMS-decrypted credentials and actual API calls.
 - [x] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault
-- [x] **Phase 1 — BYOK UI (Refactor):** Key management screen storing keys in Supabase Vault migrated to `server/src/app/key-management` using `KeyManagement.tsx` component.
+- [x] **Phase 1 — BYOK UI (Refactor):** Key management screen storing keys in Supabase Vault migrated to `server/src/app/keys` using `KeyManagement.tsx` component.
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 
