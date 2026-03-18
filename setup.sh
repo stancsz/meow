@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # SimpleClaw Unified Installer
 # One-click setup for new workstation users
 # Works on macOS, Linux, and Windows (via Git Bash/WSL)
