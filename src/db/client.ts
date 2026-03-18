@@ -169,7 +169,7 @@ export class DBClient {
     return null;
   }
 
-  addSecret(userId: string, name: string, secret: string, provider: string) {
+  addSecret(userId: string, name: string, secret: string, provider: string, expiresAt?: string | null) {
     if (this.isSupabase) {
         // In Supabase mode, we would use the Supabase client with Row Level Security
         // For now, mock behavior for testing
@@ -180,8 +180,8 @@ export class DBClient {
     if (this.db) {
         const id = crypto.randomUUID();
         this.db.run(
-            `INSERT INTO vault_user_secrets (id, user_id, name, secret, provider) VALUES (?, ?, ?, ?, ?)`,
-            [id, userId, name, secret, provider]
+            `INSERT INTO vault_user_secrets (id, user_id, name, secret, provider, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
+            [id, userId, name, secret, provider, expiresAt || null]
         );
         return id;
     }
@@ -194,12 +194,13 @@ export class DBClient {
         return [];
     }
     if (this.db) {
-        const rows = this.db.query(`SELECT id, name, secret, provider, created_at FROM vault_user_secrets WHERE user_id = ?`).all(userId) as any[];
+        const rows = this.db.query(`SELECT id, name, secret, provider, expires_at, created_at FROM vault_user_secrets WHERE user_id = ?`).all(userId) as any[];
         return rows.map(r => ({
             id: r.id,
             name: r.name,
             secret: r.secret,
             provider: r.provider,
+            expiresAt: r.expires_at,
             maskedKey: 'sk-...abcd', // This will be dynamically overridden by the route using the decrypted secret
             createdAt: r.created_at
         }));
