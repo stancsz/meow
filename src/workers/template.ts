@@ -49,7 +49,7 @@ export async function executeWorkerTask(
          const decryptedSecret = await kmsProvider.decrypt(encryptedSecret);
          authHeader = `Bearer ${decryptedSecret}`;
          decryptedCredentials[cred] = decryptedSecret;
-         db.writeAuditLog(sessionId, "worker_decrypted_credential", { task_id: task.id, cred_id: cred, decrypted_value: decryptedSecret });
+         db.writeAuditLog(sessionId, "worker_decrypted_credential", { task_id: task.id, cred_id: cred, decrypted_value: "[masked]" });
       }
     }
 
