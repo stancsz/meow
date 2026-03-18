@@ -97,8 +97,8 @@ describe("Swarm End-to-End Integration Pipeline", () => {
 
     // Insert credential into user's vault
     db.applyMigration(`
-      INSERT INTO vault_user_secrets (id, name, secret, provider)
-      VALUES ('github_token', 'GitHub PAT', '${encryptedGithubToken}', 'github');
+      INSERT INTO vault_user_secrets (id, user_id, name, secret, provider)
+      VALUES ('github_token', 'user_e2e_123', 'GitHub PAT', '${encryptedGithubToken}', 'github');
     `);
 
     // 2. Orchestrator Phase: Parse Intent
@@ -156,7 +156,7 @@ describe("Swarm End-to-End Integration Pipeline", () => {
     const decryptLog = auditLogs.find((log: any) => log.event === "worker_decrypted_credential");
     const decryptMeta = JSON.parse(decryptLog.metadata);
     expect(decryptMeta.cred_id).toBe("github_token");
-    expect(decryptMeta.decrypted_value).toBe("ghp_test_token_123");
+    expect(decryptMeta.decrypted_value).toBe("[masked]");
   });
 
   it("should handle missing credentials correctly", async () => {
