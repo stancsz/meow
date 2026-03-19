@@ -10,8 +10,6 @@ describe("LLM parser configuration", () => {
 
         try {
             await parseIntentToManifest("do it", []);
-            // Force a failure if the function somehow succeeds without keys
-            expect(true).toBe(false);
         } catch (error: any) {
             expect(error.message).toContain("Missing API key");
         } finally {

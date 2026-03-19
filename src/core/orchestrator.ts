@@ -93,7 +93,10 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
 
             // Execute the plan asynchronously so the UI can poll for results
             executeSwarmManifest(manifest, session_id, dbClient)
-                .then(() => dbClient.updateSessionStatus(session_id, 'completed'))
+                .then((results) => {
+                    dbClient.updateSessionStatus(session_id, 'completed');
+                    dbClient.writeAuditLog(session_id, 'swarm_aggregated_results_logged', { results_count: Object.keys(results).length });
+                })
                 .catch((error: any) => {
                     console.error('Error executing swarm manifest:', error);
                     dbClient.updateSessionStatus(session_id, 'error');

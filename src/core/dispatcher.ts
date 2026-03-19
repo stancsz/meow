@@ -329,6 +329,14 @@ export function createAgentDispatcher(dependencies: AgentDispatcherDependencies 
 }
 
 
+import * as yaml from 'yaml';
+import { SwarmManifestSchema } from './llm';
+
+export function parseYamlManifest(yamlString: string): SwarmManifest {
+    const parsed = yaml.parse(yamlString);
+    return SwarmManifestSchema.parse(parsed);
+}
+
 export async function executeSwarmManifest(
   manifest: SwarmManifest,
   sessionId: string,

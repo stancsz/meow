@@ -79,12 +79,17 @@ export async function executeWorkerTask(
 
     // Log result for all tasks
     db.logTaskResult(sessionId, `worker-${task.id}`, task.skills[0] || "none", "success", mockOutput, false);
-    db.writeAuditLog(sessionId, "worker_completed", { task_id: task.id });
+    db.writeAuditLog(sessionId, "worker_completed", { task_id: task.id, message: `Worker successfully completed task execution for ${task.id}` });
 
     return { status: "success", output: mockOutput };
 
   } catch (error: any) {
-    db.writeAuditLog(sessionId, "worker_failed", { task_id: task.id, error: error.message });
+    const errorDetails = {
+        message: error.message,
+        stack: error.stack || "No stack trace available",
+        context: "Worker execution engine dispatch failure"
+    };
+    db.writeAuditLog(sessionId, "worker_failed", { task_id: task.id, error: errorDetails });
     db.logTaskResult(sessionId, `worker-${task.id}`, task.skills[0] || "none", "error", error.message, true);
 
     return { status: "error", error: error.message };
