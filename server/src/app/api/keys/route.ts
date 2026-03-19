@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
                     name: secretObj.name,
                     provider: secretObj.provider,
                     expiresAt: secretObj.expiresAt,
+                    lastUsedAt: secretObj.lastUsedAt,
                     maskedKey: maskedKey,
                     createdAt: secretObj.createdAt
                 };
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
                     name: secretObj.name,
                     provider: secretObj.provider,
                     expiresAt: secretObj.expiresAt,
+                    lastUsedAt: secretObj.lastUsedAt,
                     maskedKey: 'sk-...error',
                     createdAt: secretObj.createdAt
                 };

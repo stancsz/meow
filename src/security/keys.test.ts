@@ -12,6 +12,14 @@ describe('BYOK API Flow (Local DB Simulation)', () => {
     const dbClient = getDbClient();
     const schema = fs.readFileSync("src/db/migrations/001_motherboard.sql", "utf-8");
     dbClient.applyMigration(schema);
+    const schema2 = fs.readFileSync("src/db/migrations/002_add_last_used_at.sql", "utf-8");
+    try {
+        dbClient.applyMigration(schema2);
+    } catch (e: any) {
+        if (!e.message.includes('duplicate column name')) {
+            throw e;
+        }
+    }
 
     const kmsProvider = getKMSProvider();
 

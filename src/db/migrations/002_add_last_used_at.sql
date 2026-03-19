@@ -1,0 +1,1 @@
+ALTER TABLE vault_user_secrets ADD COLUMN last_used_at TEXT;

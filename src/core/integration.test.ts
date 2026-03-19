@@ -41,6 +41,14 @@ describe("Swarm End-to-End Integration Pipeline", () => {
     db = new DBClient("sqlite://:memory:");
     const schema = fs.readFileSync("src/db/migrations/001_motherboard.sql", "utf-8");
     db.applyMigration(schema);
+    const schema2 = fs.readFileSync("src/db/migrations/002_add_last_used_at.sql", "utf-8");
+    try {
+        db.applyMigration(schema2);
+    } catch (e: any) {
+        if (!e.message.includes('duplicate column name')) {
+            throw e;
+        }
+    }
 
     // Mock global fetch
     originalFetch = global.fetch;

@@ -9,6 +9,7 @@ export interface KeyRecord {
     maskedKey: string;
     createdAt: string;
     expiresAt?: string;
+    lastUsedAt?: string;
 }
 
 export default function KeyManager() {
@@ -168,6 +169,7 @@ export default function KeyManager() {
                                     <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Provider</th>
                                     <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Secret</th>
                                     <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Expires</th>
+                                    <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal' }}>Last Used</th>
                                     <th style={{ padding: '1rem', color: '#ccc', fontWeight: 'normal', textAlign: 'right' }}>Actions</th>
                                 </tr>
                             </thead>
@@ -178,6 +180,7 @@ export default function KeyManager() {
                                         <td style={{ padding: '1rem', color: '#00E5CC' }}>{k.provider}</td>
                                         <td style={{ padding: '1rem', fontFamily: 'monospace', color: '#aaa' }}>{k.maskedKey}</td>
                                         <td style={{ padding: '1rem', color: '#aaa' }}>{k.expiresAt || 'Never'}</td>
+                                        <td style={{ padding: '1rem', color: '#aaa' }}>{k.lastUsedAt ? new Date(k.lastUsedAt + 'Z').toLocaleString() : 'Never'}</td>
                                         <td style={{ padding: '1rem', textAlign: 'right' }}>
                                             <button
                                                 onClick={() => handleDeleteKey(k.id)}

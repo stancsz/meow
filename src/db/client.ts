@@ -176,6 +176,9 @@ export class DBClient {
         // Log access simulation
         this.writeAuditLog('', 'secret_accessed', { secret_id: secretId });
 
+        // Update last_used_at
+        this.db.run(`UPDATE vault_user_secrets SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?`, [secretId]);
+
         return row ? row.secret : null;
     }
     return null;
@@ -207,13 +210,14 @@ export class DBClient {
         return [];
     }
     if (this.db) {
-        const rows = this.db.query(`SELECT id, name, secret, provider, expires_at, created_at FROM vault_user_secrets WHERE user_id = ?`).all(userId) as any[];
+        const rows = this.db.query(`SELECT id, name, secret, provider, expires_at, last_used_at, created_at FROM vault_user_secrets WHERE user_id = ?`).all(userId) as any[];
         return rows.map(r => ({
             id: r.id,
             name: r.name,
             secret: r.secret,
             provider: r.provider,
             expiresAt: r.expires_at,
+            lastUsedAt: r.last_used_at,
             maskedKey: 'sk-...abcd', // This will be dynamically overridden by the route using the decrypted secret
             createdAt: r.created_at
         }));

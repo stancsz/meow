@@ -20,6 +20,14 @@ describe("Database Client Tests (SQLite Local)", () => {
         // Apply migration
         const migrationSql = fs.readFileSync(path.join(__dirname, 'migrations', '001_motherboard.sql'), 'utf-8');
         dbClient.applyMigration(migrationSql);
+        const migration2Sql = fs.readFileSync(path.join(__dirname, 'migrations', '002_add_last_used_at.sql'), 'utf-8');
+        try {
+            dbClient.applyMigration(migration2Sql);
+        } catch (e: any) {
+            if (!e.message.includes('duplicate column name')) {
+                throw e;
+            }
+        }
     });
 
     afterAll(() => {
