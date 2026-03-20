@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getDbClient } from "../../../../../src/db/client";
+import { getDbClient } from "@/../../src/db/client";
 
 export async function GET(req: NextRequest) {
     try {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { onboardUserKey } from '../../../../../src/security/onboarding';
+import { onboardUserKey } from '@/../../src/security/onboarding';
 
 export async function POST(request: Request) {
     try {

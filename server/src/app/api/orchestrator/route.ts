@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { orchestratorHandler } from "../../../../../src/core/orchestrator";
+import { orchestratorHandler } from "@/../../src/core/orchestrator";
 import type { Request, Response } from "@google-cloud/functions-framework";
 
 export async function POST(req: NextRequest) {
