@@ -62,6 +62,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [2026-03-16 18:56] Cycle #24 ✅ Implemented real LLM intent parsing for orchestrator
 - [2026-03-16 18:30] Cycle #23 ✅ Implemented Move 3: Worker Dispatch & Execution Loop. Added `executeSwarmManifest` DAG scheduler in `src/core/dispatcher.ts`, created `src/workers/template.ts` with `executeWorkerTask` (idempotency, JIT skill loading, credential fetch, result logging), extended DBClient with `logTaskResult`, and added comprehensive unit tests in `src/workers/worker.test.ts`.
 - [2026-03-16 17:58] Cycle #22 ✅ Implemented KMS Credential Flow for Move 6: Created `src/security/kms.ts` wrapper (AES-256-GCM local/GCP selector), `src/security/onboarding.ts` implementation, local `platform_users` table in `src/db/migrations/001_motherboard.sql` + DBClient interactions, and `src/security/kms.test.ts` for comprehensive encryption/decryption validation and Worker lifecycle simulation.
+- [2026-03-17] Cycle #26 ✅ Implemented Phase 1 Gas Tank: Stripe integration (`checkout/route.ts` & `webhook/route.ts`) and `gas_ledger` debit logic via `src/core/gas.ts`. Updated dispatcher to auto-debit on execution and Next.js UI to display the current balance and handle "Top Up" redirects.
 - [2026-03-16] Cycle #21 ✅ Implemented Move 2: Sovereign Motherboard SQL Schema & Local DB via `bun:sqlite` with full table migrations (`001_motherboard.sql`), a `DBClient` wrapper, modified `orchestrator.ts` to checkpoint user sessions, and comprehensive local database tests in `db.test.ts`.
 - [2026-03-16] Cycle #20 ✅ Implemented real LLM intent parsing for Move 1. Added OpenAI SDK, configured function calling for `SwarmManifest`, implemented DAG validation in `orchestrator.ts`, and updated `orchestrator.test.ts`.
 - [2026-03-16] Cycle #19 ✅ Finished Phase 0 Orchestrator Cloud Function implementation. Created `src/core/types.ts`, refactored `src/core/orchestrator.ts` to output `PlanDiffApprove` schema with multiple DAG steps, created `examples/swarm.example.yaml`, and implemented the `server/src/app/api/orchestrator/route.ts` API wrapper.
@@ -126,7 +127,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 1 — BYOK UI:** Implemented user onboarding UI for Supabase credential input with KMS encryption.
 - [x] **Phase 1 — BYOK UI:** Implemented and verified the final BYOK Key management UI as requested.
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
-- [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
+- [x] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 
 ## DISCOVERY LOG

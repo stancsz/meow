@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PlanDisplay from '../components/PlanDisplay';
 import ExecutionMonitor from '../components/ExecutionMonitor';
 import type { PlanDiffApprove } from '../../../src/core/types';
@@ -13,6 +13,19 @@ export default function Home() {
   const [status, setStatus] = useState<'idle' | 'planning' | 'waiting_approval' | 'executing' | 'completed' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [taskResults, setTaskResults] = useState<any[]>([]);
+  const [gasBalance, setGasBalance] = useState<number>(0);
+
+  useEffect(() => {
+    // Fetch gas balance on load
+    fetch('/api/gas?userId=test-user')
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.balance === 'number') {
+          setGasBalance(data.balance);
+        }
+      })
+      .catch(err => console.error("Failed to fetch gas balance:", err));
+  }, [status]); // Re-fetch when status changes (e.g. after execution completes)
 
   const handlePlan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,13 +112,19 @@ export default function Home() {
       <div className="dashboard-header">
         <h1>SimpleClaw Dashboard</h1>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <Link href="/onboarding" style={{ color: '#00E5CC', textDecoration: 'none', fontSize: '0.9rem' }}>
+          <div style={{ padding: '4px 12px', borderRadius: '20px', backgroundColor: '#111', border: '1px solid #333', fontSize: '0.85rem' }}>
+            ⛽ Gas: <span style={{ color: '#00E5CC', fontWeight: 'bold' }}>{gasBalance}</span>
+          </div>
+          <Link href="/topup" style={{ color: '#00E5CC', textDecoration: 'none', fontSize: '0.9rem', padding: '4px 12px', border: '1px solid #00E5CC', borderRadius: '4px' }}>
+            Top Up
+          </Link>
+          <Link href="/onboarding" style={{ color: '#ccc', textDecoration: 'none', fontSize: '0.9rem' }}>
             Onboarding
           </Link>
-          <Link href="/keys" style={{ color: '#00E5CC', textDecoration: 'none', fontSize: '0.9rem' }}>
+          <Link href="/keys" style={{ color: '#ccc', textDecoration: 'none', fontSize: '0.9rem' }}>
             Keys (BYOK)
           </Link>
-          <div style={{ fontSize: '0.9rem', color: '#888' }}>Phase 0: Orchestrator Test</div>
+          <div style={{ fontSize: '0.9rem', color: '#888' }}>Phase 1: Gas Tank</div>
         </div>
       </div>
 

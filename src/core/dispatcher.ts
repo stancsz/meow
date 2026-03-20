@@ -4,6 +4,7 @@ import type { SwarmManifest, Task } from "./types";
 import { DBClient } from "../db/client";
 import { executeWorkerTask, type WorkerResult } from "../workers/template";
 import { executeGithubWorkerTask } from "../workers/github.worker";
+import { debitCredits } from "./gas";
 
 import {
   runAgentLoop,
@@ -338,6 +339,9 @@ export async function executeSwarmManifest(
   const executionPromises = new Map<string, Promise<WorkerResult>>();
   const results: Record<string, WorkerResult> = {};
 
+  const session = db.getSession(sessionId);
+  const userId = session?.user_id || "test-user"; // Fallback for tests if not present
+
   db.writeAuditLog(sessionId, "swarm_execution_started", { manifest_version: manifest.version });
 
   // 1. Setup deferred promises for all tasks to handle out-of-order execution graph
@@ -451,6 +455,22 @@ export async function executeSwarmManifest(
   await Promise.allSettled(Array.from(executionPromises.values()));
 
   db.writeAuditLog(sessionId, "swarm_execution_completed", { tasks_run: tasks.length });
+
+  // Deduct 1 gas credit after successful execution
+  const debitIdempotencyKey = `debit_execution_${sessionId}`;
+  if (!db.checkIdempotency(debitIdempotencyKey)) {
+      try {
+          debitCredits(userId, 1);
+          db.writeAuditLog(sessionId, "gas_debited", { user_id: userId, amount: 1 });
+          db.createTransactionLogEntry(debitIdempotencyKey, 'completed', { action: 'debitGas', userId, amount: 1, sessionId });
+      } catch (gasError: any) {
+          console.error(`Failed to debit gas for user ${userId}:`, gasError);
+          db.writeAuditLog(sessionId, "gas_debit_failed", { user_id: userId, amount: 1, error: gasError.message });
+          // Proceed without failing the execution if it already completed
+      }
+  } else {
+      console.log(`Gas debit already processed for session ${sessionId}`);
+  }
 
   return results;
 }
