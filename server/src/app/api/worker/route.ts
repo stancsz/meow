@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { getDbClient } from "../../../../../src/db/client";
-import { executeWorkerTask } from "../../../../../src/workers/template";
-import { executeGithubWorkerTask } from "../../../../../src/workers/github.worker";
+import { getDbClient } from "@/../../src/db/client";
+import { executeWorkerTask } from "@/../../src/workers/template";
+import { executeGithubWorkerTask } from "@/../../src/workers/github.worker";
 
 export async function POST(req: NextRequest) {
     try {

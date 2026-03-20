@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterAll } from 'bun:test';
 import { GET, POST } from '../api/keys/route';
 import { DELETE } from '../api/keys/[id]/route';
 import { NextRequest } from 'next/server';
-import { getDbClient } from '../../../../src/db/client';
-import { getKMSProvider } from '../../../../src/security/kms';
+import { getDbClient } from '@/../../src/db/client';
+import { getKMSProvider } from '@/../../src/security/kms';
 import fs from 'fs';
 import path from 'path';
 
