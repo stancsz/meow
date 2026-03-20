@@ -50,10 +50,9 @@ describe("End-to-End Swarm Orchestration Loop", () => {
       getDbClient: mock(() => db),
     }));
 
-    // Mock skill in isolated directory, we must copy it to `src/skills/` because `executeWorkerTask` reads from `src/skills/`
+    // Ensure src/skills directory exists (echo.md should already be there from the fixed version)
     try {
       fs.mkdirSync("src/skills", { recursive: true });
-      fs.copyFileSync("examples/skills/echo.md", "src/skills/echo.md");
     } catch (e) {
       // Ignore
     }
@@ -67,12 +66,7 @@ describe("End-to-End Swarm Orchestration Loop", () => {
       delete process.env.DATABASE_URL;
     }
 
-    // Clean up test skill directory
-    try {
-      fs.unlinkSync("src/skills/echo.md");
-    } catch (e) {
-      // Ignore cleanup errors
-    }
+    // No cleanup needed—echo.md remains in src/skills/
     mock.restore();
   });
 
