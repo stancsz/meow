@@ -84,7 +84,7 @@ export default function Home() {
 
     try {
       // Trigger swarm manifest execution via the orchestrator execute endpoint
-      const response = await fetch('/api/execute', {
+      const response = await fetch('/api/orchestrator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

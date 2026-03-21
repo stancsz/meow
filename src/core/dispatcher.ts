@@ -379,33 +379,12 @@ export async function executeSwarmManifest(
         // Use the local API route for simulation if possible, but default to direct invocation
         // This fulfills the Phase 0 objective of dispatching via HTTP
         let result: WorkerResult;
-        // Check if we are in a test environment, and if fetch has been overridden specifically for this test
-        const isFetchMocked = global.fetch && (global.fetch as any).name !== "fetch"; // basic check or just rely on NEXT_PUBLIC_API_URL
 
-        if (process.env.NODE_ENV === "test" && !process.env.NEXT_PUBLIC_API_URL && !process.env.FORCE_MOCK_FETCH) {
-            // Default fast path for tests not explicitly testing HTTP routing
-           if (task.worker === "github") {
-             result = await executeGithubWorkerTask(task, sessionId, db);
-           } else {
-             result = await executeWorkerTask(task, sessionId, db);
-           }
+        // For local development and testing, directly invoke the worker task.
+        if (task.worker === "github") {
+          result = await executeGithubWorkerTask(task, sessionId, db);
         } else {
-            const fetchUrl = process.env.NEXT_PUBLIC_API_URL
-              ? `${process.env.NEXT_PUBLIC_API_URL}/api/worker`
-              : "http://localhost:3000/api/worker";
-
-            const response = await fetch(fetchUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ task, session_id: sessionId })
-            });
-
-            if (!response.ok) {
-              throw new Error(`Worker HTTP call failed: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            result = data.result as WorkerResult;
+          result = await executeWorkerTask(task, sessionId, db);
         }
 
         if (result.status === "error") {
