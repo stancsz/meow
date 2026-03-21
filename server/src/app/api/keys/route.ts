@@ -2,7 +2,7 @@
 // Handles CRUD operations for Bring Your Own Key management,
 // securely encrypting keys via KMS before storing in Supabase Vault.
 import { NextRequest } from "next/server";
-import { getKeys, addKey } from "@/lib/keyService";
+import { getKeys, addKey } from "@/core/key-management";
 
 export async function GET(req: NextRequest) {
     try {

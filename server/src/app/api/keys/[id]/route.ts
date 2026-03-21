@@ -1,6 +1,6 @@
 // Phase 1 - BYOK UI Key Deletion Route
 import { NextRequest, NextResponse } from "next/server";
-import { deleteKey } from "@/lib/keyService";
+import { deleteKey } from "@/core/key-management";
 
 export async function DELETE(
     req: NextRequest,
