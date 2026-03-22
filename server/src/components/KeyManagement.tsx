@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import AddKeyForm from './AddKeyForm';
+import KeyManagementForm from './KeyManagementForm';
 import KeyList, { KeyRecord } from './KeyList';
 
 export default function KeyManagement() {
@@ -41,7 +41,7 @@ export default function KeyManagement() {
 
     return (
         <div className="flex flex-col gap-8 w-full">
-            <AddKeyForm onKeyAdded={fetchKeys} />
+            <KeyManagementForm onKeyAdded={fetchKeys} />
             <KeyList keys={keys} onDeleteKey={handleDeleteKey} />
         </div>
     );

@@ -14,7 +14,7 @@ interface AddKeyFormProps {
     onKeyAdded: () => void;
 }
 
-export default function AddKeyForm({ onKeyAdded }: AddKeyFormProps) {
+export default function KeyManagementForm({ onKeyAdded }: AddKeyFormProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -135,13 +135,23 @@ export default function AddKeyForm({ onKeyAdded }: AddKeyFormProps) {
 
                 {error && <div className="text-red-500 text-sm mt-1">{error}</div>}
 
-                <button
-                    type="submit"
-                    className="bg-[#00E5CC] hover:bg-[#00c2ad] text-black font-semibold py-3 px-6 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2 w-[150px]"
-                    disabled={isLoading || !currentKey?.trim()}
-                >
-                    {isLoading ? 'Adding...' : 'Encrypt & Store'}
-                </button>
+                <div className="flex gap-4 mt-2">
+                    <button
+                        type="submit"
+                        className="bg-[#00E5CC] hover:bg-[#00c2ad] text-black font-semibold py-3 px-6 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-[150px]"
+                        disabled={isLoading || !currentKey?.trim()}
+                    >
+                        {isLoading ? 'Adding...' : 'Encrypt & Store'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => reset()}
+                        className="bg-transparent text-white border border-[#444] hover:bg-[#333] font-semibold py-3 px-6 rounded-md transition-colors w-[150px]"
+                        disabled={isLoading}
+                    >
+                        Cancel
+                    </button>
+                </div>
             </form>
         </div>
     );
