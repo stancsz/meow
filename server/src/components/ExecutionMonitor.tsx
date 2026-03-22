@@ -14,6 +14,7 @@ export default function ExecutionMonitor({ status, errorMessage, taskResults, se
   const [dots, setDots] = useState('');
   const [polledResults, setPolledResults] = useState<any[]>([]);
 
+  // Simple loading dots animation for planning and execution phases
   useEffect(() => {
     if (status === 'planning' || status === 'executing') {
       const interval = setInterval(() => {

@@ -97,12 +97,11 @@ describe("Worker Execution Module", () => {
       ],
     };
 
-    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
-        // Return a fatal internal server error
-        return new Response("Internal Server Error", {
-           status: 500,
-           headers: { "Content-Type": "text/plain" }
-        });
+    const executionEngineModule = require("../core/execution-engine");
+    const originalExecute = executionEngineModule.OpenCodeExecutionEngine.prototype.execute;
+
+    executionEngineModule.OpenCodeExecutionEngine.prototype.execute = async function(task: any, context: any) {
+        throw new Error("Internal Server Error");
     };
 
     const sessionId = db.createSession("user_monitor_test", { prompt: "test fail" }, manifest);
@@ -117,9 +116,11 @@ describe("Worker Execution Module", () => {
     }
 
     const session = db.getSession(sessionId);
-    // Since the worker task internally returned an error status in our fetch mock (converted from 500 status to generic error),
+    // Since the worker task internally returned an error status in our mock
     // executeSwarmManifest completes but has errors, so it correctly marks the session as 'error'.
     expect(session.status).toBe("error");
+
+    executionEngineModule.OpenCodeExecutionEngine.prototype.execute = originalExecute;
   });
 
   it("should enforce idempotency correctly", async () => {

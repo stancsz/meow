@@ -142,22 +142,15 @@ describe("Dispatcher - Worker Dispatch & Execution Loop", () => {
       ],
     };
 
-    // Mock fetch to simulate task failure for 'fail-step-1'
-    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
-        let body: any = {};
-        if (init && init.body) {
-           body = JSON.parse(init.body as string);
-        }
+    // Mock execution engine to simulate task failure for 'fail-step-1'
+    const executionEngineModule = require("./execution-engine");
+    const originalExecute = executionEngineModule.OpenCodeExecutionEngine.prototype.execute;
 
-        if (body.task && body.task.id === "fail-step-1") {
-            return new Response(JSON.stringify({
-                result: { status: "error", error: "Simulated task failure" }
-            }), { status: 200 });
+    executionEngineModule.OpenCodeExecutionEngine.prototype.execute = async function(task: any, context: any) {
+        if (task.id === "fail-step-1") {
+            throw new Error("Simulated task failure");
         }
-
-        return new Response(JSON.stringify({
-            result: { status: "success", output: {} }
-        }), { status: 200 });
+        return { mock: "value" };
     };
 
     try {
@@ -169,6 +162,7 @@ describe("Dispatcher - Worker Dispatch & Execution Loop", () => {
       expect(results["fail-step-2"].status).toBe("error");
       expect(results["fail-step-2"].error).toContain("Dependency failed");
     } finally {
+        executionEngineModule.OpenCodeExecutionEngine.prototype.execute = originalExecute;
     }
   });
 
@@ -193,31 +187,23 @@ describe("Dispatcher - Worker Dispatch & Execution Loop", () => {
 
     let attemptCount = 0;
 
-    // Mock fetch to fail once, then succeed
-    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
-        let body: any = {};
-        if (init && init.body) {
-           body = JSON.parse(init.body as string);
-        }
+    const executionEngineModule = require("./execution-engine");
+    const originalExecute = executionEngineModule.OpenCodeExecutionEngine.prototype.execute;
 
-        if (body.task && body.task.id === "retry-step") {
+    executionEngineModule.OpenCodeExecutionEngine.prototype.execute = async function(task: any, context: any) {
+        if (task.id === "retry-step") {
             attemptCount++;
             if (attemptCount === 1) {
-                return new Response(JSON.stringify({
-                    result: { status: "error", error: "Temporary task failure" }
-                }), { status: 200 });
+                throw new Error("Temporary task failure");
             }
         }
-
-        return new Response(JSON.stringify({
-            result: { status: "success", output: {} }
-        }), { status: 200 });
+        return { mock: "value" };
     };
 
     try {
       const results = await executeSwarmManifest(manifest, "session-retry", db);
 
-      // Verify that the task was retried via HTTP fetch and eventually succeeded
+      // Verify that the task was retried and eventually succeeded
       expect(attemptCount).toBe(2);
       expect(results["retry-step"].status).toBe("success");
 
@@ -226,6 +212,7 @@ describe("Dispatcher - Worker Dispatch & Execution Loop", () => {
       const retryLogs = dbClientAny.db.query("SELECT * FROM audit_log WHERE event = 'worker_retry_attempt' AND session_id = 'session-retry'").all();
       expect(retryLogs.length).toBe(1);
     } finally {
+        executionEngineModule.OpenCodeExecutionEngine.prototype.execute = originalExecute;
     }
   });
 });
