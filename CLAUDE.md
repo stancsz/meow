@@ -22,6 +22,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [2026-03-24] Cycle #89 ✅ Implemented the BYOK UI in the Next.js dashboard by creating `server/src/app/settings/page.tsx` and refactoring key management into the reusable `server/src/components/KeyManagement.tsx` component.
 - [2026-03-24] Cycle #88 ✅ Connected UI approval to dispatcher execution. Validated that server/src/app/page.tsx correctly calls /api/execute (or /api/orchestrator via action 'approve') and that ExecutionMonitor tracks the results.
 - [2026-03-24] Cycle #87 ✅ Validated the Plan-Diff-Approve execution flow. The dashboard in server/src/app/page.tsx correctly communicates with the orchestrator API. The dispatcher executes the swarm manifest, and ExecutionMonitor correctly reads task results from the local DB via the /api/results route. End-to-end integration is robust.
+- [2026-03-24] Cycle #87 ✅ Implemented Phase 1 BYOK UI: Updated Key management form validation for providers, added component tests, and aligned Next.js page paths to `/settings/keys`. Verified backend encryption routing successfully handles the request. Marked 'Phase 1 — BYOK UI' as completed.
 - [2026-03-24] Cycle #86 ✅ Verified Phase 1 BYOK UI is already fully implemented in `server/src/app/keys/page.tsx` and tested. To avoid duplicate work, I marked this ticket as completed.
 - [2026-03-24] Cycle #85 ✅ Implemented Phase 1 BYOK UI: Created key management page with add/view/delete, integrated KMS encryption, and linked from dashboard.
 - [2026-03-24] Cycle #84 ✅ Verified existing Phase 1 BYOK UI Implementation. Used Playwright visual testing to add and delete an OpenAI key and confirm dynamic key masking works. Confirmed unit test suite continues to pass without regressions.
@@ -178,6 +179,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 0 — Worker Dispatch + Execution Loop:** Validated the integration for Phase 0 Minimal UI with the Worker Dispatch & Execution Loop, tested and functional end-to-end proof of concept.
 - [x] **Phase 0 — Worker Dispatch + Execution Loop:** Finalized UI Execution Flow and real-time monitoring via `/api/orchestrator/approve` endpoints.
 - [x] **Phase 0 — Worker Dispatch + Execution Loop:** Integrated Minimal UI execution flow to point to `/api/execute` API route. Real-time updates working correctly via `ExecutionMonitor`.
+- [x] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault implemented in `server/src/app/settings/keys/page.tsx`
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
