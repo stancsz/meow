@@ -390,10 +390,8 @@ describe("Worker Dispatch & Execution Loop", () => {
 
         // Let's import the wrapper route
         // We have to mock NextRequest
-        const { POST } = require("../../server/src/app/api/orchestrator/route");
+        const { POST } = require("../../server/src/app/api/approve-execution/route");
 
-        // Use an action of "approve" for the request, as this triggers the dispatch logic in orchestratorHandler
-        executeReq.body.action = "approve";
         const nextReq = {
             json: async () => executeReq.body
         };
