@@ -254,19 +254,19 @@ describe("Swarm End-to-End Integration Pipeline", () => {
       expect(planResBody.pda.plan.skills_required).toContain("github-fetch-issues");
       const sessionId = planResBody.session_id;
 
-      // Step 2: Plan Approval
-      // Because we removed the 'approve' action from the orchestrator logic to be
-      // managed exclusively by our `/api/dispatch` API endpoint via Next.js
-      // for the Phase 0 Minimal UI task, we'll simulate that direct backend call here.
+      // Step 2: Plan Approval via the new /api/dispatch endpoint
+      const dispatchRes = await fetch('http://localhost:3000/api/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      expect(dispatchRes.status).toBe(200);
+      const dispatchBody = await dispatchRes.json();
+      expect(dispatchBody.success).toBe(true);
+      expect(dispatchBody.executionId).toBe(sessionId);
 
+      // Wait for execution to finish by polling the session status (up to 1s)
       const dbClientAny = db as any;
-      dbClientAny.updateSessionStatus(sessionId, 'approved');
-
-      // Execute the plan asynchronously as the /api/dispatch route does.
-      const execPromise = executeSwarmManifest(planResBody.pda.plan, sessionId, dbClientAny);
-
-      // Wait for execution to finish
-      await execPromise;
 
       let session;
       for (let i = 0; i < 100; i++) {
