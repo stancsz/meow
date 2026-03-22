@@ -23,6 +23,7 @@ export default function AddKeyForm({ onKeyAdded }: AddKeyFormProps) {
         handleSubmit,
         reset,
         watch,
+        getValues,
         formState: { errors }
     } = useForm<KeyFormData>({
         defaultValues: {
@@ -71,8 +72,9 @@ export default function AddKeyForm({ onKeyAdded }: AddKeyFormProps) {
             <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="flex flex-col gap-2">
-                        <label className="text-[#888] text-sm font-medium">Provider</label>
+                        <label htmlFor="provider" className="text-[#888] text-sm font-medium">Provider</label>
                         <select
+                            id="provider"
                             {...register('provider', { required: 'Provider is required' })}
                             className="w-full p-3 bg-[#2a2a2a] text-white border border-[#444] rounded-md focus:outline-none focus:border-[#00E5CC] transition-colors"
                         >
@@ -97,9 +99,25 @@ export default function AddKeyForm({ onKeyAdded }: AddKeyFormProps) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="flex flex-col gap-2">
-                        <label className="text-[#888] text-sm font-medium">API Key</label>
+                        <label htmlFor="key" className="text-[#888] text-sm font-medium">API Key</label>
                         <textarea
-                            {...register('key', { required: 'API Key is required' })}
+                            id="key"
+                            {...register('key', {
+                                required: 'API Key is required',
+                                validate: (value) => {
+                                    const provider = getValues('provider');
+                                    if (provider === 'OpenAI' && !value.startsWith('sk-')) {
+                                        return 'OpenAI keys must start with sk-';
+                                    }
+                                    if (provider === 'Anthropic' && !value.startsWith('sk-ant-')) {
+                                        return 'Anthropic keys must start with sk-ant-';
+                                    }
+                                    if (provider === 'DeepSeek' && !value.startsWith('sk-')) {
+                                        return 'DeepSeek keys must start with sk-';
+                                    }
+                                    return true;
+                                }
+                            })}
                             className="w-full p-3 bg-[#2a2a2a] text-white border border-[#444] rounded-md font-mono min-h-[100px] resize-y focus:outline-none focus:border-[#00E5CC] transition-colors placeholder-[#666]"
                             placeholder="sk-..."
                         />
