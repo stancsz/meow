@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
         dbClient.updateSessionStatus(session_id, 'executing');
 
-        // Execute asynchronously so UI can poll for results
+        // Dispatch worker execution asynchronously so the UI can immediately poll for results
         executeSwarmManifest(manifest, session_id, dbClient).catch((err) => {
             console.error('Error in asynchronous executeSwarmManifest:', err);
             dbClient.updateSessionStatus(session_id, 'error');
