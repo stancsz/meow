@@ -103,11 +103,10 @@ export default function Home() {
 
     try {
       // Trigger worker dispatch and swarm manifest execution via the new execute endpoint
-      const response = await fetch('/api/orchestrator', {
+      const response = await fetch('/api/approve-execution', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'approve',
           session_id: sessionId,
           user_id: 'test-user', // Minimal auth for Phase 0
         }),
