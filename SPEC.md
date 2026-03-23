@@ -120,6 +120,22 @@ Every Worker checks a `transaction_log` before executing any write. Heartbeat do
 
 ---
 
+## 🛠️ Worker Execution Model
+
+Workers act as the ephemeral "muscle" of the system. Their lifecycle guarantees zero persistent secrets on the platform and strictly adheres to idempotency. The end-to-end integration flow runs as follows:
+
+1. **Boot**: The worker is dispatched as an ephemeral Cloud Function.
+2. **Idempotency Check**: If the assigned task has an `action_type` of `"WRITE"`, the worker queries the `transaction_log` to confirm it hasn't successfully executed already.
+3. **JIT Skill Loading**: The worker fetches the specified Markdown skill files from the skill registry.
+4. **Credential Fetch**: Using GCP KMS, the worker retrieves the platform's encrypted `service_role` and the task-specific API keys from the Sovereign Motherboard, decrypting them directly into volatile RAM.
+5. **Execution**: The worker delegates execution logic to a Sub-Agent engine (like `OpenCodeExecutionEngine`) using the provided parameters, decrypted credentials, and skill context.
+6. **Result Logging & Termination**: The result (or error) is written to the `task_results` database table, the `transaction_log` is updated if applicable, and the function completely terminates—purging all decrypted secrets from memory.
+
+> **Testing the Flow:**
+> A comprehensive simulation of this complete cycle can be found in the End-to-End integration test at `src/workers/integration.test.ts`.
+
+---
+
 ## 🗺️ Roadmap
 
 ### Phase 0 — Proof of Concept (Weeks 1–4)
