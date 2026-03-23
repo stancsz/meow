@@ -18,10 +18,10 @@ export default function Home() {
   React.useEffect(() => {
     const fetchKeys = async () => {
       try {
-        const res = await fetch('/api/secrets');
+        const res = await fetch('/api/keys');
         if (res.ok) {
           const data = await res.json();
-          setKeyCount(data.secrets?.length || 0);
+          setKeyCount(data.keys?.length || 0);
         }
       } catch (err) {
         console.error('Failed to fetch keys', err);
