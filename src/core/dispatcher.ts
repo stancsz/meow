@@ -4,6 +4,7 @@ import type { SwarmManifest, Task } from "./types";
 import { DBClient } from "../db/client";
 import { executeWorkerTask, type WorkerResult } from "../workers/template";
 import { executeGithubWorkerTask } from "../workers/github.worker";
+import { executeMockWorkerTask } from "../workers/mock-worker";
 
 import {
   runAgentLoop,
@@ -383,6 +384,8 @@ export async function executeSwarmManifest(
         // For local development and testing, directly invoke the worker task.
         if (task.worker === "github") {
           result = await executeGithubWorkerTask(task, sessionId, db);
+        } else if (task.worker === "worker-mock") {
+          result = await executeMockWorkerTask(task, sessionId, db);
         } else {
           result = await executeWorkerTask(task, sessionId, db);
         }

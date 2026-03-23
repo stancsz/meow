@@ -187,6 +187,50 @@ describe("Worker Dispatch & Execution Loop", () => {
     }
   });
 
+  it("should successfully execute a worker-mock task using executeMockWorkerTask", async () => {
+    // We also need to mock global.fetch to intercept the Mock API call
+    const originalFetch = global.fetch;
+    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (url === "https://jsonplaceholder.typicode.com/todos/1") {
+        return new Response(JSON.stringify({ userId: 1, id: 1, title: "delectus aut autem", completed: false }), { status: 200 });
+      }
+      return originalFetch(url, init);
+    };
+
+    try {
+      const task: Task = {
+        id: "mock-fetch-task-1",
+        description: "Fetch mock data",
+        worker: "worker-mock",
+        skills: ["mock-fetch"],
+        credentials: [],
+        depends_on: [],
+        action_type: "READ",
+      };
+
+      const result = await executeSwarmManifest({
+        version: "1.0",
+        intent_parsed: "Test mock fetch worker",
+        skills_required: ["mock-fetch"],
+        credentials_required: [],
+        steps: [task]
+      }, "session-mock", db);
+
+      expect(result["mock-fetch-task-1"].status).toBe("success");
+      expect(result["mock-fetch-task-1"].output.api_response.title).toBe("delectus aut autem");
+
+      // Verify DB logging
+      const dbClientAny = db as any;
+      const resultsLogs = dbClientAny.db.query("SELECT * FROM task_results WHERE session_id = 'session-mock'").all();
+      expect(resultsLogs.length).toBe(1);
+      const parsedOutput = JSON.parse(resultsLogs[0].output);
+      expect(parsedOutput.api_response.title).toBe("delectus aut autem");
+
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("should support end-to-end execution of a simple fetch mock data intent", async () => {
     // 1. Setup Motherboard
     const manifest: SwarmManifest = {
