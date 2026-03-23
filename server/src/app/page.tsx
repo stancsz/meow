@@ -102,13 +102,14 @@ export default function Home() {
     setErrorMessage('');
 
     try {
-      // Trigger worker dispatch and swarm manifest execution via the new execute endpoint
-      const response = await fetch('/api/approve-execution', {
+      // Trigger worker dispatch and swarm manifest execution via the orchestrator endpoint
+      const response = await fetch('/api/orchestrator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: sessionId,
-          user_id: 'test-user', // Minimal auth for Phase 0
+          action: 'approve',
+          sessionId: sessionId,
+          manifest: pda.plan,
         }),
       });
 
