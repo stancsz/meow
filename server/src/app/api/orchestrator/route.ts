@@ -4,9 +4,58 @@ import { getDbClient } from "@/../../src/db/client";
 import { executeSwarmManifest } from "@/../../src/core/dispatcher";
 import type { Request, Response } from "@google-cloud/functions-framework";
 
+export async function GET(req: NextRequest) {
+    try {
+        const { searchParams } = new URL(req.url);
+        const sessionId = searchParams.get("sessionId");
+
+        if (!sessionId) {
+            return Response.json({ error: "Missing sessionId" }, { status: 400 });
+        }
+
+        const db = getDbClient();
+        const results = db.getTaskResults(sessionId);
+        const session = db.getSession(sessionId);
+
+        return Response.json({ status: "success", results, sessionStatus: session?.status || "unknown" }, { status: 200 });
+    } catch (error) {
+        console.error("Error in orchestrator GET route:", error);
+        return Response.json({ error: "Internal server error" }, { status: 500 });
+    }
+}
+
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
+
+        // Handle direct approval execution action
+        if (body.action === 'approve') {
+            const { sessionId, manifest } = body;
+
+            if (!sessionId || typeof sessionId !== 'string') {
+                return Response.json({ error: 'Missing or invalid "sessionId" field for execution.' }, { status: 400 });
+            }
+            if (!manifest) {
+                return Response.json({ error: 'Missing "manifest" field for execution.' }, { status: 400 });
+            }
+
+            const dbClient = getDbClient();
+            dbClient.updateSessionStatus(sessionId, 'executing');
+
+            // Dispatch worker execution asynchronously so the UI can immediately poll for results
+            executeSwarmManifest(manifest, sessionId, dbClient).catch((err) => {
+                console.error('Error in asynchronous executeSwarmManifest:', err);
+                dbClient.updateSessionStatus(sessionId, 'error');
+                dbClient.writeAuditLog(sessionId, 'swarm_execution_failed', { error: err.message || String(err) });
+            });
+
+            return Response.json({
+                status: 'dispatched',
+                executionId: sessionId,
+                message: 'Session approved and execution started.',
+                workers: manifest.steps?.map((s: any) => s.worker) || []
+            }, { status: 200 });
+        }
 
         // Create mock Request and Response objects to interface with the GCF handler
         const mockReq = {
