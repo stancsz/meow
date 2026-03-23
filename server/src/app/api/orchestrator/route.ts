@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { orchestratorHandler } from "@/../../src/core/orchestrator";
 import { getDbClient } from "@/../../src/db/client";
-import { executeSwarmManifest } from "@/../../src/core/dispatcher";
 import type { Request, Response } from "@google-cloud/functions-framework";
 
 export async function GET(req: NextRequest) {
