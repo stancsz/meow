@@ -10,11 +10,24 @@ describe("Worker Execution Module", () => {
   let db: DBClient;
   let originalFetch: typeof global.fetch;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create an in-memory DB for tests
     db = new DBClient("sqlite://:memory:");
     const schema = fs.readFileSync("src/db/migrations/001_motherboard.sql", "utf-8");
     db.applyMigration(schema);
+
+    const { platformDbMock } = require("../workers/template");
+    const kmsProvider = require("../security/kms").getKMSProvider();
+    const encrypted = await kmsProvider.encrypt("mock_key");
+
+    // Create sessions with specific user IDs
+    db.createSession("user_monitor_test", { prompt: "test" }, {});
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-monitor-test' WHERE user_id = 'user_monitor_test';`);
+    platformDbMock.set("user_monitor_test", { supabaseUrl: "https://mock.supabase.co", encryptedKey: encrypted });
+
+    db.createSession("user_idempotent", { prompt: "test idempotent" }, {});
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-idempotent' WHERE user_id = 'user_idempotent';`);
+    platformDbMock.set("user_idempotent", { supabaseUrl: "https://mock.supabase.co", encryptedKey: encrypted });
 
     // Mock fetch for Cloud Function worker dispatch simulation
     originalFetch = global.fetch;
@@ -24,6 +37,8 @@ describe("Worker Execution Module", () => {
   afterEach(() => {
     global.fetch = originalFetch;
     delete process.env.FORCE_MOCK_FETCH;
+    const { platformDbMock } = require("../workers/template");
+    platformDbMock.clear();
   });
 
   it("should track execution state correctly via ExecutionMonitor", async () => {
@@ -55,8 +70,9 @@ describe("Worker Execution Module", () => {
     };
 
     const sessionId = db.createSession("user_monitor_test", { prompt: "test" }, manifest);
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-monitor-test-1' WHERE id = '${sessionId}';`);
 
-    const monitor = new ExecutionMonitor(db, sessionId);
+    const monitor = new ExecutionMonitor(db, "session-monitor-test-1");
 
     let progressEvents = 0;
 
@@ -74,7 +90,7 @@ describe("Worker Execution Module", () => {
     expect(progressEvents).toBeGreaterThan(0); // Ensure the callback was invoked
 
     // Session status should be completed
-    const session = db.getSession(sessionId);
+    const session = db.getSession("session-monitor-test-1");
     expect(session.status).toBe("completed");
   });
 
@@ -105,8 +121,9 @@ describe("Worker Execution Module", () => {
     };
 
     const sessionId = db.createSession("user_monitor_test", { prompt: "test fail" }, manifest);
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-monitor-test-2' WHERE id = '${sessionId}';`);
 
-    const monitor = new ExecutionMonitor(db, sessionId);
+    const monitor = new ExecutionMonitor(db, "session-monitor-test-2");
 
     try {
         await monitor.startAndMonitor(manifest);
@@ -115,7 +132,7 @@ describe("Worker Execution Module", () => {
         expect(error).toBeDefined();
     }
 
-    const session = db.getSession(sessionId);
+    const session = db.getSession("session-monitor-test-2");
     // Since the worker task internally returned an error status in our mock
     // executeSwarmManifest completes but has errors, so it correctly marks the session as 'error'.
     expect(session.status).toBe("error");
