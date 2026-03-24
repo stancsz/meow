@@ -137,7 +137,8 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
         'generic-writer',
         'mock-skill',
         'mock-fetch',
-        'echo'
+        'echo',
+        'demo-skill'
     ];
 
     try {

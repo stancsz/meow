@@ -8,11 +8,34 @@ describe("Dispatcher - Worker Dispatch & Execution Loop", () => {
   let db: DBClient;
   let originalFetch: typeof global.fetch;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create an in-memory DB for tests
     db = new DBClient("sqlite://:memory:");
     const schema = fs.readFileSync("src/db/migrations/001_motherboard.sql", "utf-8");
     db.applyMigration(schema);
+
+    const { platformDbMock } = require("../workers/template");
+    const kmsProvider = require("../security/kms").getKMSProvider();
+    const encrypted = await kmsProvider.encrypt("mock_key");
+
+    // The sessionId itself is not the user_id. executeSwarmManifest fetches the user via the session.
+    // We need to create mock sessions with specific user IDs that we also mock in platformDb.
+
+    db.createSession("user_dag", { prompt: "Test ordered DAG" }, {});
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-dag' WHERE user_id = 'user_dag';`);
+    platformDbMock.set("user_dag", { supabaseUrl: "https://mock.supabase.co", encryptedKey: encrypted });
+
+    db.createSession("user_parallel", { prompt: "Test parallel DAG" }, {});
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-parallel' WHERE user_id = 'user_parallel';`);
+    platformDbMock.set("user_parallel", { supabaseUrl: "https://mock.supabase.co", encryptedKey: encrypted });
+
+    db.createSession("user_fail", { prompt: "Test failure handling" }, {});
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-fail' WHERE user_id = 'user_fail';`);
+    platformDbMock.set("user_fail", { supabaseUrl: "https://mock.supabase.co", encryptedKey: encrypted });
+
+    db.createSession("user_retry", { prompt: "Test retry logic" }, {});
+    db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-retry' WHERE user_id = 'user_retry';`);
+    platformDbMock.set("user_retry", { supabaseUrl: "https://mock.supabase.co", encryptedKey: encrypted });
 
     // Mock fetch for Cloud Function worker dispatch simulation
     originalFetch = global.fetch;
@@ -32,6 +55,8 @@ describe("Dispatcher - Worker Dispatch & Execution Loop", () => {
   afterEach(() => {
     global.fetch = originalFetch;
     delete process.env.FORCE_MOCK_FETCH;
+    const { platformDbMock } = require("../workers/template");
+    platformDbMock.clear();
   });
 
   it("should execute SwarmManifest DAG in correct order", async () => {

@@ -5,6 +5,7 @@ import { DBClient } from "../db/client";
 import { executeWorkerTask, type WorkerResult } from "../workers/template";
 import { executeGithubWorkerTask } from "../workers/github.worker";
 import { executeMockWorkerTask } from "../workers/mock-worker";
+import { executeDemoWorkerTask } from "../workers/demo-worker";
 
 import {
   runAgentLoop,
@@ -386,6 +387,8 @@ export async function executeSwarmManifest(
           result = await executeGithubWorkerTask(task, sessionId, db);
         } else if (task.worker === "worker-mock") {
           result = await executeMockWorkerTask(task, sessionId, db);
+        } else if (task.worker === "demo-worker") {
+          result = await executeDemoWorkerTask(task, sessionId, db);
         } else {
           result = await executeWorkerTask(task, sessionId, db);
         }
