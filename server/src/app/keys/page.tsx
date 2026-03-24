@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import KeyManagement from '@/components/KeyManagement';
 
-export default function SettingsPage() {
+export default function KeysPage() {
     return (
         <div className="dashboard-container">
             <div className="dashboard-header" style={{ marginBottom: '1rem' }}>

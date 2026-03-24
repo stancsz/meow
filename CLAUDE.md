@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-03] Cycle #126 ✅ Relocated Phase 1 BYOK UI from `/settings/keys` to `/keys` as requested. Renamed component to `KeysPage` and updated dashboard navigation links.
 - [2026-04-03] Cycle #125 ✅ Verified Worker Dispatch + Execution Loop integration. Confirmed that Minimal UI (`server/src/app/page.tsx`) already successfully triggers the `executeSwarmManifest` dispatch loop via POST requests to `/api/orchestrator/execute` using the `handleApprove` function, and `ExecutionMonitor` correctly polls to provide live task results. End-to-end functionality is robust and task checks have been cleared.
 - [2026-04-03] Cycle #124 ✅ Completed Worker Dispatch + Execution Loop integration. Consolidated the orchestrator execution endpoints by migrating `/api/execution` to a dedicated sub-route at `/api/orchestrator/execute`. Updated the `server/src/app/page.tsx` Minimal UI approval flow to seamlessly trigger this endpoint and display dynamic statuses via the `ExecutionMonitor`. Verified frontend and backend testing via `bun test` in `server/`.
 - [2026-04-03] Cycle #123 ✅ Verified Worker Dispatch + Execution Loop integration with Minimal UI. Confirmed that `/api/execution` triggers `executeSwarmManifest` successfully, and `ExecutionMonitor` correctly polls `/api/orchestrator` to display real-time statuses and task results. End-to-end integration is robust and functioning as expected.
@@ -210,7 +211,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 0 — Worker Dispatch + Execution Loop:** Created end-to-end integration test for worker dispatch and execution loop. Validated orchestrator → worker → KMS credential → task result flow.
 - [x] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault implemented in `server/src/app/keys/page.tsx`
 - [x] **Phase 1 — BYOK UI:** Created settings page with Supabase Vault integration for key management
-- [x] **Phase 1 — BYOK UI:** Key management screen with Supabase Vault integration
+- [x] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
