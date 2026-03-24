@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-03] Cycle #124 ✅ Completed Worker Dispatch + Execution Loop integration. Consolidated the orchestrator execution endpoints by migrating `/api/execution` to a dedicated sub-route at `/api/orchestrator/execute`. Updated the `server/src/app/page.tsx` Minimal UI approval flow to seamlessly trigger this endpoint and display dynamic statuses via the `ExecutionMonitor`. Verified frontend and backend testing via `bun test` in `server/`.
 - [2026-04-03] Cycle #123 ✅ Verified Worker Dispatch + Execution Loop integration with Minimal UI. Confirmed that `/api/execution` triggers `executeSwarmManifest` successfully, and `ExecutionMonitor` correctly polls `/api/orchestrator` to display real-time statuses and task results. End-to-end integration is robust and functioning as expected.
 - [2026-04-03] Cycle #122 ✅ Integrated UI approval with worker dispatch execution loop. Created `/api/execution/route.ts` API endpoint and wired the UI `handleApprove` method in `server/src/app/page.tsx` to call it. Added specific tests in `src/workers/worker.test.ts`. Verified the backend endpoint calls `executeSwarmManifest` properly and real-time execution flows back to `ExecutionMonitor`.
 - [2026-04-03] Cycle #121 ✅ Verified Phase 1 BYOK UI. Examined existing implementation across `server/src/app/settings/keys/page.tsx` and associated components. Concluded the task is fully completed, ran tests successfully, and marked BACKLOG appropriately.
@@ -178,6 +179,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 0 — Worker Template:** Ephemeral CF that boots, loads JIT skill, fetches KMS-decrypted credential, executes, terminates
 - [x] **Phase 0 — Motherboard Schema:** Apply `SWARM_SPEC.md §9.2` SQL schema to a managed Supabase project / local SQLite equivalent
 - [x] **Phase 0 — Worker Dispatch + Execution Loop**
+- [x] **Phase 0 — Execution API Refactor:** Consolidated execution routes and ensured endpoints connect correctly for Phase 0 delivery.
 - [x] **Phase 0 — End-to-End Integration:** Fully connected the UI approve button to the dispatcher execution flow. Tested via end to end integration test.
 - [x] **Phase 0 — KMS Flow:** GCP Cloud KMS key ring setup + encrypt/decrypt service for Supabase `service_role` keys
 - [x] **Phase 0 — Minimal UI:** Text input → plan display → approve button (Next.js dashboard in `server/`)

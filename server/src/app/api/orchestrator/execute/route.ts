@@ -5,10 +5,12 @@ import { executeSwarmManifest } from "@/../../src/core/dispatcher";
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { sessionId, manifest } = body;
+        // Fallback to sessionId if session_id is not provided, matching UI payload behavior
+        const sessionId = body.session_id || body.sessionId;
+        const manifest = body.manifest;
 
         if (!sessionId || typeof sessionId !== 'string') {
-            return Response.json({ error: 'Missing or invalid "sessionId" field for execution.' }, { status: 400 });
+            return Response.json({ error: 'Missing or invalid "session_id" field for execution.' }, { status: 400 });
         }
         if (!manifest) {
             return Response.json({ error: 'Missing "manifest" field for execution.' }, { status: 400 });
