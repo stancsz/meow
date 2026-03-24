@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-03] Cycle #123 ✅ Verified Worker Dispatch + Execution Loop integration with Minimal UI. Confirmed that `/api/execution` triggers `executeSwarmManifest` successfully, and `ExecutionMonitor` correctly polls `/api/orchestrator` to display real-time statuses and task results. End-to-end integration is robust and functioning as expected.
 - [2026-04-03] Cycle #122 ✅ Integrated UI approval with worker dispatch execution loop. Created `/api/execution/route.ts` API endpoint and wired the UI `handleApprove` method in `server/src/app/page.tsx` to call it. Added specific tests in `src/workers/worker.test.ts`. Verified the backend endpoint calls `executeSwarmManifest` properly and real-time execution flows back to `ExecutionMonitor`.
 - [2026-04-03] Cycle #121 ✅ Verified Phase 1 BYOK UI. Examined existing implementation across `server/src/app/settings/keys/page.tsx` and associated components. Concluded the task is fully completed, ran tests successfully, and marked BACKLOG appropriately.
 - [2026-04-03] Cycle #120 ✅ Implemented Phase 1 BYOK UI directory restructuring: Relocated `server/src/app/keys` to `server/src/app/settings/keys` to meet prompt specifications, and updated `Navigation.tsx` correspondingly.
