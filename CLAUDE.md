@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-03] Cycle #128 ✅ Re-verified Phase 0 Minimal UI intent-to-execution integration. Confirmed that the Minimal UI (`server/src/app/page.tsx`) correctly handles intent submission, displays the plan via `PlanDisplay`, executes it via `api/execute/route.ts`, and polls task statuses correctly via `ExecutionMonitor`. Visually verified end-to-end local flow with Playwright.
 - [2026-04-03] Cycle #127 ✅ Re-verified Phase 0 Worker Dispatch + Execution Loop API Integration. Created `server/src/app/api/execute/route.ts` API route file based on user's direct instruction, by moving it out of `orchestrator/execute` and updating the UI (`server/src/app/page.tsx`) to hit this endpoint correctly for plan approval and manifest execution. Fully tested the frontend loop with Playwright tests.
 - [2026-04-03] Cycle #126 ✅ Relocated Phase 1 BYOK UI from `/settings/keys` to `/keys` as requested. Renamed component to `KeysPage` and updated dashboard navigation links.
 - [2026-04-03] Cycle #125 ✅ Verified Worker Dispatch + Execution Loop integration. Confirmed that Minimal UI (`server/src/app/page.tsx`) already successfully triggers the `executeSwarmManifest` dispatch loop via POST requests to `/api/orchestrator/execute` using the `handleApprove` function, and `ExecutionMonitor` correctly polls to provide live task results. End-to-end functionality is robust and task checks have been cleared.
