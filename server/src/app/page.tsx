@@ -236,7 +236,7 @@ export default function Home() {
           onComplete={handleExecutionComplete}
         />
 
-        {pda && status !== 'error' && (
+        {pda && (
           <div style={{ marginTop: '2rem' }}>
             <PlanDisplay
               pda={{ ...pda, status: status === 'waiting_approval' ? 'waiting_approval' : status }}
