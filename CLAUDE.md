@@ -157,6 +157,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [2026-03-15] Cycle #17 ✅ Fixed cross-platform compatibility in plugin test runner - now works seamlessly on Windows Git Bash
 
 - [2026-03-31] Cycle #106 ✅ Verified Phase 1 BYOK UI is already implemented and functionally complete in `server/src/app/keys` and `server/src/components/KeyManagement.tsx`. Conducted successful unittests verification via `bun test src/app/api/keys/keys.test.ts`.
+- [2026-04-03] Cycle #26 ✅ Implemented Phase 1 BYOK UI: Key management screen with Supabase Vault integration. Verified that the functionality was already present, ran tests, and updated the CLAUDE backlog accordingly.
 
 ## CURRENT TASK
 **Mission pivot: SimpleClaw is now a swarm orchestrator (see SWARM_SPEC.md)**
@@ -207,6 +208,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 0 — Worker Dispatch + Execution Loop:** Created end-to-end integration test for worker dispatch and execution loop. Validated orchestrator → worker → KMS credential → task result flow.
 - [x] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault implemented in `server/src/app/keys/page.tsx`
 - [x] **Phase 1 — BYOK UI:** Created settings page with Supabase Vault integration for key management
+- [x] **Phase 1 — BYOK UI:** Key management screen with Supabase Vault integration
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
