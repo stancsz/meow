@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import CredentialCard from '@/components/CredentialCard';
+import CredentialCard from './CredentialCard';
 
 export interface KeyRecord {
     id: string;
