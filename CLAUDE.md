@@ -183,6 +183,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - Architecture defined in `SWARM_SPEC.md` (updated v1.1 — KMS auth model documented)
 - `SPEC.md` rewritten to reflect swarm orchestrator mission
 - Core work: Finalizing Phase 1 features, including BYOK UI and real world Swarm capabilities.
+- **ROADMAP (Auto-Research):** The agent must automatically search for and research equivalent products on the market, understand their strengths, and add identified gaps/features to the project roadmap in the documentation. This dogfooding process must be completed prior to opening any PR.
 
 ## BACKLOG (Swarm Architecture)
 - [x] **Move 1:** Real LLM Intent Parsing
