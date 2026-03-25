@@ -2,9 +2,9 @@
 
 import React from 'react';
 import Link from 'next/link';
-import KeyManagement from '@/components/KeyManagement';
+import KeyManagement from './components/KeyManagement';
 
-export default function KeysPage() {
+export default function SettingsPage() {
     return (
         <div className="dashboard-container">
             <div className="dashboard-header" style={{ marginBottom: '1rem' }}>
@@ -12,7 +12,7 @@ export default function KeysPage() {
                     <Link href="/" style={{ color: '#888', textDecoration: 'none', fontSize: '1.5rem', lineHeight: '1' }}>
                         &larr;
                     </Link>
-                    <h1>Key Management</h1>
+                    <h1>Settings / Key Management</h1>
                 </div>
                 <div style={{ fontSize: '0.9rem', color: '#888' }}>Phase 1: BYOK UI</div>
             </div>

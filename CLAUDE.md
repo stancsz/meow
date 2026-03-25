@@ -9,6 +9,8 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-06] Cycle #134 ✅ Refactored Phase 1 BYOK UI. Moved `server/src/app/keys` to `server/src/app/settings` per prompt requirements. Moved KeyManagement, KeyList, AddKeyForm, and CredentialCard to `server/src/app/settings/components`. Updated navigation links.
+- [2026-04-06] Cycle #133 ✅ Verified Phase 1 BYOK UI Implementation. Examined existing implementation across `server/src/app/keys/page.tsx`, `server/src/components/KeyManagement.tsx`, and associated API routes. Concluded the task is fully completed, ran tests successfully, and marked BACKLOG appropriately.
 - [2026-04-06] Cycle #132 ✅ Fixed dispatcher manifest undefined crashes and test DB concurrency errors. Updated `executeSwarmManifest` to safely handle undefined manifest fields, and modified DB tests to assign explicit session IDs to circumvent SQLite UNIQUE constraint conflicts. Re-verified Next.js API test environment setups and successfully resolved all test errors to complete the Phase 0 end-to-end execution loop iteration.
 - [2026-04-06] Cycle #131 ✅ Verified Phase 1 BYOK UI Implementation. Examined existing implementation across `server/src/app/keys/page.tsx` and associated components. Concluded the task is fully completed, ran tests successfully, and marked BACKLOG appropriately.
 - [2026-04-05 14:00] Cycle #130 ✅ Integrated Minimal UI with Worker Dispatch system. Modified `server/src/app/api/execute/route.ts` to fetch the session from DBClient and dispatch execution. Verified end-to-end flow using Playwright.
