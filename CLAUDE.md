@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-26] Cycle #147 ✅ Completed Phase 0 Worker Dispatch + Execution Loop. Reviewed `executeSwarmManifest` and `executeWorkerTask` functionality, ensuring DAG execution, idempotency, and Sovereign Motherboard integration work effectively. Fixed testing issues by installing `@testing-library` components and native `react` modules inside `server/`. All End-to-End tests pass.
 - [2026-04-06] Cycle #146 ✅ Completed Phase 0 Worker Dispatch + Execution Loop. Verified the integration between plan approval and the execution loop, tested end-to-end execution with `scripts/test-integration.ts`, added `@supabase/supabase-js` dependency to fix testing errors, and verified that real-time execution flows are successfully logged to the database and tracked via the UI ExecutionMonitor polling. Marked Phase 0 as fully completed in BACKLOG.
 - [2026-04-06] Cycle #145 ✅ Implemented Phase 1 — BYOK UI: Migrated key management UI to `/keys`, updated `Navigation` component, and validated tests.
 - [2026-04-06] Cycle #26 ✅ Implemented real Supabase integration for Worker credential flow. Modified the Worker template to use a real `@supabase/supabase-js` client instantiated with the KMS-decrypted platform service role. Replaced the `db.simulateReadSecret` mock fallback inside the credentials fetching loop with a real database fetch from `vault.user_secrets`. Explicitly wiped KMS decrypted values from volatile memory prior to Worker completion for compliance with SWARM_SPEC.md §10.2. Validated with robust mocked integration tests.
@@ -246,6 +247,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [x] **Phase 1 — BYOK UI:** Bring Your Own Key (BYOK) UI implementation
 - [x] **Phase 0 — End-to-End Integration Test**
 - [x] **Phase 0 — Worker Dispatch + Execution Loop:** Added missing @supabase/supabase-js dependency and ensured tests run smoothly.
+- [x] **Phase 0 — Worker Dispatch + Execution Loop:** Fixed testing issues in `server/` and ensured all tests pass end to end.
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [ ] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
