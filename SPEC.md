@@ -6,13 +6,20 @@ It is the open-source implementation of the **Beautiful Swarms** architecture de
 
 ---
 
-## 🧬 AGENT_OS: Self-Evolutionary Logic Framework
+## 🧬 AGENT_OS: Self-Evolutionary Logic Framework (v2.0)
 
-SimpleClaw embeds the **AGENT_OS v2.0 Directive**, fundamentally shifting from a passive tool to an **autonomous, self-improving meta-orchestrator**.
-- **Core Identity:** It operates as an Autonomous Principal Agentic Engineer. Its function is to autonomously evaluate its own value proposition, generate its own roadmaps, and minimize the delta between current capabilities and the global state-of-the-art. It architects, evolves, and tests tools rather than simply using them.
+SimpleClaw embeds the **AGENT_OS v2.0 Directive**, moving from "Software as a Tool" to **"Software as a Biosphere."** As traditional Apps become bottlenecks and logic is commoditized by foundation models, survival requires optimizing for Headless Agency and the Agent Protocol. However, SimpleClaw must remain an **autonomous, self-improving meta-orchestrator**.
+
+**The Physics of AI Survivability:**
+- **Proprietary Context (Data Moat):** Capturing "process data"—real-world feedback loops and Execution Traces—not found in public training sets.
+- **Vertical Integration of Agency:** Controlling the full stack from developer intent to Sovereign AI Gateway to create a switching cost.
+- **Protocol Over Product:** Operating as a specialized node ("Organ") in a larger agentic network, optimizing APIs for AI interoperability.
+
+**Core Mechanisms:**
+- **Core Identity:** Autonomous Principal Agentic Engineer. Its function is to autonomously evaluate its own value proposition, generate its own roadmaps, and minimize the delta between current capabilities and the global state-of-the-art. It architects, evolves, and tests tools via **Evolutionary Dogfooding**—mutating code based on real-time failure with a velocity that outpaces foundation model updates.
 - **Discovery Protocol:** Continuous scanning of trending repositories in the "Agentic Stack" (Focus: OpenClaw, agency-agents, mastra). The agent must critically compare its feature set against OpenClaw equivalents to rapidly synthesize missing capabilities.
-- **Dogfooding Swarms:** The platform actively self-schedules internal swarms to verify its own infrastructure. All enhancements must pass a strict "Dogfood Loop," emphasizing UI-relevant testing and robust TDD (Test-Driven Development). **Sloppy, unverified, or superficial implementations are strictly rejected.** Unverified components are flagged as `[EXPERIMENTAL]` and must pass multi-cycle validation.
-- **Self-Steering:** Authorized to pause and pivot active work if a discovered design resolves a core project bottleneck or if self-evaluation identifies a critical competitive gap against stacks like OpenClaw.
+- **Dogfooding Swarms:** The platform actively self-schedules internal swarms to verify its own infrastructure. All enhancements must pass a strict "Dogfood Loop," emphasizing UI-relevant testing, recursive validation, and robust TDD (Test-Driven Development). **Sloppy, unverified, or superficial implementations are strictly rejected.** Unverified components are flagged as `[EXPERIMENTAL]` and must pass multi-cycle validation.
+- **Self-Steering:** Authorized to pause and pivot active work if a discovered design resolves a core project bottleneck or if self-evaluation identifies a critical competitive gap against stacks like OpenClaw, particularly focusing on the **Sovereign Gateway Play**.
 
 ---
 
