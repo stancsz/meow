@@ -121,32 +121,17 @@ export default function Home() {
     }
   };
 
-  const handleApprove = async () => {
+  const handleApprove = () => {
     if (!sessionId || !pda) return;
 
     // Transition from plan display to execution monitoring state
     setStatus('executing');
     setErrorMessage('');
 
-    try {
-      // Dispatch the generated swarm manifest directly to the dedicated execution endpoint
-      const response = await executePlan(sessionId, pda.plan, 'test-user');
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to execute plan');
-      }
-
-      // We leave the status in 'executing' state.
-      // The ExecutionMonitor component will poll the database for real-time
-      // progress of task results. When complete, it calls handleExecutionComplete.
-      console.log('Swarm execution started with ID:', data.executionId);
-    } catch (err: any) {
-      console.error(err);
-      setErrorMessage(err.message || 'An unexpected error occurred during execution.');
-      setStatus('error');
-    }
+    // We leave the status in 'executing' state.
+    // The ExecutionMonitor component will poll the database for real-time
+    // progress of task results. When complete, it calls handleExecutionComplete.
+    console.log('Swarm execution started for session:', sessionId);
   };
 
   return (

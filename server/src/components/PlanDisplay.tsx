@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { PlanDiffApprove, Task } from '../../../src/core/types';
 
 interface PlanDisplayProps {
@@ -10,6 +10,43 @@ interface PlanDisplayProps {
 }
 
 export default function PlanDisplay({ pda, sessionId, onApprove }: PlanDisplayProps) {
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleApproveClick = async () => {
+    if (!sessionId || !pda || !pda.plan) return;
+
+    setIsExecuting(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          manifest: pda.plan,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to start execution');
+      }
+
+      if (onApprove) {
+        onApprove();
+      }
+    } catch (err: any) {
+      console.error('Error starting execution:', err);
+      setError(err.message || 'An error occurred starting execution.');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
   if (!pda || !pda.plan || !pda.plan.steps) {
     return null;
   }
@@ -89,15 +126,16 @@ export default function PlanDisplay({ pda, sessionId, onApprove }: PlanDisplayPr
         </div>
       </div>
 
-      {(pda.status === 'waiting_approval' || pda.status === 'executing') && onApprove && (
-        <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+      {(pda.status === 'waiting_approval' || pda.status === 'executing') && (
+        <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1rem' }}>
+          {error && <div style={{ color: '#fca5a5', fontSize: '0.9rem' }}>{error}</div>}
           <button
-            onClick={onApprove}
-            disabled={pda.status === 'executing'}
+            onClick={handleApproveClick}
+            disabled={pda.status === 'executing' || isExecuting}
             className="btn-primary"
-            style={{ backgroundColor: pda.status === 'executing' ? '#4b5563' : '#16a34a', padding: '1rem 2rem', fontSize: '1.1rem', cursor: pda.status === 'executing' ? 'not-allowed' : 'pointer' }}
+            style={{ backgroundColor: (pda.status === 'executing' || isExecuting) ? '#4b5563' : '#16a34a', padding: '1rem 2rem', fontSize: '1.1rem', cursor: (pda.status === 'executing' || isExecuting) ? 'not-allowed' : 'pointer' }}
           >
-            {pda.status === 'executing' ? 'Executing...' : 'Approve & Execute Plan'}
+            {(pda.status === 'executing' || isExecuting) ? 'Executing...' : 'Approve & Execute Plan'}
           </button>
         </div>
       )}

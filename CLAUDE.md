@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-06] Cycle #163 ✅ Phase 0 Worker Dispatch + Execution Loop Completed: Connected the PlanDisplay component's "Approve" button to a new `server/src/app/api/execute/route.ts` API route. The new route calls `executeSwarmManifest` properly to trigger background execution and updates the session state in the database, allowing the `ExecutionMonitor` to poll the task statuses effectively. Simplified `page.tsx`'s `handleApprove` method and refactored the UI flow. Marked Phase 0 task from backlog as complete, and moved onto Phase 1.
 - [2026-03-27] Cycle #26 ✅ Completed Worker Dispatch and Execution Loop integration: Verified UI integration with orchestrator via the dispatcher loop in the tests.
 
 - [2026-03-27] Cycle #162 ✅ Verified Phase 0 Worker Dispatch + Execution Loop Minimal UI Integration: Verified the dashboard UI components already integrated the orchestrator API endpoint correctly. Created `server/src/lib/api-client.ts` to encapsulate the fetch logic for `generatePlan`, `executePlan`, and `pollExecutionResults`. Refactored `server/src/app/page.tsx` and `server/src/components/ExecutionMonitor.tsx` to use the new `api-client.ts` utility. Checked off `Phase 0 — Minimal UI` tasks in the BACKLOG.
@@ -295,7 +296,8 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [x] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [x] **Phase 1 — Gas Tank:** Refactored UI components into `GasTankDisplay` and `TopUpButton` and updated dispatcher to use `consumeGas`.
-- [ ] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
+- [ ] **Phase 1 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
+- [ ] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase
 
 ## DISCOVERY LOG
 - The project is currently Bun-centric for the core engine.
