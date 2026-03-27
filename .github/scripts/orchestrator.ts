@@ -15,6 +15,26 @@ async function main() {
     const specMd = execSync("git show origin/development:SPEC.md", { encoding: "utf-8" });
     const swarmSpec = execSync("git show origin/development:SWARM_SPEC.md", { encoding: "utf-8" });
 
+    const steeringPrompt = process.env.STEERING_PROMPT;
+    if (steeringPrompt && steeringPrompt.trim() !== "") {
+        console.log(chalk.magenta.bold("\n--- Steering Prompt Detected ---"));
+        console.log(chalk.white(`Bypassing LLM decision logic. Dispatching immediately to Jules with steering prompt:\n"${steeringPrompt}"\n`));
+
+        const jules = new JulesClient();
+        const instruction = `User Steering Prompt: ${steeringPrompt}\n\nIMPORTANT: Take priority of this task. First, update CLAUDE.md and any other related documentation (like SPEC.md or SWARM_SPEC.md if necessary) to reflect this new priority and work item. Then, proceed with the work. Update the AGENT WORKSPACE with your progress and mark tasks as done in the BACKLOG if applicable. Provide a clear summary of your work for the reviewer.`;
+
+        console.log(chalk.cyan("Delegating to Jules via API..."));
+        const result = await jules.delegateTask(instruction);
+
+        if (result.success) {
+            console.log(chalk.green.bold("Success:"), result.message);
+            process.exit(0);
+        } else {
+            console.error(chalk.red("Jules delegation failed:"), result.message);
+            process.exit(1);
+        }
+    }
+
     console.log(chalk.cyan("Fetching open Pull Requests..."));
     let prsJson = "";
     try {
