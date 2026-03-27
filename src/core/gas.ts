@@ -2,7 +2,7 @@ import Stripe from 'stripe';
 import { DBClient } from '../db/client';
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
-  apiVersion: '2026-03-25.dahlia' as any // Use type coercion to avoid typing issues with future or mismatching stripe SDKs in older ts setups
+  apiVersion: '2024-11-20.acacia' as any
 });
 
 export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_mock';
