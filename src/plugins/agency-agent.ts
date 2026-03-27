@@ -16,7 +16,7 @@ export const plugin: Extension = {
         if (!message) return "ERROR: 'message' parameter is required for delegate_task";
 
         // Locate the python script representing the external agency-os agent
-        const scriptPath = join(__dirname, "agency-os", "agent.py");
+        const scriptPath = join(import.meta.dir, "agency-os", "agent.py");
 
         try {
            // Execute the python script and pass the message as an argument
