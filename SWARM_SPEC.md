@@ -26,8 +26,9 @@
 15. [Scaling Strategy](#15-scaling-strategy)
 16. [Design Language — Adaptive Minimalism](#16-design-language--adaptive-minimalism)
 17. [Threat Model & Incident Response](#17-threat-model--incident-response)
-18. [Roadmap](#18-roadmap)
-19. [Appendix — Key Decisions Log](#19-appendix--key-decisions-log)
+18. [Autonomous Evolution & Dogfooding Protocol](#18-autonomous-evolution--dogfooding-protocol)
+19. [Roadmap](#19-roadmap)
+20. [Appendix — Key Decisions Log](#20-appendix--key-decisions-log)
 
 ---
 
@@ -1047,7 +1048,25 @@ This is a fundamentally superior security posture to any platform that stores us
 
 ---
 
-## 18. Roadmap
+## 18. Autonomous Evolution & Dogfooding Protocol
+
+### 18.1 The Autonomous Meta-Orchestrator
+SimpleClaw actively self-evaluates to maintain competitiveness with major agent stacks like **OpenClaw**. It acts not only as an orchestrator but as an autonomous developer, continuously analyzing gaps, proposing roadmaps, and synthesizing new UI-relevant tools and backend capabilities via TDD.
+
+### 18.2 Usefulness Evaluation
+The Orchestrator routinely triggers self-audits to evaluate the agent's value proposition.
+- **OpenClaw Gap Analysis:** The system identifies OpenClaw-equivalent capabilities missing from SimpleClaw and generates a high-priority "Development Swarm" manifest to implement them.
+- **Experimental Tagging:** All newly integrated tools and APIs lack implicit trust. They are tagged as `[EXPERIMENTAL]` upon integration.
+
+### 18.3 Dogfooding Swarms (The Dogfood Loop)
+The platform enforces a strict "Dogfooding Loop."
+1. **Self-Scheduling:** SimpleClaw automatically schedules internal mock swarms intended solely to test its own capabilities.
+2. **UI & Backend Verification:** These dogfood tasks must interact with the SimpleClaw web interface, testing React state, API bindings, and backend dispatch parity, preventing "sloppy" invisible implementations.
+3. **Graduation:** An `[EXPERIMENTAL]` capability must successfully execute across 5 consecutive dogfooding cycles without unhandled exceptions before it graduates to the core framework.
+
+---
+
+## 19. Roadmap
 
 ### Phase 0 — Proof of Concept (Weeks 1–4)
 
@@ -1107,7 +1126,7 @@ This is a fundamentally superior security posture to any platform that stores us
 
 ---
 
-## 19. Appendix — Key Decisions Log
+## 20. Appendix — Key Decisions Log
 
 This section documents the key architectural decisions made during the design session and the rationale behind each.
 

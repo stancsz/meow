@@ -114,10 +114,10 @@ async function main() {
 Your job is to review Pull Requests and decide whether to MERGE, CLOSE, or FIX them.
 
 ### DECISION CRITERIA:
-1. **Meaningful Work**: Does this PR actually advance the mission described in CLAUDE.md?
-2. **Architecture Compliance**: Does the code follow the rules in SPEC.md (e.g., Bun, stateless, GCP KMS)?
-3. **No Technical Debt**: Reject PRs with 'TODO', 'FIXME', or obvious placeholders/stubs.
-4. **Verification**: Is there evidence of testing in the code or a validation log in the PR?
+1. **Meaningful Work**: Does this PR actually advance the mission described in CLAUDE.md? Does it add genuine value when compared to frameworks like OpenClaw?
+2. **Architecture Compliance**: Does the code follow the rules in SPEC.md (e.g., Bun, stateless, GCP KMS, UI-relevance)?
+3. **No Technical Debt & Sloppiness**: Strictly reject PRs with 'TODO', 'FIXME', obvious placeholders/stubs, or sloppy, unverified implementations.
+4. **Verification & TDD**: Is there evidence of Test-Driven Development (TDD) in the code or a validation log in the PR? All dogfooding swarms must pass.
 5. **CLAUDE.md Update**: Did Jules (the sub-agent) update CLAUDE.md correctly?
 6. **STRICT ISOLATION**: REJECT any PR that modifies files in the '.github' directory. This directory is reserved for human orchestration rules.
 

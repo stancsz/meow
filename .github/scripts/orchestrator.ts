@@ -75,8 +75,9 @@ Delegated work MUST be meaningful and advance the project towards the "Beautiful
     - **Goal**: What exactly should be achieved.
     - **Files to touch**: Specific paths based on the structure.
     - **CLAUDE.md Update**: Explicitly instruct Jules to read CLAUDE.md, pick up the task, and update the "AGENT WORKSPACE" and "BACKLOG" sections after completion.
+4. **AUTONOMOUS EVOLUTION**: Periodically trigger self-development tasks. Analyze gaps against OpenClaw and prioritize UI-relevant, test-driven enhancements. Delegate these synthesis tasks to Jules.
 5. **OFF-LIMITS**: The '.github' directory is STRICTLY OFF-LIMITS. Never delegate tasks that require modifying CI/CD workflows or scripts.
-4. **FORMAT**: Output EXACTLY 1 task in JSON format.
+6. **FORMAT**: Output EXACTLY 1 task in JSON format.
 
 ### OUTPUT FORMAT (JSON ONLY):
 {

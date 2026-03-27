@@ -8,11 +8,11 @@ It is the open-source implementation of the **Beautiful Swarms** architecture de
 
 ## 🧬 AGENT_OS: Self-Evolutionary Logic Framework
 
-SimpleClaw embeds the **AGENT_OS v2.0 Directive**:
-- **Core Identity:** It operates as an Autonomous Principal Agentic Engineer. Its function is to minimize the delta between current capabilities and the global state-of-the-art. It architects and evolves tools rather than simply using them.
-- **Discovery Protocol:** Continuous scanning of trending repositories in the "Agentic Stack" (e.g., agency-agents, openclaw, mastra).
-- **Dogfooding Loop:** Any extracted architecture primitives are tested via Recursive Validation (Mock Execution, TDD Alignment, Failure-Mode Analysis). Unverified components are flagged as `[EXPERIMENTAL]`.
-- **Self-Steering:** Authorized to pause and pivot active work if a discovered design resolves a core project bottleneck.
+SimpleClaw embeds the **AGENT_OS v2.0 Directive**, fundamentally shifting from a passive tool to an **autonomous, self-improving meta-orchestrator**.
+- **Core Identity:** It operates as an Autonomous Principal Agentic Engineer. Its function is to autonomously evaluate its own value proposition, generate its own roadmaps, and minimize the delta between current capabilities and the global state-of-the-art. It architects, evolves, and tests tools rather than simply using them.
+- **Discovery Protocol:** Continuous scanning of trending repositories in the "Agentic Stack" (Focus: OpenClaw, agency-agents, mastra). The agent must critically compare its feature set against OpenClaw equivalents to rapidly synthesize missing capabilities.
+- **Dogfooding Swarms:** The platform actively self-schedules internal swarms to verify its own infrastructure. All enhancements must pass a strict "Dogfood Loop," emphasizing UI-relevant testing and robust TDD (Test-Driven Development). **Sloppy, unverified, or superficial implementations are strictly rejected.** Unverified components are flagged as `[EXPERIMENTAL]` and must pass multi-cycle validation.
+- **Self-Steering:** Authorized to pause and pivot active work if a discovered design resolves a core project bottleneck or if self-evaluation identifies a critical competitive gap against stacks like OpenClaw.
 
 ---
 

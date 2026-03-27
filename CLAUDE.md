@@ -1,7 +1,9 @@
 # CLAUDE.md - SimpleClaw
 
 ## MISSION
-SimpleClaw is a **stateless meta-orchestrator**. Its primary mission is to convert natural language intent into a structured execution plan and **delegate the heavy lifting to specialized sub-agents and execution engines (like `opencode`)**.
+SimpleClaw is an **autonomous, self-improving meta-orchestrator**. Its primary mission is to convert natural language intent into a structured execution plan and **delegate the heavy lifting to specialized sub-agents and execution engines (like `opencode`)**.
+
+Furthermore, embedded with the **AGENT_OS v2.0 directive**, SimpleClaw acts as an **Autonomous Principal Agentic Engineer**. It critically evaluates its value proposition, autonomously evolving through TDD-based self-improvements. It prioritizes **serious dogfooding of its own UI** and systems to rapidly set its roadmap and stay competitive with major agent stacks like **OpenClaw**. Sloppy or untested capabilities are actively flagged and rejected.
 
 It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive credentials (KMS-decrypted at runtime), load JIT skills, and execute tasks against the user's own Supabase (the Sovereign Motherboard). SimpleClaw is the "Brain" that coordinates the "Muscle" of sub-agents.
 

@@ -348,6 +348,21 @@ export async function executeSwarmManifest(
 
   db.writeAuditLog(sessionId, "swarm_execution_started", { manifest_version: manifest.version || "unknown" });
 
+  // 0. Dogfooding Protocol Check (Experimental Tagging)
+  for (const task of tasks) {
+    const isExperimentalWorker = task.worker?.startsWith("EXPERIMENTAL_");
+    const hasExperimentalSkill = task.skills?.some(s => s.startsWith("EXPERIMENTAL_"));
+
+    if (isExperimentalWorker || hasExperimentalSkill) {
+      db.writeAuditLog(sessionId, "experimental_tool_detected", {
+        task_id: task.id,
+        worker: task.worker,
+        skills: task.skills
+      });
+      console.warn(`[Dogfooding Loop] Task ${task.id} uses [EXPERIMENTAL] capabilities and must pass validation.`);
+    }
+  }
+
   // 1. Build Adjacency List and In-Degree Map
   const adjList = new Map<string, string[]>();
   const inDegree = new Map<string, number>();
