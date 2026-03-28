@@ -349,6 +349,11 @@ export class DBClient {
       return;
     }
     if (this.db) {
+      // Ensure only one pending heartbeat per session to prevent duplicate scheduling
+      this.db.run(
+        `DELETE FROM heartbeat_queue WHERE session_id = ? AND status = 'pending'`,
+        [sessionId]
+      );
       const id = crypto.randomUUID();
       this.db.run(
         `INSERT INTO heartbeat_queue (id, session_id, next_trigger, status) VALUES (?, ?, ?, ?)`,
