@@ -119,7 +119,7 @@ Natural language → `swarm.yaml` DAG via the user's BYOK LLM key. The platform 
 Before any write operation executes, the user sees a full plan preview: which Workers run, which credentials are accessed (masked), what will be read vs. written. Approve → Execute. No surprises.
 
 ### ⚙️ JIT Skill Loading
-Workers load Skill Markdown files just-in-time from the platform marketplace, a GitHub URL, or the user's own `skill_refs` table. Skills are human-readable instruction sets, not executable code.
+Workers load Skill Markdown files just-in-time from the platform marketplace, a GitHub URL, or the user's own `skill_refs` table using the `skill-loader` system. Skills are human-readable instruction sets structured with YAML frontmatter specifying `name`, `version`, `required_credentials`, and `allowed_domains`. The loader parses this metadata at runtime, validating access and enforcing security rules natively during execution.
 
 ### 🔑 BYOK + BYOI + BYOS
 - **BYOK:** User's own AI API keys (OpenAI, Gemini, Anthropic, DeepSeek)
