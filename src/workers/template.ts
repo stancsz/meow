@@ -4,6 +4,7 @@ import * as fs from "fs";
 import { getKMSProvider } from "../security/kms";
 import { OpenCodeExecutionEngine } from "../core/execution-engine";
 import { createClient } from "@supabase/supabase-js";
+import { loadSkillFromRef } from "../core/skill-loader";
 
 export interface WorkerResult {
   status: "success" | "error" | "skipped";
@@ -18,7 +19,8 @@ export async function executeWorkerTask(
   task: Task,
   sessionId: string,
   db: DBClient,
-  userId?: string
+  userId?: string,
+  skillRef?: string
 ): Promise<WorkerResult> {
   // 1. Boot: Log start (simulated)
 
@@ -33,16 +35,40 @@ export async function executeWorkerTask(
 
   try {
     // 3. Load JIT Skill
-    let skillContent = "";
-    const primarySkill = task.skills && task.skills.length > 0 ? task.skills[0] : "none";
-    if (task.skills && task.skills.length > 0) {
+    let skillContent = "Skill not specified.";
+    const targetSkillRef = skillRef || (task.skills && task.skills.length > 0 ? task.skills[0] : null);
+
+    if (targetSkillRef) {
       try {
-        skillContent = fs.readFileSync(`src/skills/${primarySkill}.md`, "utf-8");
+        const skill = await loadSkillFromRef(targetSkillRef);
+        skillContent = skill.content;
+
+        db.writeAuditLog(sessionId, "worker_skill_loaded", {
+          task_id: task.id,
+          skill_name: skill.name,
+          version: skill.version
+        });
+
+        if (skill.required_credentials && skill.required_credentials.length > 0) {
+            db.writeAuditLog(sessionId, "worker_enforcing_credentials", {
+                task_id: task.id,
+                required_credentials: skill.required_credentials
+            });
+        }
+
+        if (skill.allowed_domains && skill.allowed_domains.length > 0) {
+            db.writeAuditLog(sessionId, "worker_enforcing_domains", {
+                task_id: task.id,
+                allowed_domains: skill.allowed_domains
+            });
+        }
       } catch (err: any) {
-        skillContent = "Skill file not found or failed to load.";
+        skillContent = `Skill file not found or failed to load: ${err.message}`;
+        db.writeAuditLog(sessionId, "worker_skill_load_error", { task_id: task.id, error: err.message });
       }
+    } else {
+        db.writeAuditLog(sessionId, "worker_loading_skill", { task_id: task.id, skills: task.skills, loaded_content_preview: skillContent.substring(0, 50) });
     }
-    db.writeAuditLog(sessionId, "worker_loading_skill", { task_id: task.id, skills: task.skills, loaded_content_preview: skillContent.substring(0, 50) });
 
     // 4. Fetch credential
     const kmsProvider = getKMSProvider();

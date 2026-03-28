@@ -84,3 +84,12 @@ export interface AIKey {
     maskedKey: string;
     createdAt: string;
 }
+
+export interface Skill {
+    name: string;
+    version?: string;
+    required_credentials?: string[];
+    allowed_domains?: string[];
+    author?: string;
+    content: string;
+}

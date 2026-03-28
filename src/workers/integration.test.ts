@@ -93,7 +93,7 @@ This is a simple test skill to verify worker execution.
       // Verify audit logs
       const auditLogs = db.getAuditLogs(sessionId);
       const logEvents = auditLogs.map(log => log.event);
-      expect(logEvents).toContain("worker_loading_skill");
+      expect(logEvents).toContain("worker_skill_loaded");
       expect(logEvents).toContain("worker_decrypted_credential");
       expect(logEvents).toContain("worker_completed");
 
