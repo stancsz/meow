@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-07] Cycle #168 ✅ Taking priority task: Adding "2026 AI Agent Production-Level Interview Bank: The Senior Architect Edition" as an interview skill and interview bank to SimpleClaw.
 - [2026-04-06] Cycle #167 ✅ Taking priority task: Integrating @jackwener/opencli into SimpleClaw to make sure the agent can use it.
 - [2026-04-06] Cycle #166 ✅ Phase 1 BYOK UI already implemented. Verified that `server/src/app/settings/page.tsx` integrating `server/src/components/KeyManager.tsx` handles Supabase Vault KMS mock encryption successfully. Verified that UI passes tests accurately. Checked off the corresponding task in the BACKLOG and recorded progress in AGENT WORKSPACE.
 - [2026-04-06] Cycle #165 ✅ Integrated Minimal UI with orchestrator and worker dispatch for Phase 0. Configured `/api/orchestrator` to accept direct `action: 'approve'` instead of a dedicated execute route. Displayed live results gracefully via `ExecutionMonitor` UI polling. Verified execution loop using end-to-end testing with mock capabilities to pass without exceptions. Marked complete in BACKLOG.
@@ -245,6 +246,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - **Version Control:** Maintain EVOLUTION_HISTORY.log for logging repo reads and design adoptions with their "Performance Delta".
 
 ## BACKLOG (Swarm Architecture)
+- [x] **Phase 2 — Interview Skill:** Add interview skills and interview bank to simpleclaw 2026 AI Agent Production-Level Interview Bank.
 - [ ] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support.
 - [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency" - optimize API and Agent Protocol.
 - [ ] **Strategic Pivot:** Implement "Evolutionary Dogfooding" architecture for real-time code mutation.

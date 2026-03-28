@@ -437,6 +437,10 @@ async function buildCapabilityDefinitions(mode: RuntimeMode): Promise<Capability
             ...(extension.name === "opencli" ? {
               command: { type: "string" },
             } : {}),
+            ...(extension.name === "interview" ? {
+              section: { type: "string" },
+              question: { type: "string" },
+            } : {}),
           },
           required: ["action"],
         },
