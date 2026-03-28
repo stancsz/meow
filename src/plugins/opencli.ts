@@ -19,7 +19,7 @@ export const plugin: Extension = {
       console.log(`🔌 OpenCLI Skill: Executing "npx @jackwener/opencli ${command}"`);
 
       try {
-        const output = execSync(`npx @jackwener/opencli ${command}`, {
+        const output = execSync(`./node_modules/.bin/opencli ${command}`, {
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
           timeout: 60000,
