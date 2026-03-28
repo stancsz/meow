@@ -385,6 +385,20 @@ export class DBClient {
       );
     }
   }
+
+  applyMigration(sql: string) {
+    if (this.isSupabase) {
+      console.warn("applyMigration called in Supabase mode - using mock implementation.");
+      return;
+    }
+    if (this.db) {
+      // Split by semicolon to handle multiple statements
+      const statements = sql.split(';').filter(stmt => stmt.trim());
+      for (const stmt of statements) {
+        this.db.run(stmt);
+      }
+    }
+  }
 }
 
 export const getDbClient = () => {

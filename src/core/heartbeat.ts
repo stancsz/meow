@@ -202,7 +202,7 @@ export async function processPendingHeartbeats(db: any): Promise<void> {
     // Idempotency: Use transaction_log to ensure a specific heartbeat execution
     // isn't fired multiple times if concurrent orchestrator triggers fire.
     const idempotencyKey = `heartbeat_execution_${heartbeat.id}`;
-    if (db.checkIdempotency(idempotencyKey)) {
+    if (db.checkIdempotencyKey(idempotencyKey)) {
         continue;
     }
 
