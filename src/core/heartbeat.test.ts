@@ -111,7 +111,9 @@ describe("Heartbeat System", () => {
 
         try {
             // Need to insert some gas balance so executeSwarmManifest doesn't fail early
-            db.incrementGasBalance(userId, 100);
+            if (!db.getGasBalance(userId)) {
+                db.incrementGasBalance(userId, 100);
+            }
 
             await handleHeartbeat(db);
 
