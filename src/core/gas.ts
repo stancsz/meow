@@ -1,11 +1,6 @@
 import Stripe from 'stripe';
 import { DBClient } from '../db/client';
-
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
-  apiVersion: '2024-11-20.acacia' as any
-});
-
-export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_mock';
+import { stripe, STRIPE_WEBHOOK_SECRET } from './stripe';
 
 export const CREDIT_PRICE_CENTS = 100; // 1 credit = $1.00 or $0.01 per execution, set whatever scale needed
 export const MIN_CREDIT_PURCHASE = 1000;
@@ -26,41 +21,6 @@ export async function consumeGas(userId: string, amount: number = 1, db: DBClien
 
 export async function addGasCredits(userId: string, amount: number, db: DBClient): Promise<void> {
   db.incrementGasBalance(userId, amount);
-}
-
-export async function createCheckoutSession(userId: string, credits: number, originUrl: string): Promise<string | null> {
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'SimpleClaw Swarm Gas Credits',
-              description: `${credits} execution credits for your autonomous agents.`,
-            },
-            // Assuming $10 for 1000 credits -> 1 cent per credit. Let's make unit amount credits * 1 for $0.01/each
-            unit_amount: Math.round(1000 * 1), // $10.00
-          },
-          quantity: 1, // Or we could use variable credits, but simplest is 1 package
-        },
-      ],
-      mode: 'payment',
-      success_url: `${originUrl}?session_id={CHECKOUT_SESSION_ID}&gas_purchase=success`,
-      cancel_url: `${originUrl}?gas_purchase=cancelled`,
-      client_reference_id: userId,
-      metadata: {
-        userId: userId,
-        credits: credits.toString()
-      }
-    });
-
-    return session.url;
-  } catch (error) {
-    console.error("Error creating Stripe checkout session:", error);
-    return null;
-  }
 }
 
 export function handleStripeWebhook(payload: string | Buffer, signature: string, db: DBClient): boolean {

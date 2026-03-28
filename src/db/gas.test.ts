@@ -5,8 +5,8 @@ import {
   consumeGas,
   addGasCredits,
   handleStripeWebhook,
-  stripe
 } from "../core/gas";
+import { stripe } from "../core/stripe";
 
 describe("Gas Ledger System", () => {
   let db: DBClient;
