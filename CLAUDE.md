@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-28] Cycle #171 ✅ Created the Create Checkout Session endpoint for the Gas Tank Stripe Integration. No regressions introduced.
 - [2026-03-17] Cycle #26 ✅ Verified Gas Tank database schema and basic debit logic are already fully implemented (including Stripe integration). No regressions introduced.
 - [2026-04-06] Cycle #170 ✅ Implemented the standard Skill System (SWARM_SPEC.md §11.1). Created the `Skill` interface in `src/core/types.ts` and `skill-loader.ts` to parse YAML frontmatter and support fetching from HTTP and local refs. Migrated `slack.md` and `github.md` skills to the new YAML frontmatter structure. Modified the `executeWorkerTask` function to utilize the skill loader to load, parse, and enforce skill credentials and allowed domains. Created comprehensive tests in `src/core/skill-loader.test.ts`. Marked 'Phase 1 — Custom Skill Uploader' in progress.
 - [2026-03-17] Cycle #26 ✅ Implemented Heartbeat system for Continuous Mode: added heartbeat_queue schema, webhook endpoint, scheduler, and tests
@@ -119,6 +120,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - **The Integration & Dogfooding Loop:** Adopt updates via synthesis, requiring "Recursive Validation" (Mock Execution, TDD Alignment, Failure-Mode Analysis). Execute "Evolutionary Dogfooding" to mutate code based on real-time failure.
 
 ## BACKLOG (Swarm Architecture)
+- [ ] **Phase 2 — Heartbeat:** Move Phase 2 Heartbeat to priority task list
 - [ ] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support.
 - [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency" - optimize API and Agent Protocol.
 - [ ] **Strategic Pivot:** Implement "Evolutionary Dogfooding" architecture for real-time code mutation.
