@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-06] Cycle #167 ✅ Phase 1 BYOK UI implemented successfully. Verified that `server/src/app/settings/keys/page.tsx` integrating `server/src/components/KeyManager.tsx` handles Supabase Vault KMS mock encryption successfully. Verified that UI passes tests accurately. Checked off the corresponding task in the BACKLOG and recorded progress in AGENT WORKSPACE.
 - [2026-04-06] Cycle #166 ✅ Phase 1 BYOK UI already implemented. Verified that `server/src/app/settings/page.tsx` integrating `server/src/components/KeyManager.tsx` handles Supabase Vault KMS mock encryption successfully. Verified that UI passes tests accurately. Checked off the corresponding task in the BACKLOG and recorded progress in AGENT WORKSPACE.
 - [2026-04-06] Cycle #165 ✅ Integrated Minimal UI with orchestrator and worker dispatch for Phase 0. Configured `/api/orchestrator` to accept direct `action: 'approve'` instead of a dedicated execute route. Displayed live results gracefully via `ExecutionMonitor` UI polling. Verified execution loop using end-to-end testing with mock capabilities to pass without exceptions. Marked complete in BACKLOG.
 - [2026-04-06] Cycle #164 ✅ Implemented Phase 1 BYOK UI settings page, relocated `server/src/app/keys/page.tsx` to `server/src/app/settings/page.tsx`, exposed PUT endpoint, and updated navigation.
@@ -300,6 +301,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [x] **Phase 1 — Gas Tank:** Stripe integration + `gas_ledger` debit after execution
 - [x] **Phase 1 — Gas Tank:** Refactored UI components into `GasTankDisplay` and `TopUpButton` and updated dispatcher to use `consumeGas`.
+- [x] **Phase 1 — BYOK UI:** Key management screen storing keys in Supabase Vault implemented in `server/src/app/settings/keys/page.tsx`
 - [ ] **Phase 1 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 - [ ] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase
 

@@ -7,7 +7,7 @@ import GasTankDisplay from '../components/GasTankDisplay';
 import type { PlanDiffApprove } from '@/../../src/core/types';
 import Link from 'next/link';
 import { generatePlan, executePlan } from '../lib/api-client';
-import KeyManager from './components/KeyManager';
+import KeyManager from '../components/KeyManager';
 
 export default function Home() {
   const [prompt, setPrompt] = useState('');
@@ -143,7 +143,7 @@ export default function Home() {
           <Link href="/onboarding" style={{ color: '#00E5CC', textDecoration: 'none', fontSize: '0.9rem' }}>
             Onboarding
           </Link>
-          <Link href="/settings" style={{ color: '#00E5CC', textDecoration: 'none', fontSize: '0.9rem' }}>
+          <Link href="/settings/keys" style={{ color: '#00E5CC', textDecoration: 'none', fontSize: '0.9rem' }}>
             Settings (BYOK)
           </Link>
           <div style={{ fontSize: '0.9rem', color: '#888' }}>Phase 0: Orchestrator Test</div>
