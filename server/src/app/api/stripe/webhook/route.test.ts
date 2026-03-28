@@ -30,6 +30,7 @@ describe("Stripe Webhook API Route", () => {
 
   afterEach(() => {
     mock.restore();
+    delete process.env.STRIPE_WEBHOOK_SECRET;
   });
 
   test("returns 400 when stripe-signature header is missing", async () => {
