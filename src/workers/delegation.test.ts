@@ -33,7 +33,8 @@ describe("Delegation Layer", () => {
   };
 
   const setupSession = async (db: DBClient, sessionId: string) => {
-    const kmsProvider = require("../security/kms").getKMSProvider();
+    import { getKMSProvider } from "../security/kms";
+const kmsProvider = getKMSProvider();
     const encryptedServiceRole = await kmsProvider.encrypt("mock_service_role_key");
     const testUserId = `user-test-${sessionId}`;
     db.applyMigration(`
