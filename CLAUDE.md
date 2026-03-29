@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-06] Cycle #177 ✅ Re-architected Phase 2 Heartbeat: Transformed `createHeartbeat` to `scheduleHeartbeat` and `handleHeartbeat` internals to `processHeartbeat` allowing execution per session ID, per SWARM_SPEC.md. Added unit tests and integrated with the orchestrator route and `server/src/app/api/heartbeat/route.ts` endpoint. Marked 'Phase 2 — Heartbeat' as completed.
 - [Current Date] Cycle #26 ✅ Implemented Phase 2 Heartbeat logic: Updated `handleHeartbeat` to correctly calculate `next_trigger` with a 30-minute interval and ensure continuous processing by queueing the next heartbeat correctly. Updated `server/src/app/api/heartbeat/route.ts` to fully utilize the backend processing loop. Added unit tests for missing session and edge cases. Checked off Phase 2 — Heartbeat in BACKLOG.
 - [2026-03-29 05:29] Cycle #26 ✅ Implemented Phase 1 Gas Tank: Verified Stripe webhook integration, implemented `gas_ledger` debiting for the Swarm Dispatcher (`executeSwarmManifest`), created low-balance notifications for the Gas Ledger API, and ensured end-to-end testing coverage using a suite of integration tests.
 - [Current Date] Cycle #26 ✅ Created comprehensive integration test suite for swarm orchestration workflow. Tested intent parsing, Motherboard session creation, worker dispatch, execution logging, failure handling, and WRITE task idempotency.
@@ -129,7 +130,6 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - **The Integration & Dogfooding Loop:** Adopt updates via synthesis, requiring "Recursive Validation" (Mock Execution, TDD Alignment, Failure-Mode Analysis). Execute "Evolutionary Dogfooding" to mutate code based on real-time failure.
 
 ## BACKLOG (Swarm Architecture)
-- [x] **Phase 2 — Heartbeat:** Continuous Mode via pg_cron + 30-minute recursive heartbeat
 - [ ] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support.
 - [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency" - optimize API and Agent Protocol.
 - [ ] **Strategic Pivot:** Implement "Evolutionary Dogfooding" architecture for real-time code mutation.

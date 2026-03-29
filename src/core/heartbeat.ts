@@ -354,87 +354,103 @@ import { DBClient } from "../db/client";
 
 import { executeSwarmManifest } from "./dispatcher";
 
-export function createHeartbeat(db: DBClient, sessionId: string, intervalMinutes: number = 30) {
+export async function scheduleHeartbeat(sessionId: string, intervalMinutes: number, providedDb?: DBClient): Promise<void> {
+    const db = providedDb || new DBClient();
     const nextTriggerDate = new Date(Date.now() + intervalMinutes * 60 * 1000);
     const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
     db.upsertHeartbeat(sessionId, nextTriggerStr, 'pending');
     db.writeAuditLog(sessionId, 'continuous_mode_enabled', { interval_minutes: intervalMinutes, next_trigger: nextTriggerStr });
 }
 
+export async function processHeartbeat(sessionId: string, providedDb?: DBClient): Promise<void> {
+    const db = providedDb || new DBClient();
+
+    // Check if there is a pending heartbeat for this session that is due
+    const pending = db.getPendingHeartbeats();
+    const heartbeat = pending.find((h: any) => h.session_id === sessionId);
+
+    if (!heartbeat) {
+        // No pending heartbeat ready to trigger for this session
+        return;
+    }
+
+    // Prevent double execution via idempotency check using a unique key per trigger
+    const idempotencyKey = `heartbeat-${heartbeat.session_id}-${heartbeat.next_trigger}`;
+    if (db.checkIdempotency(idempotencyKey)) {
+        db.updateHeartbeatStatus(heartbeat.id, 'completed');
+        return;
+    }
+
+    // Update status so we don't process it multiple times in parallel loops
+    db.updateHeartbeatStatus(heartbeat.id, 'processing');
+    db.createTransactionLogEntry(idempotencyKey, 'started', {});
+
+    try {
+        const session = db.getSession(heartbeat.session_id);
+        if (!session || !session.manifest) {
+            db.updateHeartbeatStatus(heartbeat.id, 'error');
+            db.logTransaction(idempotencyKey, 'failed', { error: 'Session or manifest not found' });
+            return;
+        }
+
+        // Gas check logic required by orchestrator policies
+        const userId = session.user_id;
+        const gasBalance = db.getGasBalance(userId);
+
+        if (gasBalance <= 0) {
+            db.writeAuditLog(heartbeat.session_id, 'continuous_mode_suspended', { reason: 'insufficient_gas' });
+            db.updateHeartbeatStatus(heartbeat.id, 'failed');
+            db.logTransaction(idempotencyKey, 'failed', { error: 'Insufficient gas' });
+            return;
+        }
+
+        db.writeAuditLog(heartbeat.session_id, 'heartbeat_triggered', { next_trigger: heartbeat.next_trigger });
+
+        // Dispatch workers using the existing `executeSwarmManifest`
+        const results = await executeSwarmManifest(session.manifest, heartbeat.session_id, db);
+
+        const hasErrors = Object.values(results).some(res => res.status === "error");
+
+        if (!hasErrors) {
+            // We shouldn't debit gas strictly here if executeSwarmManifest already does, but
+            // executeSwarmManifest actually handles the debiting via checking for gas_consumed_for_session
+            // Actually, let's let executeSwarmManifest handle it or manually add a log to ensure 1 debit per trigger
+            const runId = `gas_consumed_for_heartbeat_${Date.now()}`;
+            await db.debitCredits(userId, 1);
+            db.writeAuditLog(heartbeat.session_id, runId, { amount: 1 });
+        }
+
+        db.logTransaction(idempotencyKey, 'completed', results);
+
+        // According to spec "Updates heartbeat_queue status to 'completed' or 'failed',
+        // and sets the next next_trigger for recurring sessions"
+        if (hasErrors) {
+            db.updateHeartbeatStatus(heartbeat.id, 'failed');
+        } else {
+            db.updateHeartbeatStatus(heartbeat.id, 'completed');
+        }
+
+        // Set up the next trigger for recurring continuous mode (e.g., add 30 minutes)
+        const nextTriggerDate = new Date(Date.now() + 30 * 60 * 1000);
+        const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
+
+        // Only update the trigger for recurring sessions
+        db.upsertHeartbeat(session.id, nextTriggerStr, 'pending');
+
+    } catch (error: any) {
+        console.error(`Error processing heartbeat for session ${heartbeat.session_id}:`, error);
+        db.updateSessionStatus(heartbeat.session_id, 'error');
+        db.writeAuditLog(heartbeat.session_id, 'heartbeat_execution_failed', { error: error.message || String(error) });
+        db.logTransaction(idempotencyKey, 'failed', { error: error.message || String(error) });
+        db.updateHeartbeatStatus(heartbeat.id, 'failed');
+    }
+}
+
 export async function handleHeartbeat(db: DBClient) {
     const pending = db.getPendingHeartbeats();
 
     for (const heartbeat of pending) {
-        // Prevent double execution via idempotency check using a unique key per trigger
-        const idempotencyKey = `heartbeat-${heartbeat.session_id}-${heartbeat.next_trigger}`;
-        if (db.checkIdempotency(idempotencyKey)) {
-            db.updateHeartbeatStatus(heartbeat.id, 'completed');
-            continue;
-        }
-
-        // Update status so we don't process it multiple times in parallel loops
-        db.updateHeartbeatStatus(heartbeat.id, 'processing');
-        db.createTransactionLogEntry(idempotencyKey, 'started', {});
-
-        try {
-            const session = db.getSession(heartbeat.session_id);
-            if (!session || !session.manifest) {
-                db.updateHeartbeatStatus(heartbeat.id, 'error');
-                db.logTransaction(idempotencyKey, 'failed', { error: 'Session or manifest not found' });
-                continue;
-            }
-
-            // Gas check logic required by orchestrator policies
-            const userId = session.user_id;
-            const gasBalance = db.getGasBalance(userId);
-
-            if (gasBalance <= 0) {
-                db.writeAuditLog(heartbeat.session_id, 'continuous_mode_suspended', { reason: 'insufficient_gas' });
-                db.updateHeartbeatStatus(heartbeat.id, 'failed');
-                db.logTransaction(idempotencyKey, 'failed', { error: 'Insufficient gas' });
-                continue;
-            }
-
-            db.writeAuditLog(heartbeat.session_id, 'heartbeat_triggered', { next_trigger: heartbeat.next_trigger });
-
-            // Dispatch workers using the existing `executeSwarmManifest`
-            const results = await executeSwarmManifest(session.manifest, heartbeat.session_id, db);
-
-            const hasErrors = Object.values(results).some(res => res.status === "error");
-
-            if (!hasErrors) {
-                // We shouldn't debit gas strictly here if executeSwarmManifest already does, but
-                // executeSwarmManifest actually handles the debiting via checking for gas_consumed_for_session
-                // Actually, let's let executeSwarmManifest handle it or manually add a log to ensure 1 debit per trigger
-                const runId = `gas_consumed_for_heartbeat_${Date.now()}`;
-                await db.debitCredits(userId, 1);
-                db.writeAuditLog(heartbeat.session_id, runId, { amount: 1 });
-            }
-
-            db.logTransaction(idempotencyKey, 'completed', results);
-
-            // According to spec "Updates heartbeat_queue status to 'completed' or 'failed',
-            // and sets the next next_trigger for recurring sessions"
-            if (hasErrors) {
-                db.updateHeartbeatStatus(heartbeat.id, 'failed');
-            } else {
-                db.updateHeartbeatStatus(heartbeat.id, 'completed');
-            }
-
-            // Set up the next trigger for recurring continuous mode (e.g., add 30 minutes)
-            const nextTriggerDate = new Date(Date.now() + 30 * 60 * 1000);
-            const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
-
-            // Only update the trigger for recurring sessions
-            db.upsertHeartbeat(session.id, nextTriggerStr, 'pending');
-
-        } catch (error: any) {
-            console.error(`Error processing heartbeat for session ${heartbeat.session_id}:`, error);
-            db.updateSessionStatus(heartbeat.session_id, 'error');
-            db.writeAuditLog(heartbeat.session_id, 'heartbeat_execution_failed', { error: error.message || String(error) });
-            db.logTransaction(idempotencyKey, 'failed', { error: error.message || String(error) });
-            db.updateHeartbeatStatus(heartbeat.id, 'failed');
-        }
+        await processHeartbeat(heartbeat.session_id, db);
     }
 }
 
