@@ -338,6 +338,7 @@ export async function executeSwarmManifest(
 ): Promise<Record<string, WorkerResult>> {
 
   // Enforce gas check inside the dispatcher before execution starts
+  // We hydrate the session from the DB to check continuous mode state and gas
   const session = db.getSession(sessionId);
   const userId = session?.user_id;
 
