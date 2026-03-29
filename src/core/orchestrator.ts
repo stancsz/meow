@@ -4,7 +4,7 @@ import { SwarmManifest, Task, PlanDiffApprove } from './types';
 import { parseIntentToManifest } from './llm';
 import { DBClient } from '../db/client';
 import { executeSwarmManifest } from './dispatcher';
-import { createHeartbeat } from './heartbeat';
+import { scheduleHeartbeat } from './heartbeat';
 import { checkGasBalance, debitGas } from './gas';
 
 export function validateManifest(manifest: SwarmManifest, availableSkills: string[]): boolean {
@@ -113,7 +113,7 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
 
         // Setup heartbeat for continuous mode if schedule exists
         if (manifest.schedule) {
-            createHeartbeat(dbClient, session_id, 30);
+            await scheduleHeartbeat(session_id, 30, dbClient);
         }
 
         // Execute asynchronously so UI can poll for results

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { DBClient } from "../db/client";
-import { handleHeartbeat, startLocalScheduler } from "./heartbeat";
+import { handleHeartbeat, scheduleHeartbeat, processHeartbeat, startLocalScheduler } from "./heartbeat";
 import * as dispatcher from "./dispatcher";
 
 describe("Heartbeat System", () => {
@@ -94,7 +94,18 @@ describe("Heartbeat System", () => {
         expect(pending.length).toBe(0); // It's no longer pending
     });
 
-    it("should process pending heartbeats via local scheduler simulation", async () => {
+    it("should schedule a heartbeat correctly", async () => {
+        const sessionId = "session-scheduled";
+        await scheduleHeartbeat(sessionId, 30, db);
+
+        // Check it was upserted correctly
+        const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE session_id = ?").all(sessionId) as any[];
+        expect(queueCheck.length).toBe(1);
+        expect(queueCheck[0].status).toBe('pending');
+        expect(queueCheck[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
+    });
+
+    it("should process a specific pending heartbeat via processHeartbeat", async () => {
         const sessionId = "session-789";
         const userId = "user-123";
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
@@ -115,9 +126,9 @@ describe("Heartbeat System", () => {
                 db.incrementGasBalance(userId, 100);
             }
 
-            await handleHeartbeat(db);
+            await processHeartbeat(sessionId, db);
 
-            // handleHeartbeat updates the queue to 'completed' AND queues the next one as 'pending'
+            // processHeartbeat updates the queue to 'completed' AND queues the next one as 'pending'
             // We should find one 'completed' (which getPendingHeartbeats ignores) and one new 'pending'
             const pending = db.getPendingHeartbeats();
             expect(pending.length).toBe(0); // the new one is 30 mins in future!
@@ -129,6 +140,20 @@ describe("Heartbeat System", () => {
         } finally {
 
         }
+    });
+
+    it("should do nothing in processHeartbeat if heartbeat is not pending or due", async () => {
+        const sessionId = "session-future";
+        const triggerTime = new Date(Date.now() + 10000).toISOString().replace('T', ' ').replace('Z', ''); // future
+        db.upsertHeartbeat(sessionId, triggerTime, "pending");
+
+        await processHeartbeat(sessionId, db);
+
+        // Should still be pending
+        const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE session_id = ?").all(sessionId) as any[];
+        expect(queueCheck.length).toBe(1);
+        expect(queueCheck[0].status).toBe('pending');
+        expect(queueCheck[0].next_trigger).toBe(triggerTime);
     });
 
     it("should update heartbeat to error if session has no manifest", async () => {
