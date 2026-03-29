@@ -368,6 +368,10 @@ export class DBClient {
     this.incrementGasBalance(userId, amount);
   }
 
+  async addCredits(userId: string, amount: number): Promise<void> {
+    this.incrementGasBalance(userId, amount);
+  }
+
   upsertHeartbeat(sessionId: string, nextTrigger: string, status: string = 'pending') {
     if (this.isSupabase) {
         console.warn("upsertHeartbeat called in Supabase mode.");

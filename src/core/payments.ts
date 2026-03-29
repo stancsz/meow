@@ -44,16 +44,20 @@ export function handleStripeWebhook(payload: string | Buffer, signature: string,
       STRIPE_WEBHOOK_SECRET
     );
 
-    if (event.type === 'checkout.session.completed') {
+    if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
       if (db.checkIdempotency(event.id)) {
         console.log(`Duplicate Stripe webhook event detected and skipped: ${event.id}`);
         return true;
       }
 
-      const session = event.data.object as Stripe.Checkout.Session;
+      const dataObj = event.data.object as Stripe.Checkout.Session | Stripe.PaymentIntent;
 
-      const userId = session.client_reference_id || session.metadata?.userId;
-      const creditsStr = session.metadata?.credits;
+      let userId = dataObj.metadata?.userId;
+      if (event.type === 'checkout.session.completed') {
+        userId = (dataObj as Stripe.Checkout.Session).client_reference_id || userId;
+      }
+
+      const creditsStr = dataObj.metadata?.credits;
 
       if (userId && creditsStr) {
         const credits = parseInt(creditsStr, 10);

@@ -83,4 +83,23 @@ describe("Gas Ledger Core", () => {
       expect(balance).toBe(1);
     });
   });
+
+  describe("addCredits", () => {
+    test("successfully adds credits", async () => {
+      db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES ('6', 'user-add', 5)`);
+
+      await db.addCredits("user-add", 10);
+
+      const balance = db.getGasBalance("user-add");
+      expect(balance).toBe(15);
+    });
+
+    test("creates new ledger entry if user does not exist", async () => {
+      await db.addCredits("user-new", 20);
+
+      const balance = db.getGasBalance("user-new");
+      // Starts with 10 free credits + 20 added = 30 credits
+      expect(balance).toBe(30);
+    });
+  });
 });

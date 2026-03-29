@@ -514,12 +514,10 @@ export async function executeSwarmManifest(
       db.updateSessionStatus(sessionId, "completed");
   }
 
-  // Debit gas credits after execution completes. Note: Orchestrator handles top level debit,
-  // we do it here if calling executeSwarmManifest directly and avoiding orchestrator
-  // Wait, if orchestrator does it, and we do it here, we get double billing for orchestrator runs.
-  // Actually, orchestrator uses audit logs to prevent double billing but let's check it.
-  // We debit gas even if there are partial errors, because execution was initiated.
-  if (userId) {
+  // Debit gas credits ONLY after SUCCESSFUL execution completes.
+  // Orchestrator handles top-level debit, but we also ensure execution initiated directly
+  // via this function is debited, relying on idempotency logs.
+  if (userId && !hasErrors) {
       const logs = db.getAuditLogs(sessionId);
       const alreadyConsumed = logs.some((log: any) => log.event === 'gas_consumed_for_session');
       if (!alreadyConsumed) {

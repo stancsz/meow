@@ -119,6 +119,7 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
         // Execute asynchronously so UI can poll for results
         executeSwarmManifest(manifest, session_id, dbClient)
             .then(async (results) => {
+                // As per specification: after successful execution, debit 1 credit from user's gas_ledger.
                 // Determine if execution was overall successful to merit a charge
                 const hasErrors = Object.values(results).some(res => res.status === "error");
                 if (!hasErrors) {
