@@ -142,7 +142,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
 - [x] **Phase 1 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 - [x] **Phase 2 — Heartbeat:** Enable recurring swarm executions via a 30-minute heartbeat mechanism
-- [x] **Phase 2 — Heartbeat: Continuous Mode via `pg_cron` + 30-minute recursive heartbeat**
+
 - [~] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)
 - [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. (Done)
 
