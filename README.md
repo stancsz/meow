@@ -67,6 +67,7 @@ bun install
 # Setup environment
 cp .env.example .env
 # Edit .env with your OPENAI_API_KEY or DEEPSEEK_API_KEY
+# For Gas Tank payments integration, also provide STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET
 
 # Start SimpleClaw
 bun run start

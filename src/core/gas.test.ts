@@ -72,6 +72,9 @@ describe("Gas Ledger Core", () => {
 
       const balance = db.getGasBalance("user-debit");
       expect(balance).toBe(3);
+
+      const logs = db.getAuditLogs('user-debit');
+      expect(logs.some(l => l.event === 'gas_consumed')).toBe(true);
     });
 
     test("throws an error if insufficient balance", async () => {
@@ -81,6 +84,9 @@ describe("Gas Ledger Core", () => {
 
       const balance = db.getGasBalance("user-poor");
       expect(balance).toBe(1);
+
+      const logs = db.getAuditLogs('user-poor');
+      expect(logs.some(l => l.event === 'gas_consumed')).toBe(false);
     });
   });
 });

@@ -12,7 +12,7 @@ export function checkGasBalance(userId: string, db: DBClient): boolean {
 }
 
 export async function debitGas(userId: string, credits: number, db: DBClient): Promise<boolean> {
-  const success = await db.debitCredits(userId, credits);
+  const success = db.debitGas(userId, credits);
   if (!success) {
     throw new Error('Insufficient gas credits');
   }
