@@ -340,34 +340,31 @@ export class DBClient {
   }
 
   incrementGasBalance(userId: string, amount: number) {
+    this.creditGas(userId, amount);
+  }
+
+  creditGas(userId: string, amount: number) {
     if (this.isSupabase) {
-        console.warn("incrementGasBalance called in Supabase mode.");
+        console.warn("creditGas called in Supabase mode.");
         return;
     }
     if (this.db) {
-        // Ensure user exists in ledger
-        this.getGasBalance(userId);
+        this.db.transaction(() => {
+            // Ensure user exists in ledger
+            this.getGasBalance(userId);
 
-        this.db.run(
-            `UPDATE gas_ledger SET balance_credits = balance_credits + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
-            [amount, userId]
-        );
-        this.writeAuditLog(userId, 'gas_purchased', { amount });
+            this.db.run(
+                `UPDATE gas_ledger SET balance_credits = balance_credits + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+                [amount, userId]
+            );
+            this.writeAuditLog(userId, 'gas_purchased', { amount });
+        })();
     }
   }
 
   decrementGasBalance(userId: string, amount: number) {
-    if (this.isSupabase) {
-        console.warn("decrementGasBalance called in Supabase mode.");
-        return;
-    }
-    if (this.db) {
-        this.db.run(
-            `UPDATE gas_ledger SET balance_credits = balance_credits - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND balance_credits >= ?`,
-            [amount, userId, amount]
-        );
-        this.writeAuditLog(userId, 'gas_consumed', { amount });
-    }
+    // legacy alias, should not be directly used if we want boolean return
+    this.debitGas(userId, amount);
   }
 
   // Gas ledger higher-level methods
@@ -376,13 +373,30 @@ export class DBClient {
     return balance > 0;
   }
 
-  async debitCredits(userId: string, amount: number = 1): Promise<boolean> {
-    const balance = this.getGasBalance(userId);
-    if (balance >= amount) {
-      this.decrementGasBalance(userId, amount);
-      return true;
+  debitGas(userId: string, amount: number): boolean {
+    if (this.isSupabase) {
+        console.warn("debitGas called in Supabase mode.");
+        return true;
     }
-    return false;
+    let success = false;
+    if (this.db) {
+        this.db.transaction(() => {
+            const balance = this.getGasBalance(userId);
+            if (balance >= amount) {
+                this.db.run(
+                    `UPDATE gas_ledger SET balance_credits = balance_credits - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND balance_credits >= ?`,
+                    [amount, userId, amount]
+                );
+                this.writeAuditLog(userId, 'gas_consumed', { amount });
+                success = true;
+            }
+        })();
+    }
+    return success;
+  }
+
+  async debitCredits(userId: string, amount: number = 1): Promise<boolean> {
+    return this.debitGas(userId, amount);
   }
 
   getBalance(userId: string): number {

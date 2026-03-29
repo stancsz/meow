@@ -524,8 +524,13 @@ export async function executeSwarmManifest(
       const logs = db.getAuditLogs(sessionId);
       const alreadyConsumed = logs.some((log: any) => log.event === 'gas_consumed_for_session');
       if (!alreadyConsumed) {
-        await db.debitCredits(userId, 1);
-        db.writeAuditLog(sessionId, 'gas_consumed_for_session', { amount: 1 });
+        // use debitGas instead of db.debitCredits directly
+        try {
+          await debitGas(userId, 1, db);
+          db.writeAuditLog(sessionId, 'gas_consumed_for_session', { amount: 1 });
+        } catch (e: any) {
+          db.writeAuditLog(sessionId, 'gas_consumed_failed', { amount: 1, error: e.message });
+        }
       }
   }
 
