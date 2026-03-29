@@ -40,8 +40,10 @@ export class DBClient {
       return;
     }
     if (this.db) {
+        // Remove Supabase-only blocks before applying to local SQLite to prevent syntax errors
+        const sanitizedSql = sql.replace(/\/\*\s*SUPABASE_ONLY_BEGIN\s*\*\/[\s\S]*?\/\*\s*SUPABASE_ONLY_END\s*\*\//g, '');
         // SQLite doesn't do multiple statements natively well in bun without `run`, so we split by ';'
-        const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+        const statements = sanitizedSql.split(';').map(s => s.trim()).filter(s => s.length > 0);
         this.db.transaction(() => {
            for (const stmt of statements) {
                this.db!.run(stmt);

@@ -93,3 +93,11 @@ export interface Skill {
     author?: string;
     content: string;
 }
+
+export interface HeartbeatQueue {
+    id: string;
+    session_id: string;
+    next_trigger: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed' | 'error';
+    created_at: string;
+}

@@ -15,13 +15,13 @@ export async function POST(req: NextRequest) {
                 sessionId = body.session_id;
             }
         } catch (e) {
-            // Ignored, might not have a body
+            // Ignored, might not have a JSON body
         }
 
         const db = getDbClient();
 
         if (sessionId) {
-            // Process a specific session
+            // Process a specific session (from pg_cron trigger or Cloud Scheduler)
             await handleHeartbeat(sessionId, db);
         } else {
             // This simulates a cron trigger hitting the endpoint without session_id,

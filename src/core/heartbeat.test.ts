@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { DBClient } from "../db/client";
-import { handleHeartbeat, scheduleHeartbeat, processAllHeartbeats, startLocalScheduler } from "./heartbeat";
+import { handleHeartbeat, scheduleHeartbeat, processAllHeartbeats } from "./heartbeat";
+import { startLocalScheduler } from "./heartbeat-local";
 import * as dispatcher from "./dispatcher";
 
 describe("Heartbeat System", () => {
@@ -67,6 +68,7 @@ describe("Heartbeat System", () => {
         const userId = "user-123";
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
 
+        // Create a mock session to hydrate state from inside the dispatcher later
         db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
         // Override session ID for the test since createSession uses crypto.randomUUID
         db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
