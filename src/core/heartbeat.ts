@@ -413,12 +413,26 @@ export async function handleHeartbeat(sessionId: string, providedDb?: DBClient):
         const hasErrors = Object.values(results).some(res => res.status === "error");
 
         if (!hasErrors) {
-            // We shouldn't debit gas strictly here if executeSwarmManifest already does, but
-            // executeSwarmManifest actually handles the debiting via checking for gas_consumed_for_session
-            // Actually, let's let executeSwarmManifest handle it or manually add a log to ensure 1 debit per trigger
-            const runId = `gas_consumed_for_heartbeat_${Date.now()}`;
-            await db.debitCredits(userId, 1);
-            db.writeAuditLog(heartbeat.session_id, runId, { amount: 1 });
+            const runId = `gas_consumed_for_heartbeat_${heartbeat.id}`;
+            const logs = db.getAuditLogs(heartbeat.session_id);
+            const alreadyConsumedForThisRun = logs.some((l: any) => l.event === runId);
+
+            // Deduct exactly 1 gas for this successful recurring heartbeat loop execution
+            // We use the unique runId to ensure we don't accidentally deduct multiple times for the same heartbeat.
+            // The very first run was handled by executeSwarmManifest using 'gas_consumed_for_session' but since
+            // 'executeSwarmManifest' will skip execution charging if 'gas_consumed_for_session' is already true,
+            // we must deduct for the heartbeat manually.
+            // Additionally, if it's the first execution from a schedule, executeSwarmManifest handles it,
+            // and then subsequent heartbeat triggers will fall back to this logic.
+            // A simple reliable way is to count all executions.
+            // Wait, actually executeSwarmManifest *always* checks and charges if 'gas_consumed_for_session' is absent.
+            // So if it's present, `executeSwarmManifest` didn't charge, and we must do it here.
+            const orchestratorRunConsumed = logs.some((l: any) => l.event === 'gas_consumed_for_session');
+
+            if (orchestratorRunConsumed && !alreadyConsumedForThisRun) {
+                await db.debitCredits(userId, 1);
+                db.writeAuditLog(heartbeat.session_id, runId, { amount: 1 });
+            }
         }
 
         db.logTransaction(idempotencyKey, 'completed', results);

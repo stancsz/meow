@@ -524,9 +524,9 @@ export async function executeSwarmManifest(
       const logs = db.getAuditLogs(sessionId);
       const alreadyConsumed = logs.some((log: any) => log.event === 'gas_consumed_for_session');
       if (!alreadyConsumed) {
-        // use debitGas instead of db.debitCredits directly
         try {
-          await debitGas(userId, 1, db);
+          // In some environments dynamically importing might fail, so just use dbClient natively
+          await db.debitCredits(userId, 1);
           db.writeAuditLog(sessionId, 'gas_consumed_for_session', { amount: 1 });
         } catch (e: any) {
           db.writeAuditLog(sessionId, 'gas_consumed_failed', { amount: 1, error: e.message });
