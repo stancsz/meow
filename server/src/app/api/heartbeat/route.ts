@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getDbClient } from "@/../../src/db/client";
-import { handleHeartbeat, processAllHeartbeats } from "@/../../src/core/heartbeat";
+import { processAllHeartbeats } from "@/../../src/core/heartbeat";
+import { handleHeartbeat } from "@/../../src/core/orchestrator";
 
 export async function POST(req: NextRequest) {
     try {

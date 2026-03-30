@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { DBClient } from "../db/client";
-import { scheduleHeartbeat, processHeartbeat, handleHeartbeat } from "../core/heartbeat";
+import { scheduleHeartbeat, processHeartbeat } from "../core/heartbeat";
+import { handleHeartbeat } from "../core/orchestrator";
 import { SwarmManifest } from "../core/types";
 
 describe("Heartbeat Integration", () => {

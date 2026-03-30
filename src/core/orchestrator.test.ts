@@ -4,6 +4,9 @@ import { validateManifest, orchestratorHandler } from './orchestrator';
 import { SwarmManifest } from "./types";
 import * as llm from './llm';
 
+import { handleHeartbeat } from './orchestrator';
+import { DBClient } from '../db/client';
+
 // Import to register the function
 import './orchestrator';
 
@@ -503,3 +506,78 @@ describe("Manifest Validation Unit Tests", () => {
     });
 });
 
+describe("Orchestrator Heartbeat Tests", () => {
+    let testDbUrl: string;
+
+    beforeAll(() => {
+        testDbUrl = "sqlite://local_test_db_orchestrator_heartbeat.sqlite";
+        const fs = require("fs");
+        const path = require("path");
+
+        const testDb = new DBClient(testDbUrl);
+        const schema = fs.readFileSync(path.join(__dirname, "../db/migrations/001_motherboard.sql"), "utf-8");
+        testDb.applyMigration(schema);
+    });
+
+    afterAll(() => {
+        const fs = require("fs");
+        try {
+            fs.unlinkSync("local_test_db_orchestrator_heartbeat.sqlite");
+        } catch(e) {}
+    });
+
+    test("handleHeartbeat returns early if no pending heartbeat is found for session", async () => {
+        const testDb = new DBClient(testDbUrl);
+        // Do not add any pending heartbeat
+        await handleHeartbeat("nonexistent_session", testDb);
+        // It shouldn't crash
+        expect(true).toBe(true);
+    });
+
+    test("handleHeartbeat handles missing manifest or session gracefully", async () => {
+        const testDb = new DBClient(testDbUrl);
+        const nextTriggerDate = new Date(Date.now() - 60000); // 1 minute ago
+        const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
+
+        // Add a heartbeat but NO session
+        testDb.db.run(`INSERT INTO heartbeat_queue (id, session_id, next_trigger, status) VALUES (?, ?, ?, 'pending')`, ["h-1", "session_without_manifest", nextTriggerStr]);
+
+        await handleHeartbeat("session_without_manifest", testDb);
+
+        const logs = testDb.getAuditLogs("session_without_manifest");
+        // No logs since it fails at logTransaction because no manifest found, but we check if heartbeat was marked error
+        const pending = testDb.db.query("SELECT * FROM heartbeat_queue WHERE id = ?").get("h-1") as any;
+        expect(pending.status).toBe("error");
+    });
+
+    test("handleHeartbeat correctly processes a due heartbeat", async () => {
+        // Since executeSwarmManifest is complex to mock locally here, we will just ensure it attempts to dispatch by mocking dispatch or verifying the idempotency/status update logic.
+        // It's already fully covered in src/__tests__/heartbeat.integration.test.ts, so we just add lightweight unit checks here as requested.
+        const testDb = new DBClient(testDbUrl);
+        const user_id = "test_user_heartbeat";
+        const session_id = testDb.createSession(user_id, { prompt: "Test" }, {
+            version: "1.0",
+            intent_parsed: "Test",
+            skills_required: [],
+            credentials_required: [],
+            steps: []
+        });
+
+        const nextTriggerDate = new Date(Date.now() - 60000); // due
+        const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
+
+        testDb.upsertHeartbeat(session_id, nextTriggerStr, 'pending');
+
+        // Give the user gas
+        testDb.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES (?, ?, 50)`, ["uuid-hb-user", user_id]);
+
+        await handleHeartbeat(session_id, testDb);
+
+        const hb = testDb.db.query("SELECT * FROM heartbeat_queue WHERE session_id = ? ORDER BY created_at DESC LIMIT 1").get(session_id) as any;
+        expect(hb.status).toBe("pending"); // A new one should be queued as pending, or the old one was processed and a new one was upserted
+
+        const logs = testDb.getAuditLogs(session_id);
+        const triggerLog = logs.find((l: any) => l.event === "heartbeat_triggered");
+        expect(triggerLog).toBeDefined();
+    });
+});

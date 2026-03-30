@@ -892,6 +892,13 @@ For maximum sovereignty, the heartbeat trigger lives in the **user's own Supabas
 
 This is true sovereignty — the user's automation schedule is not dependent on the platform's uptime.
 
+**Setup Instructions**:
+To configure `pg_cron` in the user's Supabase to hit the `/api/heartbeat` endpoint:
+1. Enable `pg_cron` and `pg_net` extensions in Supabase.
+2. Ensure the `swarms.heartbeat` database function is established (provided via `001_motherboard.sql`). This function reads from `app.settings.orchestrator_webhook_url` or defaults to the API route and performs the network request.
+3. Configure the schedule: `SELECT cron.schedule('swarms-continuous-mode-heartbeat', '*/30 * * * *', 'SELECT swarms.heartbeat()');`
+4. This invokes the `/api/heartbeat` webhook via `pg_net` every 30 minutes to check all pending sessions. Alternatively, this webhook can be triggered externally via Google Cloud Scheduler or AWS EventBridge.
+
 ### 14.4 Zombie Swarm Prevention
 
 A "Zombie Swarm" is a Continuous Mode session that keeps firing after the user has stopped using the platform. Prevention mechanisms:
