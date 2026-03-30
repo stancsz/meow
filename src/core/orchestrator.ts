@@ -202,7 +202,8 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
             write_operations,
             read_operations,
             status: 'waiting_approval',
-            sessionId: newSessionId
+            sessionId: newSessionId,
+            estimated_credit_cost: 1
         };
 
         // Return both the structured JSON and the YAML format

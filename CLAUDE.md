@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [Current Date] Cycle #37 ✅ Completed Gas Tank backend for SimpleClaw. Added estimated credit cost to PlanDiffApprove schema and wired it to the orchestrator. Validated tests and confirmed Stripe integration and gas ledger schema are correctly established. Marked 'Phase 1 — Gas Tank' as checked in the BACKLOG.
 - [2026-04-10] Cycle #36 ✅ Implemented Phase 1 Gas Tank: Stripe integration, gas_ledger table, webhook handler, and debit logic with comprehensive tests. Updated 001_motherboard.sql to contain the expected schema additions.
 - [Current Date] Cycle #26 ✅ Implemented Phase 1.5 Orchestrator TDD & API Enhancement: Created comprehensive execution monitor, real-time status API, health endpoints, OpenAPI contracts, and updated the DAG execution logic with integrated worker tracking tests.
 - [2026-04-10] Cycle #35 ✅ Implemented Phase 2 Heartbeat: Continuous Mode mechanism for scheduled swarm executions (SWARM_SPEC.md §14). Added `heartbeat_queue` table and Supabase `pg_cron` jobs to Motherboard schema (`001_motherboard.sql`), confirmed webhook logic recursively manages scheduled intervals and deducts gas appropriately, introduced UI approval toggle in `PlanDisplay.tsx`, and ensured comprehensive TDD coverage passing for skipped or missed queue scenarios.
@@ -156,7 +157,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
 - [x] **Phase 1 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 - [x] **Phase 2 — Heartbeat:** Enable recurring swarm executions via a 30-minute heartbeat mechanism.
-- [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. (Done)
+- [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. ✅
 
 - [~] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)
 
