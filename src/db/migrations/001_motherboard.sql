@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS task_results (
     status TEXT,
     output TEXT,
     error TEXT,
+    worker_metadata TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 

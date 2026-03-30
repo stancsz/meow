@@ -61,6 +61,7 @@ export interface PlanDiffApprove {
     read_operations: number;
     status: 'idle' | 'planning' | 'waiting_approval' | 'approved' | 'rejected' | 'executing' | 'completed' | 'error';
     sessionId: string;
+    estimated_credit_cost?: number;
 }
 
 export interface SkillReference {
