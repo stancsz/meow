@@ -2,7 +2,7 @@
 -- This simulates the Supabase Sovereign Motherboard locally
 
 -- 1. Add worker_metadata column to task_results
-ALTER TABLE task_results ADD COLUMN worker_metadata TEXT;
+ALTER TABLE task_results ADD COLUMN IF NOT EXISTS worker_metadata TEXT;
 
 -- 2. Create execution_summary view aggregating session statistics
 CREATE VIEW IF NOT EXISTS execution_summary AS

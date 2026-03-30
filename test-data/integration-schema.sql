@@ -93,7 +93,7 @@ SELECT cron.schedule(
     'SELECT swarms.heartbeat()'
 );
 /* SUPABASE_ONLY_END */
-ALTER TABLE task_results ADD COLUMN worker_metadata TEXT;
+ALTER TABLE task_results ADD COLUMN IF NOT EXISTS worker_metadata TEXT;
 
 CREATE VIEW IF NOT EXISTS execution_summary AS
 SELECT
