@@ -93,3 +93,15 @@ SELECT cron.schedule(
     'SELECT swarms.heartbeat()'
 );
 /* SUPABASE_ONLY_END */
+ALTER TABLE task_results ADD COLUMN worker_metadata TEXT;
+
+CREATE VIEW IF NOT EXISTS execution_summary AS
+SELECT
+    session_id,
+    COUNT(id) as total_tasks,
+    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_tasks,
+    SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_tasks,
+    MIN(created_at) as started_at,
+    MAX(created_at) as last_updated_at
+FROM task_results
+GROUP BY session_id;

@@ -198,25 +198,62 @@ export class DBClient {
     return this.logTransaction(idempotency_key, status, result);
   }
 
-  logTaskResult(sessionId: string, workerId: string, skillRef: string, status: string, outputOrError: any, isError: boolean = false) {
+  logTaskResult(sessionId: string, workerId: string, skillRef: string, status: string, outputOrError: any, isError: boolean = false, workerMetadata: any = null) {
     if (this.isSupabase) {
       console.warn(`Mock logTaskResult Supabase for ${workerId}`);
       return;
     }
     if (this.db) {
+      const metadataStr = workerMetadata ? JSON.stringify(workerMetadata) : null;
       if (isError) {
         this.db.run(
-          `INSERT INTO task_results (session_id, worker_id, skill_ref, status, error) VALUES (?, ?, ?, ?, ?)`,
-          [sessionId, workerId, skillRef, status, String(outputOrError)]
+          `INSERT INTO task_results (session_id, worker_id, skill_ref, status, error, worker_metadata) VALUES (?, ?, ?, ?, ?, ?)`,
+          [sessionId, workerId, skillRef, status, String(outputOrError), metadataStr]
         );
       } else {
         this.db.run(
-          `INSERT INTO task_results (session_id, worker_id, skill_ref, status, output) VALUES (?, ?, ?, ?, ?)`,
-          [sessionId, workerId, skillRef, status, JSON.stringify(outputOrError)]
+          `INSERT INTO task_results (session_id, worker_id, skill_ref, status, output, worker_metadata) VALUES (?, ?, ?, ?, ?, ?)`,
+          [sessionId, workerId, skillRef, status, JSON.stringify(outputOrError), metadataStr]
         );
       }
     }
   }
+
+  getExecutionLogs(filters: { sessionId?: string, workerId?: string, status?: string, limit?: number, offset?: number }): any[] {
+    if (this.isSupabase) return [];
+    if (this.db) {
+        let query = "SELECT * FROM task_results WHERE 1=1";
+        const params: any[] = [];
+
+        if (filters.sessionId) {
+            query += " AND session_id = ?";
+            params.push(filters.sessionId);
+        }
+        if (filters.workerId) {
+            query += " AND worker_id = ?";
+            params.push(filters.workerId);
+        }
+        if (filters.status) {
+            query += " AND status = ?";
+            params.push(filters.status);
+        }
+
+        query += " ORDER BY created_at DESC";
+
+        if (filters.limit !== undefined) {
+            query += " LIMIT ?";
+            params.push(filters.limit);
+        }
+        if (filters.offset !== undefined) {
+            query += " OFFSET ?";
+            params.push(filters.offset);
+        }
+
+        return this.db.query(query).all(...params) as any[];
+    }
+    return [];
+  }
+
 
   writeAuditLog(sessionId: string, event: string, metadata: any) {
     if (this.isSupabase) return;

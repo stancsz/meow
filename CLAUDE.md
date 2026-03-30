@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [Current Date] Cycle #26 ✅ Implemented Phase 1.5 Orchestrator TDD & API Enhancement: Created comprehensive execution monitor, real-time status API, health endpoints, OpenAPI contracts, and updated the DAG execution logic with integrated worker tracking tests.
 - [2026-04-10] Cycle #35 ✅ Implemented Phase 2 Heartbeat: Continuous Mode mechanism for scheduled swarm executions (SWARM_SPEC.md §14). Added `heartbeat_queue` table and Supabase `pg_cron` jobs to Motherboard schema (`001_motherboard.sql`), confirmed webhook logic recursively manages scheduled intervals and deducts gas appropriately, introduced UI approval toggle in `PlanDisplay.tsx`, and ensured comprehensive TDD coverage passing for skipped or missed queue scenarios.
 - [2026-04-09] Cycle #34 ✅ Implemented Phase 1.5 TDD Focus: Created comprehensive integration test suite for the full swarm orchestration pipeline (`src/tests/integration`). Created utilities for isolating Motherboard DB (`TestMotherboard`), simulating KMS flows (`MockGCPKMS`), and validating worker runtime (`MockWorkerRuntime`). Tested full intent-to-execution E2E flow including network timeouts and gas failures. Updated package.json and created TESTING.md.
 - [2026-04-08] Cycle #33 ✅ Verified Heartbeat mechanism for Continuous Mode as defined in SWARM_SPEC.md. Ran the integration test in `src/__tests__/heartbeat.integration.test.ts`. Updated CLAUDE.md to document the completion.
@@ -142,6 +143,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - **The Integration & Dogfooding Loop:** Adopt updates via synthesis, requiring "Recursive Validation" (Mock Execution, TDD Alignment, Failure-Mode Analysis). Execute "Evolutionary Dogfooding" to mutate code based on real-time failure.
 
 ## BACKLOG (Swarm Architecture)
+- [x] **Phase 1.5 — Orchestrator TDD & API Enhancement:** Comprehensive test coverage and monitoring APIs
 - [~] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support. (Delegation Engine wrapper setup implemented ✅, specific CLI integration pending)
 - [x] **Phase 1.5 — TDD & Robustness:** Implement comprehensive integration tests for orchestrator, DB state, KMS flow, and worker lifecycle.
 - [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency" - optimize API and Agent Protocol.

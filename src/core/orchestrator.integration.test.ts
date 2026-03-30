@@ -344,4 +344,84 @@ describe("Orchestrator End-to-End Integration Workflow", () => {
     const finalSession2 = db.getSession(sessionId2);
     expect(finalSession2.status).toBe("completed");
   });
+
+  it("should enforce DAG execution order and dependency checks", async () => {
+    const user_id = "dag_user_123";
+
+    db.applyMigration(`
+      INSERT OR IGNORE INTO gas_ledger (id, user_id, balance_credits)
+      VALUES ('gas_dag_123', '${user_id}', 10);
+    `);
+
+    const manifest: SwarmManifest = {
+      version: "1.0",
+      intent_parsed: "Execute DAG test",
+      skills_required: [],
+      credentials_required: [],
+      steps: [
+        {
+          id: "task-A",
+          description: "First task",
+          worker: "worker-test",
+          skills: [],
+          credentials: [],
+          depends_on: [],
+          action_type: "READ",
+        },
+        {
+          id: "task-B",
+          description: "Dependent task",
+          worker: "worker-test",
+          skills: [],
+          credentials: [],
+          depends_on: ["task-A"],
+          action_type: "READ",
+        },
+        {
+          id: "task-C",
+          description: "Failing task",
+          worker: "worker-test",
+          skills: [],
+          credentials: [],
+          depends_on: ["task-B"],
+          action_type: "READ",
+          parameters: { simulate_failure: true }
+        },
+        {
+          id: "task-D",
+          description: "Skipped task",
+          worker: "worker-test",
+          skills: [],
+          credentials: [],
+          depends_on: ["task-C"],
+          action_type: "READ",
+        }
+      ],
+    };
+
+    const sessionId = db.createSession(user_id, { prompt: "dag execution" }, manifest);
+
+    // Call executeSwarmManifest directly for this to assert on results returned
+    const results = await executeSwarmManifest(manifest, sessionId, db);
+
+    // B depends on A, so both should succeed.
+    expect(results["task-A"].status).toBe("success");
+    expect(results["task-B"].status).toBe("success");
+
+    // C fails.
+    expect(results["task-C"].status).toBe("error");
+
+    // D depends on C, so it should be skipped.
+    expect(results["task-D"].status).toBe("error");
+    expect(results["task-D"].error).toContain("Dependency failed");
+
+    // Check DB state
+    const taskLogs = db.getTaskResults(sessionId);
+    const completedTasks = taskLogs.filter((log: any) => log.status === "success");
+    expect(completedTasks.length).toBe(2);
+
+    // Verify session marked as error
+    const finalSession = db.getSession(sessionId);
+    expect(finalSession.status).toBe("error");
+  });
 });
