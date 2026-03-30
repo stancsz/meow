@@ -331,6 +331,22 @@ export function createAgentDispatcher(dependencies: AgentDispatcherDependencies 
 }
 
 
+export async function dispatchApprovedManifest(sessionId: string, db: DBClient): Promise<Record<string, WorkerResult>> {
+  const session = db.getSession(sessionId);
+  if (!session) {
+    throw new Error(`Session not found for id: ${sessionId}`);
+  }
+
+  const manifest = db.getSessionManifest(sessionId);
+  if (!manifest) {
+    throw new Error(`No manifest associated with this session.`);
+  }
+
+  db.updateSessionStatus(sessionId, 'executing');
+
+  return executeSwarmManifest(manifest, sessionId, db);
+}
+
 export async function executeSwarmManifest(
   manifest: SwarmManifest,
   sessionId: string,

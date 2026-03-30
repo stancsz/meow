@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
 
+        // Note: For 'approve' flows, clients should use the dedicated /api/orchestrator/approve endpoint.
         // Explicit handling for 'execute' mode directly in the Next.js API route
         // to support both 'plan' and 'execute' modes and dispatch workers
         if (body?.action === 'execute') {

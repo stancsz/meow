@@ -52,7 +52,7 @@ export class DBClient {
     }
   }
 
-  createSession(userId: string, context: any, manifest: any): string {
+  createSession(userId: string, context: any, manifest: any, initialStatus: string = 'active'): string {
     const sessionId = crypto.randomUUID();
     if (this.isSupabase) {
       console.warn("Mock createSession Supabase");
@@ -62,10 +62,10 @@ export class DBClient {
     if (this.db) {
       const continuousMode = context.continuous_mode ? 1 : 0;
       this.db.run(
-        `INSERT INTO orchestrator_sessions (id, user_id, context, manifest, status, continuous_mode) VALUES (?, ?, ?, ?, 'active', ?)`,
-        [sessionId, userId, JSON.stringify(context), JSON.stringify(manifest), continuousMode]
+        `INSERT INTO orchestrator_sessions (id, user_id, context, manifest, status, continuous_mode) VALUES (?, ?, ?, ?, ?, ?)`,
+        [sessionId, userId, JSON.stringify(context), JSON.stringify(manifest), initialStatus, continuousMode]
       );
-      this.writeAuditLog(sessionId, 'intent_received', { status: 'active' });
+      this.writeAuditLog(sessionId, 'intent_received', { status: initialStatus });
     }
     return sessionId;
   }
@@ -134,6 +134,11 @@ export class DBClient {
         return row;
     }
     return null;
+  }
+
+  getSessionManifest(sessionId: string): any {
+    const session = this.getSession(sessionId);
+    return session ? session.manifest : null;
   }
 
   updateSecret(userId: string, secretId: string, name?: string, secret?: string, expiresAt?: string | null) {
