@@ -29,6 +29,7 @@
     "test:integration:workflow": "bun test src/core/orchestrator.integration.test.ts",
     "test:integration:all": "bun test src/tests/integration/",
     "test:plugins": "./scripts/test-plugins.sh",
+    "test:heartbeat": "bun test src/core/heartbeat.test.ts",
     "heartbeat": "bun run scripts/heartbeat-simulator.ts",
     "electron:dev": "NODE_ENV=development electron .",
     "electron:build": "npm run build:server && electron-builder",
