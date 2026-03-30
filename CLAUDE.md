@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [Current Date] Cycle #34 ✅ Implemented Phase 1.5 TDD Focus: Created comprehensive integration test suite for the full swarm orchestration pipeline (`src/tests/integration`). Created utilities for isolating Motherboard DB (`TestMotherboard`), simulating KMS flows (`MockGCPKMS`), and validating worker runtime (`MockWorkerRuntime`). Tested full intent-to-execution E2E flow including network timeouts and gas failures. Updated package.json and created TESTING.md.
 - [2026-04-08] Cycle #33 ✅ Verified Heartbeat mechanism for Continuous Mode as defined in SWARM_SPEC.md. Ran the integration test in `src/__tests__/heartbeat.integration.test.ts`. Updated CLAUDE.md to document the completion.
 - [Current Date] Cycle #32 ✅ Verified Stripe webhook and Gas Ledger backend logic implementation. Moved Stripe webhook route from `server/src/app/api/stripe/webhook` to `server/src/app/api/stripe-webhook`. Ensured `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` configuration exists and is documented in `.env.example` and `README.md`. Checked off Phase 1 Gas Tank from BACKLOG. Tested and verified operations via `bun test`.
 - [Current Date] Cycle #31 ✅ Implemented the worker delegation layer architecture. Created `src/workers/delegation.ts` to centralize secure credential passing, task result aggregation, progress callback integration, error/timeout handling, and idempotency logic. Created `src/workers/mock-engine.ts` to simulate external execution engines and established comprehensive test suites in `src/workers/delegation.test.ts`. Documented the contract in `docs/delegation-protocol.md`. This represents progress towards Phase 2 OpenCLI engine integration goals.
@@ -141,6 +142,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 
 ## BACKLOG (Swarm Architecture)
 - [~] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support. (Delegation Engine wrapper setup implemented ✅, specific CLI integration pending)
+- [x] **Phase 1.5 — TDD & Robustness:** Implement comprehensive integration tests for orchestrator, DB state, KMS flow, and worker lifecycle.
 - [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency" - optimize API and Agent Protocol.
 - [ ] **Strategic Pivot:** Implement "Evolutionary Dogfooding" architecture for real-time code mutation.
 - [ ] **Strategic Pivot:** Execute "Sovereign Gateway Play" to capture unique Execution Traces.
