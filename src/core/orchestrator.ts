@@ -195,7 +195,7 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
         const read_operations = manifest.steps.filter(s => s.action_type === 'READ').length;
 
         const context = { prompt, availableSkills, continuous_mode: !!manifest.schedule };
-        const newSessionId = dbClient.createSession(user_id, context, manifest);
+        const newSessionId = dbClient.createSession(user_id, context, manifest, 'waiting_approval');
 
         const pda: PlanDiffApprove = {
             plan: manifest,

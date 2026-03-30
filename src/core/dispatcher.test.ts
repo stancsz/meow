@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { DBClient } from "../db/client";
-import { executeSwarmManifest } from "./dispatcher";
+import { executeSwarmManifest, dispatchApprovedManifest } from "./dispatcher";
 import type { SwarmManifest, Task } from "./types";
 import * as fs from "fs";
 
@@ -318,5 +318,64 @@ describe("Dispatcher - Worker Dispatch & Execution Loop", () => {
 
     const newBalance = db.getBalance("user_nogas");
     expect(newBalance).toBe(0);
+  });
+
+  describe("dispatchApprovedManifest", () => {
+    it("should successfully execute an approved session", async () => {
+      const manifest: SwarmManifest = {
+        version: "1.0",
+        intent_parsed: "Test approval dispatch",
+        skills_required: [],
+        credentials_required: [],
+        steps: [
+          {
+            id: "approve-step",
+            description: "Test approve execution",
+            worker: "w1",
+            skills: [],
+            credentials: [],
+            depends_on: [],
+            action_type: "READ",
+          },
+        ],
+      };
+
+      const sessionId = db.createSession("user_approve", { prompt: "Test approval dispatch" }, manifest, 'waiting_approval');
+      const dbClientAny = db as any;
+      db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-approve-disp-${Date.now()}' WHERE id = '${sessionId}';`);
+
+      const newSessionRow = dbClientAny.db.query("SELECT id FROM orchestrator_sessions WHERE id LIKE 'session-approve-disp-%'").get();
+      const newSessionId = newSessionRow.id;
+
+      const { platformDbMock } = require("../workers/template");
+      const kmsProvider = require("../security/kms").getKMSProvider();
+      const encrypted = await kmsProvider.encrypt("mock_key");
+
+      platformDbMock.set("user_approve", { supabaseUrl: "https://mock.supabase.co", encryptedKey: encrypted });
+      db.addGasCredits("user_approve", 10);
+
+      const results = await dispatchApprovedManifest(newSessionId, db);
+
+      expect(results["approve-step"].status).toBe("success");
+
+      // Verify session status was set to executing (or completed if execution finishes instantly)
+      const session = db.getSession(newSessionId);
+      expect(["executing", "completed"]).toContain(session.status);
+    });
+
+    it("should throw an error if the session is not found", async () => {
+      expect(dispatchApprovedManifest("non-existent-session-id", db)).rejects.toThrow("Session not found for id: non-existent-session-id");
+    });
+
+    it("should throw an error if the session has no manifest", async () => {
+      const sessionId = db.createSession("user_no_manifest", { prompt: "No manifest" }, null, 'waiting_approval');
+      const dbClientAny = db as any;
+      db.applyMigration(`UPDATE orchestrator_sessions SET id = 'session-no-manifest-disp-${Date.now()}' WHERE id = '${sessionId}';`);
+
+      const newSessionRow = dbClientAny.db.query("SELECT id FROM orchestrator_sessions WHERE id LIKE 'session-no-manifest-disp-%'").get();
+      const newSessionId = newSessionRow.id;
+
+      expect(dispatchApprovedManifest(newSessionId, db)).rejects.toThrow("No manifest associated with this session.");
+    });
   });
 });

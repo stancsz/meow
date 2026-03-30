@@ -151,6 +151,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 0 — Worker Dispatch + Execution Loop**
 - [ ] **Phase 0 — End-to-End Integration Test**
 - [x] **Phase 1.5 — Orchestrator TDD & API Enhancement:** Comprehensive test coverage and monitoring APIs
+- [x] **Phase 0 — Plan-Diff-Approve Execution Bridge:** Implemented `/api/orchestrator/approve` endpoint and dispatcher logic to connect UI approvals to worker execution.
 - [~] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support. (Delegation Engine wrapper setup implemented ✅, specific CLI integration pending)
 - [x] **Phase 1.5 — TDD & Robustness:** Implement comprehensive integration tests for orchestrator, DB state, KMS flow, and worker lifecycle.
 - [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency" - optimize API and Agent Protocol.
