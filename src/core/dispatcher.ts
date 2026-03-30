@@ -446,7 +446,64 @@ export async function executeSwarmManifest(
       }
 
       const executeOnce = async (): Promise<WorkerResult> => {
-        const result = await executeWorkerTask(task, sessionId, db);
+        const workerUrl = process.env.WORKER_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : null);
+
+        let result: WorkerResult;
+
+        if (workerUrl) {
+          try {
+            // Fetch necessary platform credentials for the payload (simulate KMS in real system)
+            const sessionData = db.getSession(sessionId);
+            const userPlatformData = db.getPlatformUser(sessionData?.user_id);
+            const supabaseUrl = userPlatformData?.supabase_url || 'https://mock.supabase.co';
+            const supabaseServiceRoleCiphertext = userPlatformData?.encrypted_service_role || 'mock_encrypted_key';
+
+            // Optionally resolve user credential ciphertext here if they passed credentials array
+            const credentialCiphertext = task.credentials?.length > 0
+                ? db.simulateReadSecret(task.credentials[0]) // mock lookup
+                : undefined;
+
+            const payload = {
+              session_id: sessionId,
+              worker_id: `worker-${task.id}`,
+              task_config: task,
+              skill_ref: task.skills && task.skills.length > 0 ? task.skills[0] : undefined,
+              user_id: sessionData?.user_id,
+              supabase_url: supabaseUrl,
+              supabase_service_role_ciphertext: supabaseServiceRoleCiphertext,
+              credential_ciphertext: credentialCiphertext
+            };
+
+            const res = await fetch(workerUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+              const errorText = await res.text();
+              throw new Error(`Cloud Function returned ${res.status}: ${errorText}`);
+            }
+
+            const data = await res.json();
+            result = data as WorkerResult;
+
+            // If the worker result doesn't explicitly have an error but failed:
+            if (result.status === 'error') {
+               throw new Error(result.error || "Cloud function returned error status");
+            }
+
+            db.logTaskResult(sessionId, payload.worker_id, payload.skill_ref || 'none', result.status, result.output, false);
+
+          } catch (e: any) {
+             result = { status: 'error', error: e.message };
+             db.logTaskResult(sessionId, `worker-${task.id}`, task.skills[0] || 'none', 'error', e.message, true);
+             throw new Error(e.message || "Cloud function execution failed");
+          }
+        } else {
+          // Fallback to local execution template
+          result = await executeWorkerTask(task, sessionId, db);
+        }
 
         if (result.status === "error") {
             throw new Error(result.error || "Worker task returned error status");
