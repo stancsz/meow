@@ -13,7 +13,7 @@ mock.module("next/server", () => {
 });
 
 let handleStripeWebhookMock: ReturnType<typeof mock>;
-mock.module("../../../../../../../src/core/payments", () => {
+mock.module("../../../../../../src/core/payments", () => {
   handleStripeWebhookMock = mock((payload: any, sig: any, db: any) => {
     if (sig === "valid_sig") return true;
     return false;
