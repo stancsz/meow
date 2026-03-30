@@ -177,7 +177,8 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
         'echo',
         'demo-skill',
         'shell',
-        'test-skill'
+        'test-skill',
+        'test-shopify-fetch'
     ];
 
     try {
