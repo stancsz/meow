@@ -58,11 +58,58 @@ describe("Stripe Service", () => {
         return testPayload as any;
       };
 
-      const success = handleStripeWebhook("mock_payload", "mock_sig", db);
+      // Ensure the test mock db has addGasCredits defined since handleStripeWebhook expects it
+      if (!db.addGasCredits) {
+          db.addGasCredits = async (userId, amount) => db.incrementGasBalance(userId, amount);
+      }
+
+      const success = await handleStripeWebhook("mock_payload", "mock_sig", db);
       expect(success).toBe(true);
 
       const balance = db.getGasBalance(testStripeUserId);
       expect(balance).toBe(1010);
+
+    } finally {
+      stripe.webhooks.constructEvent = originalConstructEvent;
+    }
+  });
+
+  test("handleStripeWebhook warns on missing credits but valid userId metadata", async () => {
+    const testStripeUserId = "test-stripe-user-missing-credits";
+    const testPayload = {
+      id: "evt_test_no_credits",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test",
+          object: "checkout.session",
+          client_reference_id: testStripeUserId,
+          metadata: {
+            userId: testStripeUserId
+            // intentionally missing credits
+          }
+        }
+      }
+    };
+
+    const originalConstructEvent = stripe.webhooks.constructEvent;
+
+    try {
+      stripe.webhooks.constructEvent = (payload, sig, secret) => {
+        return testPayload as any;
+      };
+
+      if (!db.addGasCredits) {
+          db.addGasCredits = async (userId, amount) => db.incrementGasBalance(userId, amount);
+      }
+
+      const success = await handleStripeWebhook("mock_payload", "mock_sig", db);
+      // Fails gracefully returning false as no credits processed
+      expect(success).toBe(false);
+
+      // Balance should be default 10
+      const balance = db.getGasBalance(testStripeUserId);
+      expect(balance).toBe(10);
 
     } finally {
       stripe.webhooks.constructEvent = originalConstructEvent;
@@ -94,15 +141,19 @@ describe("Stripe Service", () => {
         return testPayload as any;
       };
 
+      if (!db.addGasCredits) {
+          db.addGasCredits = async (userId, amount) => db.incrementGasBalance(userId, amount);
+      }
+
       expect(db.getGasBalance(testStripeUserId)).toBe(10);
 
-      const success1 = handleStripeWebhook("mock_payload", "mock_sig", db);
+      const success1 = await handleStripeWebhook("mock_payload", "mock_sig", db);
       expect(success1).toBe(true);
 
       let balance = db.getGasBalance(testStripeUserId);
       expect(balance).toBe(510);
 
-      const success2 = handleStripeWebhook("mock_payload", "mock_sig", db);
+      const success2 = await handleStripeWebhook("mock_payload", "mock_sig", db);
       expect(success2).toBe(true);
 
       balance = db.getGasBalance(testStripeUserId);
@@ -132,7 +183,7 @@ describe("Stripe Service", () => {
         return testPayload as any;
       };
 
-      const success = handleStripeWebhook("mock_payload", "mock_sig", db);
+      const success = await handleStripeWebhook("mock_payload", "mock_sig", db);
       expect(success).toBe(false);
 
     } finally {
@@ -148,7 +199,7 @@ describe("Stripe Service", () => {
         throw new Error("Invalid signature");
       };
 
-      const success = handleStripeWebhook("mock_payload", "bad_sig", db);
+      const success = await handleStripeWebhook("mock_payload", "bad_sig", db);
       expect(success).toBe(false);
 
     } finally {

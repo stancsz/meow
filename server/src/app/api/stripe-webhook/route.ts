@@ -14,10 +14,10 @@ export async function POST(req: NextRequest) {
     const db = getDbClient();
 
     // We pass the raw text payload to constructEvent
-    const success = handleStripeWebhook(payload, signature, db);
+    const success = await handleStripeWebhook(payload, signature, db);
 
     if (success) {
-      return NextResponse.json({ received: true });
+      return NextResponse.json({ received: true }, { status: 200 });
     } else {
       return NextResponse.json({ error: 'Webhook handler failed' }, { status: 400 });
     }

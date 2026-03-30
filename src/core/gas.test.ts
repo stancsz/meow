@@ -89,4 +89,15 @@ describe("Gas Ledger Core", () => {
       expect(logs.some(l => l.event === 'gas_consumed')).toBe(false);
     });
   });
+
+  describe("addGasCredits", () => {
+    test("successfully adds gas credits to user balance", async () => {
+      const { addGasCredits } = await import("./gas");
+      db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES ('6', 'user-add', 10)`);
+
+      await addGasCredits("user-add", 5, db);
+      const balance = db.getGasBalance("user-add");
+      expect(balance).toBe(15);
+    });
+  });
 });

@@ -18,3 +18,7 @@ export async function debitGas(userId: string, credits: number, db: DBClient): P
   }
   return true;
 }
+
+export async function addGasCredits(userId: string, credits: number, db: DBClient): Promise<void> {
+  await db.addGasCredits(userId, credits);
+}

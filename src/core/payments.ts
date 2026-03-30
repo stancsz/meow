@@ -36,7 +36,7 @@ export async function createCheckoutSession(userId: string, credits: number, ori
   }
 }
 
-export function handleStripeWebhook(payload: string | Buffer, signature: string, db: import('../db/client').DBClient): boolean {
+export async function handleStripeWebhook(payload: string | Buffer, signature: string, db: import('../db/client').DBClient): Promise<boolean> {
   try {
     const event = stripe.webhooks.constructEvent(
       payload,
@@ -59,11 +59,14 @@ export function handleStripeWebhook(payload: string | Buffer, signature: string,
         const credits = parseInt(creditsStr, 10);
         if (!isNaN(credits)) {
            // To avoid circular dependency, use gasLedger db method directly
-           db.incrementGasBalance(userId, credits);
+           await db.addGasCredits(userId, credits);
            db.logTransaction(event.id, 'completed', { amount: credits });
            console.log(`Successfully added ${credits} gas to user ${userId}`);
            return true;
         }
+      } else if (userId && !creditsStr) {
+        // Fallback or handle custom line items if metadata credits are missing
+        console.warn(`Webhook received checkout.session.completed for user ${userId} but no credits metadata found.`);
       }
       console.error("Missing userId or credits in session metadata for gas topup");
     }
