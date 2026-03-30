@@ -4,6 +4,11 @@ import { executeSwarmManifest } from "./dispatcher";
 import type { SwarmManifest } from "./types";
 import * as fs from "fs";
 import { getKMSProvider } from "../security/kms";
+import * as yaml from "yaml";
+
+// Read fixture data
+const fixtureYaml = fs.readFileSync("examples/swarm.example.yaml", "utf-8");
+const parsedFixture = yaml.parse(fixtureYaml) as SwarmManifest;
 
 // Mock the openAI call to avoid hitting the actual API
 import * as llm from "./llm";
@@ -128,16 +133,15 @@ describe("Swarm End-to-End Integration Pipeline", () => {
     expect(output.skills_used).toContain("github-fetch-issues");
 
     // 7. Motherboard Phase: Assert state updates
-    const dbClientAny = db as any;
 
     // Check Task Results table
-    const taskLogs = dbClientAny.db.query("SELECT * FROM task_results WHERE session_id = ?").all(sessionId);
+    const taskLogs = db.getTaskResults(sessionId);
     expect(taskLogs.length).toBe(1);
     expect(taskLogs[0].status).toBe("success");
     expect(taskLogs[0].skill_ref).toBe("github-fetch-issues");
 
     // Check Audit Log for full lifecycle tracking
-    const auditLogs = dbClientAny.db.query("SELECT * FROM audit_log WHERE session_id = ? ORDER BY created_at ASC").all(sessionId);
+    const auditLogs = db.getAuditLogs(sessionId);
     const auditEvents = auditLogs.map((log: any) => log.event);
 
     expect(auditEvents).toContain("swarm_execution_started");
@@ -197,8 +201,7 @@ describe("Swarm End-to-End Integration Pipeline", () => {
     // but the credential decrypt won't be logged.
     expect(results["fetch-fail"].status).toBe("success");
 
-    const dbClientAny = db as any;
-    const auditLogs = dbClientAny.db.query("SELECT * FROM audit_log WHERE session_id = ? AND event = 'worker_decrypted_credential'").all(sessionId);
+    const auditLogs = db.getAuditLogs(sessionId).filter((log: any) => log.event === 'worker_decrypted_credential');
     const githubLogs = auditLogs.filter((log: any) => {
         try {
             const meta = JSON.parse(log.metadata);
@@ -209,6 +212,7 @@ describe("Swarm End-to-End Integration Pipeline", () => {
     });
     expect(githubLogs.length).toBe(0); // It shouldn't have decrypted anything because it was missing
   });
+
   it("should simulate full lifecycle via orchestrator handler (Intent -> Approve -> Execute)", async () => {
     // We will test the HTTP layer by passing mock Req and Res objects to orchestratorHandler
     const { orchestratorHandler } = require("./orchestrator");
@@ -287,23 +291,21 @@ describe("Swarm End-to-End Integration Pipeline", () => {
       expect(dispatchBody.executionId).toBe(sessionId);
 
       // Wait for execution to finish by polling the session status (up to 1s)
-      const dbClientAny = db as any;
-
       let session;
       for (let i = 0; i < 100; i++) {
-        session = dbClientAny.db.query("SELECT * FROM orchestrator_sessions WHERE id = ?").get(sessionId);
-        if (session.status === "completed" || session.status === "error") break;
+        session = db.getSession(sessionId);
+        if (session && (session.status === "completed" || session.status === "error")) break;
         await new Promise(resolve => setTimeout(resolve, 10));
       }
       // Step 3: Result Logging Check
       expect(session.status).toBe("completed");
 
-      const taskLogs = dbClientAny.db.query("SELECT * FROM task_results WHERE session_id = ?").all(sessionId);
+      const taskLogs = db.getTaskResults(sessionId);
       expect(taskLogs.length).toBe(1);
       expect(taskLogs[0].status).toBe("success");
       expect(taskLogs[0].skill_ref).toBe("github-fetch-issues");
 
-      const auditLogs = dbClientAny.db.query("SELECT * FROM audit_log WHERE session_id = ? ORDER BY created_at ASC").all(sessionId);
+      const auditLogs = db.getAuditLogs(sessionId);
       const auditEvents = auditLogs.map((log: any) => log.event);
       // Check the ones actually logged:
       expect(auditEvents).toContain("swarm_execution_started");
@@ -311,5 +313,62 @@ describe("Swarm End-to-End Integration Pipeline", () => {
     } finally {
       mock.restore();
     }
+  });
+
+  it("should successfully execute orchestrator -> worker -> motherboard pipeline with fixture YAML", async () => {
+    // We can also test the full fixture using the mock llm returning the parsedFixture
+    // To do this properly we reset the mock to return the fixture
+    mock.module("./llm", () => ({
+      parseIntentToManifest: mock(async () => parsedFixture),
+    }));
+
+    const kmsProvider = getKMSProvider();
+    const encryptedServiceRole = await kmsProvider.encrypt("super_secret_supabase_key");
+
+    db.applyMigration(`
+      INSERT OR IGNORE INTO platform_users (user_id, supabase_url, encrypted_service_role)
+      VALUES ('user_fixture_123', 'https://mock.supabase.co', '${encryptedServiceRole}');
+    `);
+
+    for (const cred of parsedFixture.credentials_required) {
+        const encryptedCred = await kmsProvider.encrypt(`raw_${cred}`);
+        db.applyMigration(`
+          INSERT OR IGNORE INTO vault_user_secrets (id, user_id, name, secret, provider)
+          VALUES ('${cred}', 'user_fixture_123', '${cred}', '${encryptedCred}', 'custom');
+        `);
+    }
+
+    db.applyMigration(`
+      INSERT OR IGNORE INTO gas_ledger (id, user_id, balance_credits)
+      VALUES ('gas_fixture_123', 'user_fixture_123', 100);
+    `);
+
+    process.env.WORKER_URL = "http://localhost:8080";
+    global.fetch = mock(async () => {
+      return new Response(JSON.stringify({
+        status: "success",
+        output: { message: "Task executed successfully", skills_used: [], delegated_to: "mock" }
+      }), { status: 200 });
+    });
+
+    const userIntent = parsedFixture.intent_parsed;
+    const { parseIntentToManifest } = require("./llm");
+    const manifest = await parseIntentToManifest(userIntent, parsedFixture.skills_required);
+
+    const sessionId = db.createSession("user_fixture_123", { prompt: userIntent }, manifest);
+    const results = await executeSwarmManifest(manifest, sessionId, db);
+
+    expect(Object.keys(results).length).toBe(parsedFixture.steps.length);
+    for (const step of parsedFixture.steps) {
+        expect(results[step.id].status).toBe("success");
+    }
+
+    const session = db.getSession(sessionId);
+    expect(session.status).toBe("completed");
+
+    const taskLogs = db.getTaskResults(sessionId);
+    expect(taskLogs.length).toBe(parsedFixture.steps.length);
+
+    delete process.env.WORKER_URL;
   });
 });

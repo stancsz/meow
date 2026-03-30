@@ -16,10 +16,11 @@ describe('BYOK API Routes', () => {
     const schemaPath = path.resolve(process.cwd(), process.cwd().includes('server') ? "../src/db/migrations/001_motherboard.sql" : "src/db/migrations/001_motherboard.sql");
     const schema = fs.readFileSync(schemaPath, "utf-8");
     dbClient.applyMigration(schema);
-    const kmsProvider = getKMSProvider();
+    let kmsProvider: any;
 
     beforeEach(async () => {
         process.env.KMS_PROVIDER = 'local';
+        kmsProvider = getKMSProvider();
         // Setup platform user
         const mockServiceRole = await kmsProvider.encrypt('mock-service-role-key');
         dbClient.setPlatformUser(MOCK_USER_ID, 'http://localhost:54321', mockServiceRole);

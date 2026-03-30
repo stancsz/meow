@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-30] Cycle #41 ✅ Created end-to-end integration test for swarm orchestration workflow (`src/core/integration.test.ts`).
 - [Current Date] Cycle #40 ✅ Created comprehensive end-to-end integration test (`src/integration/swarm-e2e.test.ts`) for swarm workflow and validated it successfully against a new dummy skill (`test-shopify-fetch`).
 - [2026-03-30 17:00] Cycle #39 ✅ Created comprehensive integration test suite for Phase 2 Heartbeat system in src/core/heartbeat.test.ts, validating scheduling, dispatch, and idempotency.
 - [Current Date] Cycle #38 ✅ Implemented Phase 1 Gas Tank: Stripe integration for credit purchases and debit logic. Added unit test file `src/core/gas-tank.test.ts` to test Stripe webhook handling and credit debit logic. Updated .env.example with Stripe keys. Checked off Phase 1 Gas Tank from BACKLOG.
@@ -149,6 +150,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - **The Integration & Dogfooding Loop:** Adopt updates via synthesis, requiring "Recursive Validation" (Mock Execution, TDD Alignment, Failure-Mode Analysis). Execute "Evolutionary Dogfooding" to mutate code based on real-time failure.
 
 ## BACKLOG (Swarm Architecture)
+- [x] **Phase 1.5 — Integration Test Suite**
 - [x] **Phase 0 — Worker Dispatch + Execution Loop**
 - [x] **Phase 0 — End-to-End Integration Test**
 - [x] **Phase 1.5 — Orchestrator TDD & API Enhancement:** Comprehensive test coverage and monitoring APIs
