@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [Current Date] Cycle #38 ✅ Implemented Phase 1 Gas Tank: Stripe integration for credit purchases and debit logic. Added unit test file `src/core/gas-tank.test.ts` to test Stripe webhook handling and credit debit logic. Updated .env.example with Stripe keys. Checked off Phase 1 Gas Tank from BACKLOG.
 - [Current Date] Cycle #37 ✅ Completed Gas Tank backend for SimpleClaw. Added estimated credit cost to PlanDiffApprove schema and wired it to the orchestrator. Validated tests and confirmed Stripe integration and gas ledger schema are correctly established. Marked 'Phase 1 — Gas Tank' as checked in the BACKLOG.
 - [2026-04-10] Cycle #36 ✅ Implemented Phase 1 Gas Tank: Stripe integration, gas_ledger table, webhook handler, and debit logic with comprehensive tests. Updated 001_motherboard.sql to contain the expected schema additions.
 - [Current Date] Cycle #26 ✅ Implemented Phase 1.5 Orchestrator TDD & API Enhancement: Created comprehensive execution monitor, real-time status API, health endpoints, OpenAPI contracts, and updated the DAG execution logic with integrated worker tracking tests.
