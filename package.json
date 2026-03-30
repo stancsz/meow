@@ -26,6 +26,7 @@
     "test": "bun test && cd server && bun test --preload ./setupTests.ts",
     "test:integration": "bun test src/core/integration.test.ts",
     "test:integration:workflow": "bun test src/core/orchestrator.integration.test.ts",
+    "test:integration:all": "bun test src/tests/integration/",
     "test:plugins": "./scripts/test-plugins.sh",
     "heartbeat": "bun run scripts/heartbeat-simulator.ts",
     "electron:dev": "NODE_ENV=development electron .",
