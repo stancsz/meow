@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS task_results (
     status TEXT,
     output TEXT,
     error TEXT,
+    worker_metadata TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -95,7 +96,10 @@ SELECT cron.schedule(
     'SELECT swarms.heartbeat()'
 );
 /* SUPABASE_ONLY_END */
+
+/* SUPABASE_ONLY_BEGIN */
 ALTER TABLE task_results ADD COLUMN IF NOT EXISTS worker_metadata TEXT;
+/* SUPABASE_ONLY_END */
 
 CREATE VIEW IF NOT EXISTS execution_summary AS
 SELECT

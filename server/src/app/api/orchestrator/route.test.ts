@@ -15,7 +15,9 @@ mock.module("@/../../src/db/client", () => {
             updateSessionStatus: mockUpdateSessionStatus,
             getTaskResults: mockGetTaskResults,
             getSession: mockGetSession,
+            getAuditLogs: mock(() => []),
             getGasBalance: mock(() => 10), // Mock 10 gas credits
+            debitGas: mock(() => true),
             run: mock(() => {}),
             query: mock(() => ({ get: () => ({}), all: () => [] })),
             transaction: mock((cb) => cb()),
@@ -26,7 +28,9 @@ mock.module("@/../../src/db/client", () => {
             updateSessionStatus = mockUpdateSessionStatus;
             getTaskResults = mockGetTaskResults;
             getSession = mockGetSession;
+            getAuditLogs = mock(() => []);
             getGasBalance = mock(() => 10);
+            debitGas = mock(() => true);
             run = mock(() => {});
             query = mock(() => ({ get: () => ({}), all: () => [] }));
             transaction = mock((cb) => cb());
@@ -87,6 +91,41 @@ describe("Orchestrator API Route", () => {
 
         // Ensure session status was updated
         expect(mockUpdateSessionStatus).toHaveBeenCalledWith("test-session-123", "approved");
+    });
+
+    it("should handle POST with action='execute' specifically to fulfill execution loop", async () => {
+        const payload = {
+            action: "execute",
+            user_id: "test-user-id",
+            session_id: "test-session-456"
+        };
+        mockGetSession.mockReturnValueOnce({
+            status: "approved",
+            manifest: {
+                version: "1.0",
+                intent_parsed: "test execution intent",
+                skills_required: [],
+                credentials_required: [],
+                steps: [
+                    { id: "step1", worker: "mock-worker", action_type: "READ" }
+                ]
+            }
+        });
+
+        const req = new NextRequest("http://localhost/api/orchestrator", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+
+        const response = await POST(req);
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(data.status).toBe("dispatched");
+        expect(data.executionId).toBe("test-session-456");
+
+        // Assert our new Next.js route intercepted it and set it strictly to executing
+        expect(mockUpdateSessionStatus).toHaveBeenCalledWith("test-session-456", "executing");
     });
 
     it("should return 400 on POST with action='approve' but missing sessionId", async () => {

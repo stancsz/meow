@@ -117,6 +117,9 @@ export default function ExecutionMonitor({ status, errorMessage, taskResults, se
 
   const combinedResults = polledResults.length > 0 ? polledResults : (taskResults || []);
 
+  const completedTasksCount = combinedResults.filter((r) => r.status === 'success' || r.status === 'completed').length;
+  const errorTasksCount = combinedResults.filter((r) => r.status === 'error' || r.status === 'failed').length;
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'success':
@@ -155,7 +158,20 @@ export default function ExecutionMonitor({ status, errorMessage, taskResults, se
 
       {combinedResults && combinedResults.length > 0 && (
         <div style={{ marginTop: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem' }}>
-          <h3 style={{ marginBottom: '1rem' }}>Live Worker Results</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0 }}>Live Worker Results</h3>
+            <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.85rem' }}>
+              <span style={{ padding: '0.2rem 0.5rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: '#86efac', borderRadius: '4px' }}>
+                Completed: {completedTasksCount}
+              </span>
+              <span style={{ padding: '0.2rem 0.5rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', borderRadius: '4px' }}>
+                Errors: {errorTasksCount}
+              </span>
+              <span style={{ padding: '0.2rem 0.5rem', backgroundColor: 'var(--bg-color)', color: '#ccc', borderRadius: '4px' }}>
+                Total Executed: {combinedResults.length}
+              </span>
+            </div>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {combinedResults.map((result, idx) => {
               const colors = getStatusColor(result.status);
