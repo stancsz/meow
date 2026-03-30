@@ -245,4 +245,73 @@ describe("Heartbeat System", () => {
         expect(result.status).toBe("error");
         expect(result.missing_tables).toContain("heartbeat_queue");
     });
+
+    it("should handle a missed heartbeat by executing it successfully and scheduling the next one", async () => {
+        const sessionId = "session-missed";
+        const userId = "user-123";
+        // Simulate a heartbeat that was supposed to trigger 2 hours ago
+        const triggerTime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
+
+        db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        if (!db.getGasBalance(userId)) {
+            db.incrementGasBalance(userId, 100);
+        }
+
+        db.upsertHeartbeat(sessionId, triggerTime, "pending");
+
+        await processAllHeartbeats(db);
+
+        // It should have completed the old missed one and scheduled a new one
+        const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE session_id = ?").all(sessionId) as any[];
+        expect(queueCheck.length).toBe(1);
+        expect(queueCheck[0].status).toBe('pending');
+
+        // The new trigger should be ~30 minutes from now, not 30 minutes from the missed time
+        const nowStr = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        expect(queueCheck[0].next_trigger > nowStr).toBe(true);
+    });
+
+    it("should simulate a platform-down scenario where multiple heartbeats pile up and are processed on recovery", async () => {
+        const sessionId1 = "session-down-1";
+        const sessionId2 = "session-down-2";
+        const userId1 = "user-123-down-1";
+        const userId2 = "user-123-down-2";
+        // Missed trigger times
+        const triggerTime1 = new Date(Date.now() - 60 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
+        const triggerTime2 = new Date(Date.now() - 30 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
+
+        db.createSession(userId1, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId1, userId1]);
+        db.createSession(userId2, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId2, userId2]);
+
+        if (!db.getGasBalance(userId1)) {
+            db.incrementGasBalance(userId1, 100);
+        }
+        if (!db.getGasBalance(userId2)) {
+            db.incrementGasBalance(userId2, 100);
+        }
+
+        db.upsertHeartbeat(sessionId1, triggerTime1, "pending");
+        db.upsertHeartbeat(sessionId2, triggerTime2, "pending");
+
+        const pendingBefore = db.getPendingHeartbeats();
+        expect(pendingBefore.length).toBe(2);
+
+        // Recover platform by calling processAllHeartbeats
+        await processAllHeartbeats(db);
+
+        // Both should be processed and re-scheduled for the future
+        const pendingAfter = db.getPendingHeartbeats();
+        expect(pendingAfter.length).toBe(0); // 0 because the re-scheduled ones are in the future
+
+        const queueCheck1 = db.db.query("SELECT * FROM heartbeat_queue WHERE session_id = ?").all(sessionId1) as any[];
+        expect(queueCheck1[0].status).toBe('pending');
+        expect(queueCheck1[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
+
+        const queueCheck2 = db.db.query("SELECT * FROM heartbeat_queue WHERE session_id = ?").all(sessionId2) as any[];
+        expect(queueCheck2[0].status).toBe('pending');
+        expect(queueCheck2[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
+    });
 });
