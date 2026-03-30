@@ -27,7 +27,7 @@ export default function PlanDisplay({ pda, sessionId, onApprove }: PlanDisplayPr
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action: 'approve',
+          action: 'execute', // Explicitly switch to execute mode
           session_id: sessionId,
           user_id: 'test-user',
           manifest: pda.plan,
@@ -59,8 +59,18 @@ export default function PlanDisplay({ pda, sessionId, onApprove }: PlanDisplayPr
 
   return (
     <div className="plan-display-container" style={{ marginTop: '2rem', padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--input-bg)' }}>
-      <h2 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-        Execution Plan (v{plan.version})
+      <h2 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Execution Plan (v{plan.version})</span>
+        <span style={{
+          fontSize: '0.85rem',
+          padding: '0.3rem 0.8rem',
+          borderRadius: '12px',
+          backgroundColor: pda.status === 'executing' ? 'rgba(192, 132, 252, 0.2)' : 'rgba(156, 163, 175, 0.1)',
+          color: pda.status === 'executing' ? '#c084fc' : 'inherit',
+          border: `1px solid ${pda.status === 'executing' ? '#a855f7' : 'var(--border-color)'}`
+        }}>
+          Status: {isExecuting || pda.status === 'executing' ? 'Executing Worker Mode...' : pda.status}
+        </span>
       </h2>
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
