@@ -7,3 +7,5 @@ CREATE TABLE IF NOT EXISTS gas_ledger (
     balance_credits INTEGER DEFAULT 0,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE orchestrator_sessions ADD COLUMN credits_used INTEGER DEFAULT 0;

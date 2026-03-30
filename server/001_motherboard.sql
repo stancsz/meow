@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS orchestrator_sessions (
     context TEXT,
     manifest TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    credits_used INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS task_results (
@@ -59,7 +60,8 @@ CREATE TABLE IF NOT EXISTS gas_ledger (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     balance_credits INTEGER DEFAULT 0,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    credits_used INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS skill_refs (
