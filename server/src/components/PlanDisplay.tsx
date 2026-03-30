@@ -12,6 +12,7 @@ interface PlanDisplayProps {
 export default function PlanDisplay({ pda, sessionId, onApprove }: PlanDisplayProps) {
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState('');
+  const [runContinuous, setRunContinuous] = useState(false);
 
   const handleApproveClick = async () => {
     if (!sessionId || !pda || !pda.plan) return;
@@ -30,6 +31,7 @@ export default function PlanDisplay({ pda, sessionId, onApprove }: PlanDisplayPr
           session_id: sessionId,
           user_id: 'test-user',
           manifest: pda.plan,
+          continuous_mode: runContinuous,
         }),
       });
 
@@ -130,6 +132,18 @@ export default function PlanDisplay({ pda, sessionId, onApprove }: PlanDisplayPr
 
       {(pda.status === 'waiting_approval' || pda.status === 'executing') && (
         <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1rem' }}>
+          {pda.status === 'waiting_approval' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.95rem' }}>
+              <input
+                type="checkbox"
+                checked={runContinuous}
+                onChange={(e) => setRunContinuous(e.target.checked)}
+                disabled={isExecuting}
+                style={{ cursor: 'pointer' }}
+              />
+              Run on a schedule (Continuous Mode: every 30m)
+            </label>
+          )}
           {error && <div style={{ color: '#fca5a5', fontSize: '0.9rem' }}>{error}</div>}
           <button
             onClick={handleApproveClick}
