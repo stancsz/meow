@@ -6,7 +6,7 @@ import { checkGasBalance } from "@/../../src/core/gas";
 import { scheduleHeartbeat, checkHeartbeats } from "@/../../src/core/heartbeat";
 import type { Request, Response } from "@google-cloud/functions-framework";
 
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV === 'development' || process.env.DEVELOPMENT_HEARTBEAT_SCHEDULER === 'true') {
     if (!(global as any).heartbeatSchedulerStarted) {
         (global as any).heartbeatSchedulerStarted = true;
         console.log("Starting local heartbeat scheduler (30s interval) for development mode.");
