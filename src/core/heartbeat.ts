@@ -453,7 +453,7 @@ export async function handleHeartbeat(sessionId: string, providedDb?: DBClient):
         // Insert a new pending row since the previous one was marked completed or failed
         // We use insertHeartbeat directly or since upsert overrides by session_id,
         // it updates the status back to pending. This is correct behavior per tests.
-        db.upsertHeartbeat(session.id, nextTriggerStr, 'pending');
+        db.createHeartbeat(session.id, nextTriggerStr);
 
     } catch (error: any) {
         console.error(`Error processing heartbeat for session ${heartbeat.session_id}:`, error);
