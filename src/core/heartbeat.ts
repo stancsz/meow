@@ -366,11 +366,13 @@ export class HeartbeatScheduler {
         const nextTriggerDate = new Date(Date.now() + 30 * 60 * 1000);
         const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
 
-        // Use enqueueHeartbeat per spec instruction, instead of upsert
-        // We first check if one already exists for safety, if so update it,
-        // else enqueue it to follow the exact "enqueueHeartbeat" usage request.
-        // Actually, the spec just says "schedule(sessionId) to insert a heartbeat record (30 minutes in future)."
-        this.db.enqueueHeartbeat(sessionId, nextTriggerStr);
+        // Use upsertHeartbeat to avoid duplicate pending heartbeats for the same session
+        if (typeof this.db.upsertHeartbeat === 'function') {
+            this.db.upsertHeartbeat(sessionId, nextTriggerStr);
+        } else {
+            // Fallback to enqueueHeartbeat for backward compatibility
+            this.db.enqueueHeartbeat(sessionId, nextTriggerStr);
+        }
         this.db.writeAuditLog(sessionId, 'continuous_mode_enabled', { interval_minutes: 30, next_trigger: nextTriggerStr });
     }
 
