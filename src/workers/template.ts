@@ -90,8 +90,8 @@ export async function executeWorkerTask(
       } else {
         // Fallback to local DB check
         const platformUser = db.getPlatformUser(resolvedUserId);
-        if (platformUser && platformUser.encrypted_service_role) {
-            const decryptedServiceRole = await kmsProvider.decrypt(platformUser.encrypted_service_role);
+        if (platformUser && platformUser.encrypted_service_key) {
+            const decryptedServiceRole = await kmsProvider.decrypt(platformUser.encrypted_service_key);
             decryptedCredentials['supabase_service_role'] = decryptedServiceRole;
             decryptedCredentials['supabase_url'] = platformUser.supabase_url;
             db.writeAuditLog(sessionId, "worker_decrypted_platform_credential", { task_id: task.id, user_id: resolvedUserId, decrypted_value: "[masked]" });

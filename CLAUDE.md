@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-31 14:43] Cycle #26 ✅ Implemented KMS Credential Flow in Worker Template. Extended `DBClient` for Platform User Lookup, modified `executeWorkerTask` to use real Supabase client with decrypted key ephemerally, and added comprehensive KMS integration tests.
 - [Current Date] Cycle #43 ✅ Implemented Phase 2 Heartbeat: Continuous Mode with pg_cron scheduling. Verified `heartbeat_queue` schema operations and recursive triggers. Restored missing dependencies (`yaml`, `@google-cloud/functions-framework`, `stripe`, `openai`) that caused tests to fail, verified core `heartbeat` execution tests, created `setup-heartbeat-cron.sql` for Postgres cron scheduling, and cleaned up duplicative method names in integration tests. Marked 'Phase 2 — Heartbeat' as complete in BACKLOG.
 - [Current Date] Cycle #42 ✅ Implemented Phase 1 Gas Tank backend API and database logic: created gas management module (`src/core/gas.ts`) to abstract db layer, integrated `debitCredits` and `getBalance` into `src/core/dispatcher.ts` ensuring credits are deducted successfully after execution, with tests properly covering sufficient and insufficient balance cases in `src/core/gas.test.ts` and `dispatcher.test.ts`. Marked 'Phase 1 — Gas Tank' as done in the BACKLOG.
 - [2026-03-30] Cycle #41 ✅ Created end-to-end integration test for swarm orchestration workflow (`src/core/integration.test.ts`).

@@ -356,10 +356,16 @@ export class DBClient {
     }
   }
 
-  getPlatformUser(userId: string): any {
+  getPlatformUser(userId: string): { supabase_url: string; encrypted_service_key: string } | null {
     if (this.isSupabase) return null;
     if (this.db) {
-        return this.db.query(`SELECT * FROM platform_users WHERE user_id = ?`).get(userId);
+        const user = this.db.query(`SELECT * FROM platform_users WHERE user_id = ?`).get(userId);
+        if (user) {
+            return {
+                supabase_url: user.supabase_url,
+                encrypted_service_key: user.encrypted_service_role
+            };
+        }
     }
     return null;
   }
