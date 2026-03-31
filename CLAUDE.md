@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [Current Date] Cycle #43 ✅ Implemented Phase 2 Heartbeat: Continuous Mode with pg_cron scheduling. Verified `heartbeat_queue` schema operations and recursive triggers. Restored missing dependencies (`yaml`, `@google-cloud/functions-framework`, `stripe`, `openai`) that caused tests to fail, verified core `heartbeat` execution tests, created `setup-heartbeat-cron.sql` for Postgres cron scheduling, and cleaned up duplicative method names in integration tests. Marked 'Phase 2 — Heartbeat' as complete in BACKLOG.
 - [Current Date] Cycle #42 ✅ Implemented Phase 1 Gas Tank backend API and database logic: created gas management module (`src/core/gas.ts`) to abstract db layer, integrated `debitCredits` and `getBalance` into `src/core/dispatcher.ts` ensuring credits are deducted successfully after execution, with tests properly covering sufficient and insufficient balance cases in `src/core/gas.test.ts` and `dispatcher.test.ts`. Marked 'Phase 1 — Gas Tank' as done in the BACKLOG.
 - [2026-03-30] Cycle #41 ✅ Created end-to-end integration test for swarm orchestration workflow (`src/core/integration.test.ts`).
 - [Current Date] Cycle #40 ✅ Created comprehensive end-to-end integration test (`src/integration/swarm-e2e.test.ts`) for swarm workflow and validated it successfully against a new dummy skill (`test-shopify-fetch`).
@@ -167,7 +168,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **AGENT_OS: Integration & Dogfooding Loop** - Implement "External-Agency-Delegation"
 - [x] **Move 1:** Real LLM Intent Parsing
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
-- [x] **Phase 1 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
+- [x] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 - [x] **Phase 2 — Heartbeat:** Implemented local foundation (heartbeat_queue, DBClient methods, processHeartbeat handler).
 - [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. ✅
 
