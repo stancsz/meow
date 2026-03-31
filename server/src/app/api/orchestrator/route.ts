@@ -3,8 +3,21 @@ import { orchestratorHandler } from "@/../../src/core/orchestrator";
 import { getDbClient } from "@/../../src/db/client";
 import { executeSwarmManifest } from "@/../../src/core/dispatcher";
 import { checkGasBalance } from "@/../../src/core/gas";
-import { scheduleHeartbeat } from "@/../../src/core/heartbeat";
+import { scheduleHeartbeat, checkHeartbeats } from "@/../../src/core/heartbeat";
 import type { Request, Response } from "@google-cloud/functions-framework";
+
+if (process.env.NODE_ENV === 'development' || process.env.DEVELOPMENT_HEARTBEAT_SCHEDULER === 'true') {
+    if (!(global as any).heartbeatSchedulerStarted) {
+        (global as any).heartbeatSchedulerStarted = true;
+        console.log("Starting local heartbeat scheduler (30s interval) for development mode.");
+        setInterval(() => {
+            const db = getDbClient();
+            checkHeartbeats(db).catch(err => {
+                console.error("Error in local heartbeat scheduler:", err);
+            });
+        }, 30000);
+    }
+}
 
 export async function GET(req: NextRequest) {
     try {

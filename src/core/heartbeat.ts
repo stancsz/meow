@@ -472,6 +472,11 @@ export async function processAllHeartbeats(db: DBClient) {
     }
 }
 
+export async function checkHeartbeats(providedDb?: DBClient): Promise<void> {
+    const db = providedDb || new DBClient();
+    await processAllHeartbeats(db);
+}
+
 export function verifyMotherboardIntegrity(db: DBClient): { status: string, version: string, missing_tables: string[] } {
     const missing_tables: string[] = [];
 
