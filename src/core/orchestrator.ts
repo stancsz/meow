@@ -162,8 +162,9 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
     const dbClient = new DBClient(process.env.DATABASE_URL || 'sqlite://local.db');
 
     const continuous_mode = body?.continuous_mode;
+    const heartbeat_triggered = body?.heartbeat_triggered;
 
-    if (action === 'approve' || action === 'execute') {
+    if (action === 'approve' || action === 'execute' || heartbeat_triggered === true) {
         if (!session_id || typeof session_id !== 'string') {
             res.status(400).json({ error: 'Missing or invalid "session_id" field for execution.' });
             return;
