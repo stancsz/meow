@@ -868,8 +868,8 @@ User enables Continuous Mode
   → Function terminates
 
 [30 minutes later]
-  → Supabase Cron (pg_cron) or Cloud Scheduler fires a webhook
-  → Webhook hits: POST /api/swarms/heartbeat?session_id=XXX
+  → Supabase Cron (pg_cron via src/db/migrations/002_heartbeat_cron.sql) fires a webhook
+  → Webhook hits: POST /api/heartbeat or src/workers/heartbeat.ts Cloud Function
   → New Orchestrator invocation boots
   → Reads context from orchestrator_sessions
   → Checks if scheduled time has arrived

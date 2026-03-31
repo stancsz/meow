@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS transaction_log (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Heartbeat Queue Table (Phase 2 Continuous Mode)
+-- Matches SWARM_SPEC.md §9.2 specification exactly
 CREATE TABLE IF NOT EXISTS heartbeat_queue (
     id TEXT PRIMARY KEY,
     session_id TEXT,
