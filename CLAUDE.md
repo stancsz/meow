@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-31] Cycle #43 ✅ Implemented the Execute Plan API endpoint `server/src/app/api/execute/route.ts` which connects the UI's 'Approve' button to the dispatcher swarm execution. Added comprehensive integration testing in `server/test/execute.test.ts` mocking the LLM intention parsing and execution components, guaranteeing execution triggers effectively upon session approval. Marked 'Phase 0 — Plan-Diff-Approve Execution Bridge' completed in the BACKLOG.
 - [Current Date] Cycle #42 ✅ Implemented Phase 1 Gas Tank backend API and database logic: created gas management module (`src/core/gas.ts`) to abstract db layer, integrated `debitCredits` and `getBalance` into `src/core/dispatcher.ts` ensuring credits are deducted successfully after execution, with tests properly covering sufficient and insufficient balance cases in `src/core/gas.test.ts` and `dispatcher.test.ts`. Marked 'Phase 1 — Gas Tank' as done in the BACKLOG.
 - [2026-03-30] Cycle #41 ✅ Created end-to-end integration test for swarm orchestration workflow (`src/core/integration.test.ts`).
 - [Current Date] Cycle #40 ✅ Created comprehensive end-to-end integration test (`src/integration/swarm-e2e.test.ts`) for swarm workflow and validated it successfully against a new dummy skill (`test-shopify-fetch`).
@@ -155,7 +156,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 0 — Worker Dispatch + Execution Loop**
 - [x] **Phase 0 — End-to-End Integration Test**
 - [x] **Phase 1.5 — Orchestrator TDD & API Enhancement:** Comprehensive test coverage and monitoring APIs
-- [x] **Phase 0 — Plan-Diff-Approve Execution Bridge:** Implemented `/api/orchestrator/approve` endpoint and dispatcher logic to connect UI approvals to worker execution.
+- [x] **Phase 0 — Plan-Diff-Approve Execution Bridge:** Implemented `/api/execute` endpoint and dispatcher logic to connect UI approvals to worker execution.
 - [~] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support. (Delegation Engine wrapper setup implemented ✅, specific CLI integration pending)
 - [x] **Phase 1.5 — TDD & Robustness:** Implement comprehensive integration tests for orchestrator, DB state, KMS flow, and worker lifecycle.
 - [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency" - optimize API and Agent Protocol.
