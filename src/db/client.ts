@@ -4,6 +4,7 @@
 
 export const MIN_CREDIT_PURCHASE = 1000;
 
+// Database Client with Heartbeat support
 export class DBClient {
   private db: any | null = null;
   private isSupabase = false;

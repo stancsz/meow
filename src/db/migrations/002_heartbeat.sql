@@ -1,3 +1,4 @@
+-- Heartbeat Queue infrastructure
 CREATE TABLE IF NOT EXISTS heartbeat_queue (
     id TEXT PRIMARY KEY,
     session_id TEXT,

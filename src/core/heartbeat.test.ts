@@ -4,7 +4,7 @@ import { handleHeartbeat, scheduleHeartbeat, processAllHeartbeats, checkHeartbea
 import { startLocalScheduler } from "./heartbeat-local";
 import * as dispatcher from "./dispatcher";
 
-describe("Heartbeat System", () => {
+describe("Heartbeat System", () => { // Core tests
     let db: DBClient;
 
     beforeEach(() => {

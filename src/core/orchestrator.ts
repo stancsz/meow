@@ -83,6 +83,7 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
 
     const dbClient = new DBClient(process.env.DATABASE_URL || 'sqlite://local.db');
 
+    // Support for Continuous Mode
     const continuous_mode = body?.continuous_mode;
     const heartbeat_triggered = body?.heartbeat_triggered;
 
