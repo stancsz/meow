@@ -178,8 +178,8 @@ Workers act as the ephemeral "muscle" of the system. Their lifecycle guarantees 
 - [ ] Implement the "Sovereign Gateway Play" to capture unique Execution Traces
 
 ### Phase 2 — Scheduling & Continuous Mode (Weeks 11–16)
-- [ ] Cron + webhook trigger system
-- [ ] 30-minute heartbeat protocol
+- [x] Cron + webhook trigger system
+- [x] 30-minute heartbeat protocol
 - [ ] Multi-worker parallel dispatch
 - [ ] Full Motherboard schema v1.0 + integrity checker (`swarms.verify_motherboard_integrity()`)
 - [ ] BYOS: GitHub skill import + file upload
