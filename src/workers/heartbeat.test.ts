@@ -10,8 +10,8 @@ mock.module("../db/client", () => ({
     })
 }));
 
-let processAllHeartbeatsMock = mock(() => Promise.resolve());
-let handleHeartbeatMock = mock((sessionId: string, db: any) => Promise.resolve());
+const processAllHeartbeatsMock = mock(() => Promise.resolve());
+const handleHeartbeatMock = mock((sessionId: string, db: any) => Promise.resolve());
 
 mock.module("../core/heartbeat", () => ({
     processAllHeartbeats: (...args: any[]) => processAllHeartbeatsMock(...args),
@@ -109,7 +109,7 @@ describe("heartbeatCloudFunctionHandler", () => {
     it("should handle errors thrown from core heartbeat logic", async () => {
         const { req, res } = createMockReqRes("POST");
 
-        processAllHeartbeatsMock = mock(() => Promise.reject(new Error("Core error")));
+        processAllHeartbeatsMock.mockImplementation(() => Promise.reject(new Error("Core error")));
 
         await heartbeatCloudFunctionHandler(req as ff.Request, res as ff.Response);
 
