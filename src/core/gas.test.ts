@@ -1,6 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach, mock } from "bun:test";
 import { DBClient } from "../db/client";
-import { checkGasBalance, debitGas } from "./gas";
+import { checkGasBalance, debitGas, debitCredits, getBalance } from "./gas";
 
 describe("Gas Ledger Core", () => {
   let db: DBClient;
@@ -87,6 +87,41 @@ describe("Gas Ledger Core", () => {
 
       const logs = db.getAuditLogs('user-poor');
       expect(logs.some(l => l.event === 'gas_consumed')).toBe(false);
+    });
+  });
+
+  describe("debitCredits", () => {
+    test("successfully debits credits if sufficient balance", async () => {
+      db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES ('6', 'user-debit-credits', 5)`);
+
+      await debitCredits("user-debit-credits", 2, db);
+
+      const balance = await getBalance("user-debit-credits", db);
+      expect(balance).toBe(3);
+
+      const logs = db.getAuditLogs('user-debit-credits');
+      expect(logs.some(l => l.event === 'gas_consumed')).toBe(true);
+    });
+
+    test("throws an error if insufficient balance", async () => {
+      db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES ('7', 'user-poor-credits', 1)`);
+
+      expect(debitCredits("user-poor-credits", 2, db)).rejects.toThrow('Insufficient gas credits');
+
+      const balance = await getBalance("user-poor-credits", db);
+      expect(balance).toBe(1);
+
+      const logs = db.getAuditLogs('user-poor-credits');
+      expect(logs.some(l => l.event === 'gas_consumed')).toBe(false);
+    });
+  });
+
+  describe("getBalance", () => {
+    test("accurately returns the balance", async () => {
+      db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES ('8', 'user-balance-test', 25)`);
+
+      const balance = await getBalance("user-balance-test", db);
+      expect(balance).toBe(25);
     });
   });
 });

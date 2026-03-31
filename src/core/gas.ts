@@ -18,3 +18,14 @@ export async function debitGas(userId: string, credits: number, db: DBClient): P
   }
   return true;
 }
+
+export async function debitCredits(userId: string, amount: number, db: DBClient): Promise<void> {
+  const success = await db.debitCredits(userId, amount);
+  if (!success) {
+    throw new Error('Insufficient gas credits');
+  }
+}
+
+export async function getBalance(userId: string, db: DBClient): Promise<number> {
+  return db.getBalance(userId);
+}
