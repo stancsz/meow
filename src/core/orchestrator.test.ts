@@ -503,7 +503,7 @@ describe("Manifest Validation Unit Tests", () => {
     });
 });
 
-describe("processHeartbeat Unit Tests", () => {
+describe("handleHeartbeat Unit Tests", () => {
     let testDbUrl: string;
 
     beforeAll(() => {
@@ -525,18 +525,18 @@ describe("processHeartbeat Unit Tests", () => {
     });
 
     test("skips when no pending heartbeat exists for session", async () => {
-        const { processHeartbeat } = require('./orchestrator');
+        const { handleHeartbeat } = require('./heartbeat');
         const { DBClient } = require("../db/client");
         const db = new DBClient(testDbUrl);
 
-        await processHeartbeat("non_existent_session", db);
+        await handleHeartbeat("non_existent_session", db);
 
         const logs = db.getAuditLogs("non_existent_session");
         expect(logs.length).toBe(0);
     });
 
     test("skips if idempotency check catches a duplicate execution", async () => {
-        const { processHeartbeat } = require('./orchestrator');
+        const { handleHeartbeat } = require('./heartbeat');
         const { DBClient } = require("../db/client");
         const db = new DBClient(testDbUrl);
         const sessionId = "session_idempotency_test";
@@ -547,7 +547,7 @@ describe("processHeartbeat Unit Tests", () => {
         const idempotencyKey = `heartbeat-${sessionId}-${pastDate}`;
         db.createTransactionLogEntry(idempotencyKey, 'completed', {});
 
-        await processHeartbeat(sessionId, db);
+        await handleHeartbeat(sessionId, db);
 
         // Expect heartbeat status to be updated to completed, but no execution
         const rawDb = require("bun:sqlite").Database;
@@ -561,7 +561,7 @@ describe("processHeartbeat Unit Tests", () => {
     });
 
     test("fails if sufficient gas is not available", async () => {
-        const { processHeartbeat } = require('./orchestrator');
+        const { handleHeartbeat } = require('./heartbeat');
         const { DBClient } = require("../db/client");
         const db = new DBClient(testDbUrl);
 
@@ -572,7 +572,7 @@ describe("processHeartbeat Unit Tests", () => {
         const pastDate = new Date(Date.now() - 10000).toISOString().replace('T', ' ').replace('Z', '');
         const hbId = db.createHeartbeat(sessionId, pastDate);
 
-        await processHeartbeat(sessionId, db);
+        await handleHeartbeat(sessionId, db);
 
         const logs = db.getAuditLogs(sessionId);
         const log = logs.find((l: any) => l.event === "continuous_mode_suspended");
@@ -586,7 +586,7 @@ describe("processHeartbeat Unit Tests", () => {
     });
 
     test("executes heartbeat successfully and updates next_trigger", async () => {
-        const { processHeartbeat } = require('./orchestrator');
+        const { handleHeartbeat } = require('./heartbeat');
         const { DBClient } = require("../db/client");
         const db = new DBClient(testDbUrl);
 
@@ -602,7 +602,7 @@ describe("processHeartbeat Unit Tests", () => {
             executeSwarmManifest: async () => ({ step_1: { status: 'success' } })
         }));
 
-        await processHeartbeat(sessionId, db);
+        await handleHeartbeat(sessionId, db);
 
         const rawDb = require("bun:sqlite").Database;
         const sqlite = new rawDb("local_test_db_orchestrator_heartbeat.sqlite");
