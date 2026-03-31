@@ -69,9 +69,9 @@ describe("Heartbeat System", () => {
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
 
         // Create a mock session to hydrate state from inside the dispatcher later
-        db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        const createdSessionId = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
         // Override session ID for the test since createSession uses crypto.randomUUID
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, createdSessionId]);
 
         db.upsertHeartbeat(sessionId, triggerTime, "pending");
 
@@ -148,8 +148,8 @@ describe("Heartbeat System", () => {
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
 
         // Valid session
-        db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId1, userId]);
+        const createdSessionId1 = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId1, createdSessionId1]);
         if (!db.getGasBalance(userId)) {
             db.incrementGasBalance(userId, 100);
         }
@@ -177,8 +177,8 @@ describe("Heartbeat System", () => {
         const userId = "user-123";
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
 
-        db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        const createdSessionId2 = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, createdSessionId2]);
         db.incrementGasBalance(userId, 100);
         db.upsertHeartbeat(sessionId, triggerTime, "pending");
 
@@ -198,8 +198,8 @@ describe("Heartbeat System", () => {
         const userId = "user-broke";
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
 
-        db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        const createdSessionId3 = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, createdSessionId3]);
 
         // Ensure user exists but with 0 balance
         db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES (?, ?, ?)`, [crypto.randomUUID(), userId, 0]);
@@ -252,8 +252,8 @@ describe("Heartbeat System", () => {
         // Simulate a heartbeat that was supposed to trigger 2 hours ago
         const triggerTime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
 
-        db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        const createdSessionId4 = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, createdSessionId4]);
         if (!db.getGasBalance(userId)) {
             db.incrementGasBalance(userId, 100);
         }
@@ -281,10 +281,10 @@ describe("Heartbeat System", () => {
         const triggerTime1 = new Date(Date.now() - 60 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
         const triggerTime2 = new Date(Date.now() - 30 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
 
-        db.createSession(userId1, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId1, userId1]);
-        db.createSession(userId2, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId2, userId2]);
+        const createdSessionId5 = db.createSession(userId1, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId1, createdSessionId5]);
+        const createdSessionId6 = db.createSession(userId2, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId2, createdSessionId6]);
 
         if (!db.getGasBalance(userId1)) {
             db.incrementGasBalance(userId1, 100);
@@ -320,8 +320,8 @@ describe("Heartbeat System", () => {
         const userId = "user-123";
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
 
-        db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        const createdSessionId7 = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, createdSessionId7]);
         if (!db.getGasBalance(userId)) {
             db.incrementGasBalance(userId, 100);
         }

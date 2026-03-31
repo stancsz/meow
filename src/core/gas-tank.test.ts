@@ -167,7 +167,7 @@ describe("Phase 1 Gas Tank - Credit Debit Logic", () => {
     db.db.run("UPDATE gas_ledger SET balance_credits = 0 WHERE user_id = ?", [userId]);
 
     db.createSession(userId, {}, {});
-    db.db.run("UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?", [sessionId, userId]);
+    const sid = db.createSession(userId, { prompt: "test" }, { steps: [], skills_required: [] }, "approved"); db.db.run("UPDATE orchestrator_sessions SET id = ? WHERE id = ?", [sessionId, sid]);
 
     const manifest: SwarmManifest = {
       version: "1.0",
@@ -193,7 +193,7 @@ describe("Phase 1 Gas Tank - Credit Debit Logic", () => {
     expect(initialBalance).toBe(10);
 
     db.createSession(userId, {}, {});
-    db.db.run("UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?", [sessionId, userId]);
+    const sid = db.createSession(userId, { prompt: "test" }, { steps: [], skills_required: [] }, "approved"); db.db.run("UPDATE orchestrator_sessions SET id = ? WHERE id = ?", [sessionId, sid]);
 
     const manifest: SwarmManifest = {
       version: "1.0",

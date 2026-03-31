@@ -53,7 +53,7 @@ describe("Heartbeat Integration", () => {
         };
 
         db.createSession(userId, { prompt: 'do recurring task' }, manifest);
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        const sid = db.createSession(userId, { prompt: "test" }, { steps: [], skills_required: [] }, "approved"); db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, sid]);
 
         // Add gas credits
         db.incrementGasBalance(userId, 100);
@@ -115,7 +115,7 @@ describe("Heartbeat Integration", () => {
         };
 
         db.createSession(userId, { prompt: 'do recurring task' }, manifest);
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        const sid = db.createSession(userId, { prompt: "test" }, { steps: [], skills_required: [] }, "approved"); db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, sid]);
 
         // User starts with 10 free credits when DB calls getGasBalance on insert
         // Override back to 0
@@ -151,7 +151,7 @@ describe("Heartbeat Integration", () => {
         };
 
         db.createSession(userId, { prompt: 'do recurring task' }, manifest);
-        db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE user_id = ?`, [sessionId, userId]);
+        const sid = db.createSession(userId, { prompt: "test" }, { steps: [], skills_required: [] }, "approved"); db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, sid]);
 
         db.incrementGasBalance(userId, 100);
 
