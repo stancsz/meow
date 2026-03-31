@@ -449,6 +449,44 @@ export class DBClient {
     this.incrementGasBalance(userId, amount);
   }
 
+  enqueueHeartbeat(sessionId: string, nextTrigger: string): string | null {
+    if (this.isSupabase) {
+        console.warn("enqueueHeartbeat called in Supabase mode.");
+        return null;
+    }
+    if (this.db) {
+        const id = crypto.randomUUID();
+        this.db.run(
+            `INSERT INTO heartbeat_queue (id, session_id, next_trigger, status) VALUES (?, ?, ?, ?)`,
+            [id, sessionId, nextTrigger, 'pending']
+        );
+        return id;
+    }
+    return null;
+  }
+
+  processDueHeartbeats(): any[] {
+    if (this.isSupabase) return [];
+    if (this.db) {
+        const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        return this.db.query(`SELECT * FROM heartbeat_queue WHERE status = 'pending' AND next_trigger <= ? ORDER BY next_trigger ASC`).all(now) as any[];
+    }
+    return [];
+  }
+
+  updateHeartbeatNextTrigger(id: string, nextTrigger: string) {
+    if (this.isSupabase) {
+        console.warn("updateHeartbeatNextTrigger called in Supabase mode.");
+        return;
+    }
+    if (this.db) {
+        this.db.run(
+            `UPDATE heartbeat_queue SET next_trigger = ?, status = 'pending' WHERE id = ?`,
+            [nextTrigger, id]
+        );
+    }
+  }
+
   createHeartbeat(sessionId: string, nextTrigger: string): string | null {
     if (this.isSupabase) {
         console.warn("createHeartbeat called in Supabase mode.");

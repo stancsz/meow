@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- Cycle #26 ✅ Implemented Phase 2 Heartbeat scheduler with local simulation and idempotency
 - Cycle #26 ✅ Implemented Phase 2 Heartbeat foundation: pg_cron scheduling, webhook handler, and idempotent trigger system.
 - [Current Date] Cycle #50 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully implemented and tested. Unit tests for heartbeat queue management and recursive scheduling logic exist in `src/core/heartbeat.test.ts` and successfully pass. The `heartbeat_queue` table is present in `src/db/migrations/001_motherboard.sql`. Heartbeat logic is correctly implemented in `src/core/heartbeat.ts` with enqueueing, idempotency, gas checking, and recursive interval triggering. The logic is effectively integrated with `src/core/orchestrator.ts` to support Continuous Mode. Marked Phase 2 — Heartbeat as completed in the BACKLOG.
 - [Current Date] Cycle #49 ✅ Fixed `heartbeat.integration.test.ts` failure by properly simulating execution gas deductions in the test mocks. Confirmed Phase 2 Heartbeat feature implementation is completely functional and robust.
@@ -178,7 +179,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
 - [x] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 - [x] **Phase 2 — Heartbeat:** Implemented local foundation (heartbeat_queue, DBClient methods, processHeartbeat handler).
-- [x] **Phase 2 — Heartbeat:** Heartbeat feature for continuous mode as per SWARM_SPEC.md §14. ✅
+- [~] **Phase 2 — Heartbeat:** Heartbeat feature for continuous mode as per SWARM_SPEC.md §14. ✅
 - [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. ✅
 
 - [~] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)

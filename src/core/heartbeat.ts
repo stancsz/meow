@@ -354,6 +354,103 @@ import { DBClient } from "../db/client";
 
 import { executeSwarmManifest } from "./dispatcher";
 
+export class HeartbeatScheduler {
+    private db: DBClient;
+
+    constructor(dbClient?: DBClient) {
+        this.db = dbClient || new DBClient();
+    }
+
+    async schedule(sessionId: string): Promise<void> {
+        this.db.setContinuousMode(sessionId, true);
+        const nextTriggerDate = new Date(Date.now() + 30 * 60 * 1000);
+        const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
+
+        // Use upsertHeartbeat to avoid duplicate pending heartbeats for the same session
+        if (typeof this.db.upsertHeartbeat === 'function') {
+            this.db.upsertHeartbeat(sessionId, nextTriggerStr);
+        } else {
+            // Fallback to enqueueHeartbeat for backward compatibility
+            this.db.enqueueHeartbeat(sessionId, nextTriggerStr);
+        }
+        this.db.writeAuditLog(sessionId, 'continuous_mode_enabled', { interval_minutes: 30, next_trigger: nextTriggerStr });
+    }
+
+    async tick(): Promise<void> {
+        const dueHeartbeats = this.db.processDueHeartbeats();
+
+        for (const heartbeat of dueHeartbeats) {
+            const idempotencyKey = `heartbeat-${heartbeat.session_id}-${heartbeat.next_trigger}`;
+
+            if (this.db.checkIdempotency(idempotencyKey)) {
+                this.db.updateHeartbeatStatus(heartbeat.id, 'completed');
+                continue;
+            }
+
+            this.db.updateHeartbeatStatus(heartbeat.id, 'processing');
+            this.db.createTransactionLogEntry(idempotencyKey, 'started', {});
+
+            try {
+                const session = this.db.getSession(heartbeat.session_id);
+                if (!session || !session.manifest) {
+                    this.db.updateHeartbeatStatus(heartbeat.id, 'error');
+                    this.db.logTransaction(idempotencyKey, 'failed', { error: 'Session or manifest not found' });
+                    continue;
+                }
+
+                const userId = session.user_id;
+                const gasBalance = this.db.getGasBalance(userId);
+
+                if (gasBalance <= 0) {
+                    this.db.writeAuditLog(heartbeat.session_id, 'continuous_mode_suspended', { reason: 'insufficient_gas' });
+                    this.db.updateHeartbeatStatus(heartbeat.id, 'failed');
+                    this.db.logTransaction(idempotencyKey, 'failed', { error: 'Insufficient gas' });
+                    continue;
+                }
+
+                this.db.writeAuditLog(heartbeat.session_id, 'heartbeat_triggered', { next_trigger: heartbeat.next_trigger });
+
+                // Execute logic
+                const results = await executeSwarmManifest(session.manifest, heartbeat.session_id, this.db);
+                const hasErrors = Object.values(results).some((res: any) => res.status === "error");
+
+                if (!hasErrors) {
+                    const runId = `gas_consumed_for_heartbeat_${heartbeat.id}`;
+                    const logs = this.db.getAuditLogs(heartbeat.session_id);
+                    const alreadyConsumedForThisRun = logs.some((l: any) => l.event === runId);
+                    const orchestratorRunConsumed = logs.some((l: any) => l.event === 'gas_consumed_for_session');
+
+                    if (orchestratorRunConsumed && !alreadyConsumedForThisRun) {
+                        await this.db.debitCredits(userId, 1);
+                        this.db.writeAuditLog(heartbeat.session_id, runId, { amount: 1 });
+                    }
+                }
+
+                this.db.logTransaction(idempotencyKey, 'completed', results);
+
+                if (hasErrors) {
+                    this.db.updateHeartbeatStatus(heartbeat.id, 'failed');
+                } else {
+                    this.db.updateHeartbeatStatus(heartbeat.id, 'completed');
+                }
+
+                // Schedule next
+                const nextTriggerDate = new Date(Date.now() + 30 * 60 * 1000);
+                const nextTriggerStr = nextTriggerDate.toISOString().replace('T', ' ').replace('Z', '');
+                this.db.updateHeartbeatNextTrigger(heartbeat.id, nextTriggerStr);
+                // Also update status back to pending which is handled by updateHeartbeatNextTrigger
+
+            } catch (error: any) {
+                console.error(`Error processing heartbeat for session ${heartbeat.session_id}:`, error);
+                this.db.updateSessionStatus(heartbeat.session_id, 'error');
+                this.db.writeAuditLog(heartbeat.session_id, 'heartbeat_execution_failed', { error: error.message || String(error) });
+                this.db.logTransaction(idempotencyKey, 'failed', { error: error.message || String(error) });
+                this.db.updateHeartbeatStatus(heartbeat.id, 'failed');
+            }
+        }
+    }
+}
+
 export async function scheduleHeartbeat(sessionId: string, intervalMinutes: number, providedDb?: DBClient): Promise<void> {
     const db = providedDb || new DBClient();
     db.setContinuousMode(sessionId, true);

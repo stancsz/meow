@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { DBClient } from "../db/client";
-import { handleHeartbeat, scheduleHeartbeat, processAllHeartbeats, checkHeartbeats, verifyMotherboardIntegrity } from "./heartbeat";
+import { handleHeartbeat, scheduleHeartbeat, processAllHeartbeats, checkHeartbeats, verifyMotherboardIntegrity, HeartbeatScheduler } from "./heartbeat";
 import { startLocalScheduler } from "./heartbeat-local";
 import * as dispatcher from "./dispatcher";
 
@@ -337,5 +337,93 @@ describe("Heartbeat System", () => {
         expect(queueCheck.length).toBeGreaterThan(0);
         expect(queueCheck[0].status).toBe('pending');
         expect(queueCheck[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
+    });
+
+    describe("HeartbeatScheduler Class", () => {
+        it("should enqueue a new heartbeat", () => {
+            const sessionId = "session-new-scheduler-1";
+            const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
+
+            db.enqueueHeartbeat(sessionId, triggerTime);
+
+            const pending = db.processDueHeartbeats();
+            expect(pending.length).toBe(1);
+            expect(pending[0].session_id).toBe(sessionId);
+            expect(pending[0].status).toBe("pending");
+        });
+
+        it("should update next_trigger and reset status to pending", () => {
+            const sessionId = "session-update-trigger";
+            const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
+
+            const id = db.enqueueHeartbeat(sessionId, triggerTime);
+            expect(id).toBeDefined();
+
+            db.updateHeartbeatStatus(id!, "processing");
+
+            const futureTime = new Date(Date.now() + 100000).toISOString().replace('T', ' ').replace('Z', '');
+            db.updateHeartbeatNextTrigger(id!, futureTime);
+
+            // Check status is pending and time is updated
+            const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE id = ?").all(id) as any[];
+            expect(queueCheck.length).toBe(1);
+            expect(queueCheck[0].status).toBe("pending");
+            expect(queueCheck[0].next_trigger).toBe(futureTime);
+        });
+
+        it("should schedule a heartbeat via HeartbeatScheduler class", async () => {
+            const sessionId = "session-scheduler-schedule";
+            const scheduler = new HeartbeatScheduler(db);
+
+            await scheduler.schedule(sessionId);
+
+            const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE session_id = ?").all(sessionId) as any[];
+            expect(queueCheck.length).toBe(1);
+            expect(queueCheck[0].status).toBe('pending');
+            expect(queueCheck[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
+        });
+
+        it("should process due heartbeats via tick()", async () => {
+            const sessionId = "session-scheduler-tick";
+            const userId = "user-scheduler-123";
+            const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
+            const scheduler = new HeartbeatScheduler(db);
+
+            const createdSessionId = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+            db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, createdSessionId]);
+            db.incrementGasBalance(userId, 100);
+
+            const id = db.enqueueHeartbeat(sessionId, triggerTime);
+            expect(id).toBeDefined();
+
+            await scheduler.tick();
+
+            // The specific id should now have a future trigger and be back to pending
+            const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE id = ?").all(id) as any[];
+            expect(queueCheck.length).toBe(1);
+            expect(queueCheck[0].status).toBe("pending");
+            expect(queueCheck[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
+        });
+
+        it("should handle gas check in tick() correctly", async () => {
+            const sessionId = "session-scheduler-no-gas";
+            const userId = "user-scheduler-broke";
+            const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
+            const scheduler = new HeartbeatScheduler(db);
+
+            const createdSessionId = db.createSession(userId, { prompt: 'do stuff' }, { steps: [], skills_required: [] });
+            db.db.run(`UPDATE orchestrator_sessions SET id = ? WHERE id = ?`, [sessionId, createdSessionId]);
+
+            // Ensure user has 0 balance
+            db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES (?, ?, ?)`, [crypto.randomUUID(), userId, 0]);
+
+            const id = db.enqueueHeartbeat(sessionId, triggerTime);
+
+            await scheduler.tick();
+
+            const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE id = ?").all(id) as any[];
+            expect(queueCheck.length).toBe(1);
+            expect(queueCheck[0].status).toBe("failed");
+        });
     });
 });
