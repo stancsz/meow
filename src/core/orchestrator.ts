@@ -6,6 +6,7 @@ import { DBClient } from '../db/client';
 import { executeSwarmManifest } from './dispatcher';
 import { scheduleHeartbeat } from './heartbeat';
 import { checkGasBalance, debitGas } from './gas';
+import { GasTank } from './gas-tank';
 
 export async function processHeartbeat(sessionId: string, providedDb?: DBClient): Promise<void> {
     const db = providedDb || new DBClient(process.env.DATABASE_URL || 'sqlite://local.db');
@@ -57,7 +58,8 @@ export async function processHeartbeat(sessionId: string, providedDb?: DBClient)
             const orchestratorRunConsumed = logs.some((l: any) => l.event === 'gas_consumed_for_session');
 
             if (orchestratorRunConsumed && !alreadyConsumedForThisRun) {
-                await debitGas(userId, 1, db);
+                const gasTank = new GasTank(db);
+                await gasTank.debitExecution(userId, 1);
                 db.writeAuditLog(heartbeat.session_id, runId, { amount: 1 });
             }
         }
@@ -212,7 +214,8 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
                     const alreadyConsumed = logs.some(log => log.event === 'gas_consumed_for_session');
 
                     if (!alreadyConsumed) {
-                        await debitGas(user_id, 1, dbClient);
+                        const gasTank = new GasTank(dbClient);
+                        await gasTank.debitExecution(user_id, 1);
                         dbClient.writeAuditLog(session_id, 'gas_consumed_for_session', { amount: 1 });
                     }
                 }

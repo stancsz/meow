@@ -2,6 +2,7 @@ import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
 import { DBClient } from "../db/client";
 import { handleStripeWebhook } from "./payments";
 import { executeSwarmManifest } from "./dispatcher";
+import { GasTank } from "./gas-tank";
 import { stripe } from "./stripe";
 import type { SwarmManifest, Task } from "./types";
 
@@ -51,6 +52,13 @@ describe("Phase 1 Gas Tank - Stripe Webhook Handling", () => {
         session_id TEXT,
         event TEXT,
         metadata TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS gas_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        transaction_type TEXT NOT NULL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -155,6 +163,13 @@ describe("Phase 1 Gas Tank - Credit Debit Logic", () => {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         credits_used INTEGER DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS gas_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        transaction_type TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   });
 
@@ -215,5 +230,125 @@ describe("Phase 1 Gas Tank - Credit Debit Logic", () => {
     // Verify audit log has gas_consumed_for_session
     const logs = db.getAuditLogs(sessionId);
     expect(logs.some(l => l.event === "gas_consumed_for_session")).toBe(true);
+  });
+});
+
+describe("Phase 1 Gas Tank - GasTank Module Logic", () => {
+  let db: DBClient;
+  let gasTank: GasTank;
+
+  beforeEach(() => {
+    db = new DBClient("sqlite://:memory:");
+    db.applyMigration(`
+      CREATE TABLE IF NOT EXISTS platform_users (
+          user_id TEXT PRIMARY KEY,
+          supabase_url TEXT NOT NULL,
+          encrypted_service_role TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS gas_ledger (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        balance_credits INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS gas_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        transaction_type TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS transaction_log (
+        idempotency_key TEXT PRIMARY KEY,
+        status TEXT,
+        result TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        event TEXT,
+        metadata TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    gasTank = new GasTank(db);
+  });
+
+  test("initializes gas ledger for new user with 0 balance", async () => {
+    const userId = "user-init-test";
+
+    // Explicitly set user in platform_users to satisfy foreign key constraint if enforced
+    db.db.run(`INSERT INTO platform_users (user_id, supabase_url, encrypted_service_role) VALUES (?, ?, ?)`, [userId, "mock-url", "mock-role"]);
+
+    await gasTank.initializeGasLedger(userId);
+
+    const balance = await gasTank.getBalance(userId);
+    expect(balance).toBe(0);
+  });
+
+  test("adds credits and updates balance", async () => {
+    const userId = "user-add-test";
+
+    db.db.run(`INSERT INTO platform_users (user_id, supabase_url, encrypted_service_role) VALUES (?, ?, ?)`, [userId, "mock-url", "mock-role"]);
+    await gasTank.initializeGasLedger(userId);
+
+    const { newBalance } = await gasTank.addCredits(userId, 50);
+    expect(newBalance).toBe(50);
+
+    const balance = await gasTank.getBalance(userId);
+    expect(balance).toBe(50);
+
+    // Verify transaction was logged
+    const tx = db.db.query(`SELECT * FROM gas_transactions WHERE user_id = ? AND transaction_type = 'credit'`).get(userId);
+    expect(tx).toBeDefined();
+    expect(tx.amount).toBe(50);
+  });
+
+  test("debits execution successfully when having sufficient credits", async () => {
+    const userId = "user-debit-success";
+
+    db.db.run(`INSERT INTO platform_users (user_id, supabase_url, encrypted_service_role) VALUES (?, ?, ?)`, [userId, "mock-url", "mock-role"]);
+    await gasTank.initializeGasLedger(userId);
+    await gasTank.addCredits(userId, 10);
+
+    const { newBalance } = await gasTank.debitExecution(userId, 2);
+    expect(newBalance).toBe(8);
+
+    const tx = db.db.query(`SELECT * FROM gas_transactions WHERE user_id = ? AND transaction_type = 'debit'`).get(userId);
+    expect(tx).toBeDefined();
+    expect(tx.amount).toBe(2);
+  });
+
+  test("fails to debit execution if insufficient credits", async () => {
+    const userId = "user-debit-fail";
+
+    db.db.run(`INSERT INTO platform_users (user_id, supabase_url, encrypted_service_role) VALUES (?, ?, ?)`, [userId, "mock-url", "mock-role"]);
+    await gasTank.initializeGasLedger(userId);
+    await gasTank.addCredits(userId, 1);
+
+    expect(gasTank.debitExecution(userId, 2)).rejects.toThrow("Insufficient gas credits");
+
+    const balance = await gasTank.getBalance(userId);
+    expect(balance).toBe(1); // Unchanged
+
+    const tx = db.db.query(`SELECT * FROM gas_transactions WHERE user_id = ? AND transaction_type = 'debit'`).get(userId);
+    expect(tx).toBeNull(); // Should not have logged a debit
+  });
+
+  test("handles idempotent executions to avoid double charge", async () => {
+    const userId = "user-idempotent";
+    const idempotencyKey = "execution-123";
+
+    db.db.run(`INSERT INTO platform_users (user_id, supabase_url, encrypted_service_role) VALUES (?, ?, ?)`, [userId, "mock-url", "mock-role"]);
+    await gasTank.initializeGasLedger(userId);
+    await gasTank.addCredits(userId, 10);
+
+    const run1 = await gasTank.debitExecution(userId, 1, idempotencyKey);
+    expect(run1.newBalance).toBe(9);
+
+    const run2 = await gasTank.debitExecution(userId, 1, idempotencyKey);
+    expect(run2.newBalance).toBe(9); // Balance should remain unchanged
   });
 });

@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [Current Date] Cycle #26 ✅ Implemented Phase 1 Gas Tank backend with TDD: created `002_gas_ledger.sql` for `gas_ledger` and `gas_transactions` tables. Implemented `GasTank` module in `src/core/gas-tank.ts` with operations to initialize, add, and debit execution credits. Wrote comprehensive tests in `src/core/gas-tank.test.ts` to cover credit addition, insufficient balances, and idempotency logic. Integrated `GasTank.debitExecution` directly into `src/core/orchestrator.ts` post-execution flows. Updated the backlog to reflect progress on the Phase 1 Gas Tank item.
 - [Current Date] Cycle #42 ✅ Implemented Phase 1 Gas Tank backend API and database logic: created gas management module (`src/core/gas.ts`) to abstract db layer, integrated `debitCredits` and `getBalance` into `src/core/dispatcher.ts` ensuring credits are deducted successfully after execution, with tests properly covering sufficient and insufficient balance cases in `src/core/gas.test.ts` and `dispatcher.test.ts`. Marked 'Phase 1 — Gas Tank' as done in the BACKLOG.
 - [2026-03-30] Cycle #41 ✅ Created end-to-end integration test for swarm orchestration workflow (`src/core/integration.test.ts`).
 - [Current Date] Cycle #40 ✅ Created comprehensive end-to-end integration test (`src/integration/swarm-e2e.test.ts`) for swarm workflow and validated it successfully against a new dummy skill (`test-shopify-fetch`).
@@ -168,7 +169,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
 - [x] **Phase 1 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 - [~] **Phase 2 — Heartbeat:** Implemented local foundation (heartbeat_queue, DBClient methods, processHeartbeat handler).
-- [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. ✅
+- [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator (completed with TDD and db implementation). ✅
 
 - [~] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)
 

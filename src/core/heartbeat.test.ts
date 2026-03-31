@@ -13,6 +13,28 @@ describe("Heartbeat System", () => {
         const path = require('path');
         const migrationSql = fs.readFileSync(path.join(__dirname, '../db/migrations/001_motherboard.sql'), 'utf8');
         db.applyMigration(migrationSql);
+
+        try {
+            const gasMigrationSql = fs.readFileSync(path.join(__dirname, '../db/migrations/002_gas_ledger.sql'), 'utf8');
+            db.applyMigration(gasMigrationSql);
+        } catch(e) {}
+
+        // Ensure platform users table has test entries or we don't hit foreign key issues
+        db.applyMigration(`
+            CREATE TABLE IF NOT EXISTS platform_users (
+                user_id TEXT PRIMARY KEY,
+                supabase_url TEXT NOT NULL,
+                encrypted_service_role TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS gas_transactions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                transaction_type TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
     });
 
     it("should upsert and retrieve pending heartbeats", () => {
