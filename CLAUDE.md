@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [Current Date] Cycle #42 ✅ Implemented Phase 1 Gas Tank backend API and database logic: created gas management module (`src/core/gas.ts`) to abstract db layer, integrated `debitCredits` and `getBalance` into `src/core/dispatcher.ts` ensuring credits are deducted successfully after execution, with tests properly covering sufficient and insufficient balance cases in `src/core/gas.test.ts` and `dispatcher.test.ts`. Marked 'Phase 1 — Gas Tank' as done in the BACKLOG.
 - [2026-03-30] Cycle #41 ✅ Created end-to-end integration test for swarm orchestration workflow (`src/core/integration.test.ts`).
 - [Current Date] Cycle #40 ✅ Created comprehensive end-to-end integration test (`src/integration/swarm-e2e.test.ts`) for swarm workflow and validated it successfully against a new dummy skill (`test-shopify-fetch`).
 - [2026-03-30 17:00] Cycle #39 ✅ Created comprehensive integration test suite for Phase 2 Heartbeat system in src/core/heartbeat.test.ts, validating scheduling, dispatch, and idempotency.
