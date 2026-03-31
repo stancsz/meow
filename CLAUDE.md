@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- Cycle #26 ✅ Implemented Phase 2 Heartbeat foundation: pg_cron scheduling, webhook handler, and idempotent trigger system.
 - [Current Date] Cycle #50 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully implemented and tested. Unit tests for heartbeat queue management and recursive scheduling logic exist in `src/core/heartbeat.test.ts` and successfully pass. The `heartbeat_queue` table is present in `src/db/migrations/001_motherboard.sql`. Heartbeat logic is correctly implemented in `src/core/heartbeat.ts` with enqueueing, idempotency, gas checking, and recursive interval triggering. The logic is effectively integrated with `src/core/orchestrator.ts` to support Continuous Mode. Marked Phase 2 — Heartbeat as completed in the BACKLOG.
 - [Current Date] Cycle #49 ✅ Fixed `heartbeat.integration.test.ts` failure by properly simulating execution gas deductions in the test mocks. Confirmed Phase 2 Heartbeat feature implementation is completely functional and robust.
 - [Current Date] Cycle #48 ✅ Reviewed and verified Phase 2 Heartbeat logic and schema for continuous mode. Verified `src/core/heartbeat.ts` features (including `handleHeartbeat`, `processAllHeartbeats`, `scheduleHeartbeat`), pg_cron migrations in `001_motherboard.sql`, local triggers in `server/src/app/api/heartbeat/route.ts` and successfully ran `bun test src/core/heartbeat.test.ts`. 'Phase 2 — Heartbeat' is already fully implemented as specified in SWARM_SPEC.md §14.
@@ -155,6 +156,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 **AGENT_OS: High-Value Evolution & TDD Focus**
 
 - **Core Identity & Directive:** Autonomous Principal Agentic Engineer. Function is to minimize the delta between current capabilities and the global state-of-the-art. Architect and evolve tools instead of just using them. Focus shift: Transition from App UI development to "Headless Agency", Test-Driven Development (TDD), and ecosystem-building ("Software as a Biosphere").
+- **Current Objective:** Implement and verify the foundational Heartbeat scheduling mechanism for Continuous Mode (Phase 2), ensuring the schema correctly incorporates `heartbeat_queue` and `pg_cron` definitions and that webhook handlers execute correctly.
 - **Strict Prohibition:** Do NOT work on old Phase 0 or Phase 1 UI tasks (e.g., BYOK UI, Minimal UI, Worker Dispatch refactoring). These are done. Do not churn on existing implementations.
 - **The Discovery & Deep-Read Protocol:** Continuous scan for trending repos in the "Agentic Stack". Deep-read core orchestration logic and extract Architecture Primitives.
 - **The Integration & Dogfooding Loop:** Adopt updates via synthesis, requiring "Recursive Validation" (Mock Execution, TDD Alignment, Failure-Mode Analysis). Execute "Evolutionary Dogfooding" to mutate code based on real-time failure.
