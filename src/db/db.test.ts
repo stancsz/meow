@@ -165,4 +165,40 @@ describe("Database Client Tests (SQLite Local)", () => {
         const finalBalance = dbClient.getBalance(userId);
         expect(finalBalance).toBe(509);
     });
+
+    test("Heartbeat CRUD operations", () => {
+        const sessionId = "test_session_heartbeat";
+
+        // Ensure clean state
+        const initialPending = dbClient.getPendingHeartbeats();
+
+        // Create Heartbeat
+        // Use a date in the past so it shows up in getPendingHeartbeats() which checks <= NOW()
+        const pastDate = new Date(Date.now() - 10000).toISOString().replace('T', ' ').replace('Z', '');
+        const hbId = dbClient.createHeartbeat(sessionId, pastDate);
+        expect(hbId).not.toBeNull();
+
+        // Get Pending
+        const pending = dbClient.getPendingHeartbeats();
+        const hb = pending.find((h: any) => h.id === hbId);
+        expect(hb).toBeDefined();
+        expect(hb.session_id).toBe(sessionId);
+        expect(hb.status).toBe('pending');
+
+        // Update Status
+        if (hbId) {
+            dbClient.updateHeartbeatStatus(hbId, 'processing');
+            const updatedPending = dbClient.getPendingHeartbeats();
+            expect(updatedPending.find((h: any) => h.id === hbId)).toBeUndefined();
+        }
+
+        // Delete Heartbeat
+        if (hbId) {
+            dbClient.deleteHeartbeat(hbId);
+            const rawDb = new Database(testDbPath);
+            const deleted = rawDb.query(`SELECT * FROM heartbeat_queue WHERE id = ?`).get(hbId);
+            expect(deleted).toBeNull();
+            rawDb.close();
+        }
+    });
 });
