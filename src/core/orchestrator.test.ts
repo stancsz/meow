@@ -503,3 +503,123 @@ describe("Manifest Validation Unit Tests", () => {
     });
 });
 
+describe("processHeartbeat Unit Tests", () => {
+    let testDbUrl: string;
+
+    beforeAll(() => {
+        testDbUrl = "sqlite://local_test_db_orchestrator_heartbeat.sqlite";
+        const { DBClient } = require("../db/client");
+        const fs = require("fs");
+        const path = require("path");
+
+        const testDb = new DBClient(testDbUrl);
+        const schema = fs.readFileSync(path.join(__dirname, "../db/migrations/001_motherboard.sql"), "utf-8");
+        testDb.applyMigration(schema);
+    });
+
+    afterAll(() => {
+        const fs = require("fs");
+        try {
+            fs.unlinkSync("local_test_db_orchestrator_heartbeat.sqlite");
+        } catch(e) {}
+    });
+
+    test("skips when no pending heartbeat exists for session", async () => {
+        const { processHeartbeat } = require('./orchestrator');
+        const { DBClient } = require("../db/client");
+        const db = new DBClient(testDbUrl);
+
+        await processHeartbeat("non_existent_session", db);
+
+        const logs = db.getAuditLogs("non_existent_session");
+        expect(logs.length).toBe(0);
+    });
+
+    test("skips if idempotency check catches a duplicate execution", async () => {
+        const { processHeartbeat } = require('./orchestrator');
+        const { DBClient } = require("../db/client");
+        const db = new DBClient(testDbUrl);
+        const sessionId = "session_idempotency_test";
+
+        const pastDate = new Date(Date.now() - 10000).toISOString().replace('T', ' ').replace('Z', '');
+        const hbId = db.createHeartbeat(sessionId, pastDate);
+
+        const idempotencyKey = `heartbeat-${sessionId}-${pastDate}`;
+        db.createTransactionLogEntry(idempotencyKey, 'completed', {});
+
+        await processHeartbeat(sessionId, db);
+
+        // Expect heartbeat status to be updated to completed, but no execution
+        const rawDb = require("bun:sqlite").Database;
+        const sqlite = new rawDb("local_test_db_orchestrator_heartbeat.sqlite");
+        const hb = sqlite.query(`SELECT * FROM heartbeat_queue WHERE id = ?`).get(hbId) as any;
+        expect(hb.status).toBe('completed');
+
+        const logs = db.getAuditLogs(sessionId);
+        expect(logs.length).toBe(0);
+        sqlite.close();
+    });
+
+    test("fails if sufficient gas is not available", async () => {
+        const { processHeartbeat } = require('./orchestrator');
+        const { DBClient } = require("../db/client");
+        const db = new DBClient(testDbUrl);
+
+        const userId = "test_user_no_gas_heartbeat";
+        db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES (?, ?, 0)`, ["uuid-hb-gas", userId]);
+
+        const sessionId = db.createSession(userId, { prompt: "Test" }, { steps: [] });
+        const pastDate = new Date(Date.now() - 10000).toISOString().replace('T', ' ').replace('Z', '');
+        const hbId = db.createHeartbeat(sessionId, pastDate);
+
+        await processHeartbeat(sessionId, db);
+
+        const logs = db.getAuditLogs(sessionId);
+        const log = logs.find((l: any) => l.event === "continuous_mode_suspended");
+        expect(log).toBeDefined();
+
+        const rawDb = require("bun:sqlite").Database;
+        const sqlite = new rawDb("local_test_db_orchestrator_heartbeat.sqlite");
+        const hb = sqlite.query(`SELECT * FROM heartbeat_queue WHERE id = ?`).get(hbId) as any;
+        expect(hb.status).toBe('failed');
+        sqlite.close();
+    });
+
+    test("executes heartbeat successfully and updates next_trigger", async () => {
+        const { processHeartbeat } = require('./orchestrator');
+        const { DBClient } = require("../db/client");
+        const db = new DBClient(testDbUrl);
+
+        const userId = "test_user_success_heartbeat";
+        db.db.run(`INSERT INTO gas_ledger (id, user_id, balance_credits) VALUES (?, ?, 100)`, ["uuid-hb-success", userId]);
+
+        const sessionId = db.createSession(userId, { prompt: "Test" }, { steps: [] });
+        const pastDate = new Date(Date.now() - 10000).toISOString().replace('T', ' ').replace('Z', '');
+        const hbId = db.createHeartbeat(sessionId, pastDate);
+
+        // Mock executeSwarmManifest
+        mock.module('./dispatcher', () => ({
+            executeSwarmManifest: async () => ({ step_1: { status: 'success' } })
+        }));
+
+        await processHeartbeat(sessionId, db);
+
+        const rawDb = require("bun:sqlite").Database;
+        const sqlite = new rawDb("local_test_db_orchestrator_heartbeat.sqlite");
+
+        // Original should be completed
+        const hb = sqlite.query(`SELECT * FROM heartbeat_queue WHERE id = ?`).get(hbId) as any;
+        expect(hb.status).toBe('completed');
+
+        // A new one should be pending
+        const newHb = sqlite.query(`SELECT * FROM heartbeat_queue WHERE session_id = ? AND status = 'pending'`).get(sessionId) as any;
+        expect(newHb).toBeDefined();
+
+        // It should be roughly 30 minutes in the future (we can't check exact millisecond so we just verify it exists and is > now)
+        const nowStr = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        expect(newHb.next_trigger > nowStr).toBe(true);
+        sqlite.close();
+
+        mock.restore();
+    });
+});

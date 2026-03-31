@@ -126,6 +126,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 - [2026-03-15] Cycle #17 ✅ Fixed cross-platform compatibility in plugin test runner - now works seamlessly on Windows Git Bash
 - [2026-03-29 07:58] Cycle #18 ✅ Implemented Phase 1 Gas Tank: Stripe integration and gas_ledger debit
 - Cycle #26 ✅ Implemented real Cloud Function Worker runtime with KMS decryption, skill loading, and result logging.
+- Cycle #27 ✅ Implemented Heartbeat foundation: verified heartbeat_queue schema, added DBClient methods, and implemented orchestrator heartbeat handler natively.
 
 ## STRATEGIC DIRECTIVE: SOFTWARE AS A BIOSPHERE
 The transition from "Software as a Tool" to "Software as an Agent" dictates that traditional App UI is a bottleneck and logic is commoditized by LLMs. To survive, the strategy must shift from building interfaces to building ecosystems ("Biospheres").
@@ -166,7 +167,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Move 1:** Real LLM Intent Parsing
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
 - [x] **Phase 1 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
-- [x] **Phase 2 — Heartbeat:** Enable recurring swarm executions via a 30-minute heartbeat mechanism. (core logic in PR #282, integration tests completed)
+- [~] **Phase 2 — Heartbeat:** Implemented local foundation (heartbeat_queue, DBClient methods, processHeartbeat handler).
 - [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. ✅
 
 - [~] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)
