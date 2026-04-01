@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
-import { DBClient } from "../db/client";
+import { DBClient } from "../../db/db/client";
 import { scheduleHeartbeat, handleHeartbeat } from "../core/heartbeat";
 import { SwarmManifest } from "../core/types";
 
@@ -12,16 +12,16 @@ describe("Heartbeat Integration", () => {
         // Load the actual production migration file to ensure we're testing the real schema
         const fs = require('fs');
         const path = require('path');
-        const migrationSql = fs.readFileSync(path.join(__dirname, '../db/migrations/001_motherboard.sql'), 'utf8');
+        const migrationSql = fs.readFileSync(path.join(__dirname, '../../db/db/migrations/001_motherboard.sql'), 'utf8');
         db.applyMigration(migrationSql);
 
         try {
-            const heartbeatSql = fs.readFileSync(path.join(__dirname, '../db/migrations/002_heartbeat.sql'), 'utf8');
+            const heartbeatSql = fs.readFileSync(path.join(__dirname, '../../db/db/migrations/002_heartbeat.sql'), 'utf8');
             db.applyMigration(heartbeatSql);
         } catch(e) {}
 
         try {
-            const gasTankSql = fs.readFileSync(path.join(__dirname, '../db/migrations/002_gas_tank.sql'), 'utf8');
+            const gasTankSql = fs.readFileSync(path.join(__dirname, '../../db/db/migrations/002_gas_tank.sql'), 'utf8');
             db.applyMigration(gasTankSql);
         } catch(e) {}
     });

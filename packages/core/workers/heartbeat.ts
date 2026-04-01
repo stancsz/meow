@@ -1,5 +1,5 @@
 import * as ff from '@google-cloud/functions-framework';
-import { getDbClient } from '../db/client';
+import { getDbClient } from '../../db/db/client';
 import { handleHeartbeat, processAllHeartbeats } from '../core/heartbeat';
 
 export const heartbeatCloudFunctionHandler = async (req: ff.Request, res: ff.Response) => {

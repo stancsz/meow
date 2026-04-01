@@ -3,7 +3,7 @@ import * as ff from "@google-cloud/functions-framework";
 import { heartbeatCloudFunctionHandler } from "./heartbeat";
 
 // Mock the DB and core modules to prevent side effects
-mock.module("../db/client", () => ({
+mock.module("../../db/db/client", () => ({
     getDbClient: () => ({
         db: true,
         isMockDb: true
