@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-01] Cycle #52 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully implemented and tested. Unit tests for heartbeat queue management and recursive scheduling logic exist in `src/core/heartbeat.test.ts` and successfully pass. The `heartbeat_queue` table is present in `src/db/migrations/001_motherboard.sql`. Heartbeat logic is correctly implemented in `src/core/heartbeat.ts`. Ensured 'Phase 2 — Heartbeat' is checked in the BACKLOG.
 - [2026-03-31] Cycle #51 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully functional and successfully tested. Checked the schema additions in `001_motherboard.sql`, and validated the `src/core/heartbeat.ts` handling. Tests in `src/core/heartbeat.test.ts` and `src/__tests__/heartbeat.integration.test.ts` pass reliably without regression. Marked 'Phase 2 — Heartbeat' as completed in BACKLOG.
 - Cycle #26 ✅ Implemented Phase 2 Heartbeat scheduler with local simulation and idempotency
 - Cycle #26 ✅ Implemented Phase 2 Heartbeat foundation: pg_cron scheduling, webhook handler, and idempotent trigger system.
