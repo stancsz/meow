@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { DBClient } from "../../../../../src/db/index";
+import { getDbClient } from "../../../../../src/db/index";
 import { handleHeartbeat, processAllHeartbeats } from "../../../../../src/core/heartbeat";
 
 export async function POST(req: NextRequest) {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
             // Ignored, might not have a JSON body
         }
 
-        const db = new DBClient(process.env.DATABASE_URL || 'sqlite://local.db');
+        const db = getDbClient();
 
         if (sessionId) {
             // Process a specific session (from pg_cron trigger or Cloud Scheduler)
