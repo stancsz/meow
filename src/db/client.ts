@@ -561,6 +561,53 @@ export class DBClient {
         );
     }
   }
+
+  async verifyMotherboardIntegrity(supabaseClient?: any): Promise<{ status: string, version: string, missing_tables: string[] }> {
+    if (this.isSupabase) {
+        if (supabaseClient) {
+            try {
+                const { data, error } = await supabaseClient.schema('swarms').rpc('verify_motherboard_integrity');
+                if (error) {
+                    console.error("Error checking motherboard integrity via Supabase RPC:", error);
+                    return { status: 'error', version: '1.0', missing_tables: ['rpc_failed'] };
+                }
+                return data as any;
+            } catch (err) {
+                console.error("Failed to execute verify_motherboard_integrity RPC:", err);
+                return { status: 'error', version: '1.0', missing_tables: ['rpc_execution_error'] };
+            }
+        }
+        console.warn("verifyMotherboardIntegrity called in Supabase mode but no client provided - assuming success for mock.");
+        return { status: 'ok', version: '1.0', missing_tables: [] };
+    }
+    if (this.db) {
+        const requiredTables = [
+            'vault_user_secrets',
+            'orchestrator_sessions',
+            'task_results',
+            'audit_log',
+            'transaction_log',
+            'heartbeat_queue',
+            'gas_ledger',
+            'skill_refs',
+            'platform_users'
+        ];
+        const missingTables: string[] = [];
+
+        for (const table of requiredTables) {
+            const row = this.db.query(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(table);
+            if (!row) {
+                missingTables.push(table);
+            }
+        }
+
+        if (missingTables.length > 0) {
+            return { status: 'error', version: '1.0', missing_tables: missingTables };
+        }
+        return { status: 'ok', version: '1.0', missing_tables: [] };
+    }
+    return { status: 'error', version: '1.0', missing_tables: ['db_not_initialized'] };
+  }
 }
 
 export const getDbClient = () => {
