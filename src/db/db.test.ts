@@ -201,4 +201,37 @@ describe("Database Client Tests (SQLite Local)", () => {
             rawDb.close();
         }
     });
+
+    test("Motherboard Integrity Check (Valid Schema)", async () => {
+        // The current DB was migrated completely in beforeAll, so it should be valid
+        const integrity = await dbClient.verifyMotherboardIntegrity();
+        expect(integrity.status).toBe('ok');
+        expect(integrity.missing_tables).toHaveLength(0);
+    });
+
+    test("Motherboard Integrity Check (Invalid Schema)", async () => {
+        // Temporarily drop a required table to simulate an invalid schema
+        const rawDb = new Database(testDbPath);
+        rawDb.run(`DROP TABLE IF EXISTS task_results`);
+
+        const integrity = await dbClient.verifyMotherboardIntegrity();
+        expect(integrity.status).toBe('error');
+        expect(integrity.missing_tables).toContain('task_results');
+
+        // Restore the table for any subsequent tests (or cleanup)
+        rawDb.run(`
+            CREATE TABLE IF NOT EXISTS task_results (
+                id TEXT PRIMARY KEY,
+                session_id TEXT REFERENCES orchestrator_sessions(id),
+                worker_id TEXT,
+                skill_ref TEXT,
+                status TEXT,
+                output TEXT,
+                error TEXT,
+                worker_metadata TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        rawDb.close();
+    });
 });

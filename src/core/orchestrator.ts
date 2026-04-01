@@ -105,6 +105,30 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
             return;
         }
 
+        // Verify Motherboard Integrity before execution
+        // Fetch platform credentials to optionally instantiate the Supabase client
+        let supabaseClient: any = undefined;
+        try {
+            const { getKMSProvider } = require('../security/kms');
+            const { createClient } = require('@supabase/supabase-js');
+            const platformUser = dbClient.getPlatformUser(user_id);
+            if (platformUser && platformUser.encrypted_service_role && platformUser.supabase_url) {
+                const kmsProvider = getKMSProvider();
+                const decryptedServiceRole = await kmsProvider.decrypt(platformUser.encrypted_service_role);
+                supabaseClient = createClient(platformUser.supabase_url, decryptedServiceRole);
+            }
+        } catch (e) {
+            console.warn("Could not instantiate Supabase client for integrity check:", e);
+        }
+
+        const integrity = await dbClient.verifyMotherboardIntegrity(supabaseClient);
+        if (integrity.status !== 'ok') {
+            dbClient.writeAuditLog(session_id, 'swarm_execution_failed', { error: 'Motherboard integrity check failed', missing_tables: integrity.missing_tables });
+            dbClient.updateSessionStatus(session_id, 'error');
+            res.status(500).json({ error: 'Motherboard integrity check failed. Missing tables: ' + integrity.missing_tables.join(', ') });
+            return;
+        }
+
         // Check for sufficient gas before execution
         if (!checkGasBalance(user_id, dbClient)) {
             dbClient.writeAuditLog(session_id, 'swarm_execution_failed', { error: 'Insufficient gas credits' });
