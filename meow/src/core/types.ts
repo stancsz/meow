@@ -1,0 +1,104 @@
+export interface Task {
+    id: string;
+    description: string;
+    worker: string;
+    skills: string[];
+    credentials: string[];
+    depends_on: string[];
+    action_type: 'READ' | 'WRITE';
+    parameters?: Record<string, any>;
+    timeout?: number;
+}
+
+export interface ExecutionContext {
+    credentials: Record<string, string>;
+    skillContent: string;
+    sessionId: string;
+    userId?: string;
+}
+
+export interface TaskResult {
+    message: string;
+    skills_used: string[];
+    delegated_to: string;
+    status: string;
+    [key: string]: any;
+}
+
+export interface GasLedgerEntry {
+    id: string;
+    user_id: string;
+    balance_credits: number;
+    updated_at: string;
+}
+
+export interface StripeWebhookEvent {
+    id: string;
+    type: string;
+    data: {
+        object: any;
+    };
+}
+
+export interface SwarmManifest {
+    version: string;
+    intent_parsed: string;
+    skills_required: string[];
+    credentials_required: string[];
+    schedule?: string | null;
+    steps: Task[];
+}
+
+export interface WorkerConfig {
+    worker_id: string;
+    skills: string[];
+    credentials: string[];
+}
+
+export interface PlanDiffApprove {
+    plan: SwarmManifest;
+    write_operations: number;
+    read_operations: number;
+    status: 'idle' | 'planning' | 'waiting_approval' | 'approved' | 'rejected' | 'executing' | 'completed' | 'error';
+    sessionId: string;
+    estimated_credit_cost?: number;
+}
+
+export interface SkillReference {
+    id: string;
+    name: string;
+    version?: string;
+}
+
+export interface CredentialReference {
+    id: string;
+    name: string;
+    type: string;
+}
+
+export type AIKeyProvider = 'openai' | 'gemini' | 'anthropic' | 'deepseek' | 'github' | 'custom';
+
+export interface AIKey {
+    id: string;
+    name: string;
+    provider: AIKeyProvider | string;
+    maskedKey: string;
+    createdAt: string;
+}
+
+export interface Skill {
+    name: string;
+    version?: string;
+    required_credentials?: string[];
+    allowed_domains?: string[];
+    author?: string;
+    content: string;
+}
+
+export interface HeartbeatQueue {
+    id: string;
+    session_id: string;
+    next_trigger: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed' | 'error';
+    created_at: string;
+}
