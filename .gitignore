@@ -47,23 +47,22 @@ _override.tf.json
 terraform.rc
 **.tar
 
-# Old/deprecated folders (archived to old-simpleclaw/)
-# These are kept in git history but ignored going forward
-.agents/
-cli/
-electron/
-examples/
-loop/
-scripts/
-server/
-src/
-terraform/
-test/
-test-data/
-tmp/
+# Old/deprecated folders at ROOT level only (archived to old-simpleclaw/)
+/.agents/
+/electron/
+/examples/
+/loop/
+/scripts/
+/server/
+/src/
+/terraform/
+/test/
+/test-data/
+/tmp/
+
+# Specific subdirs in packages to ignore (not the whole packages/)
+packages/core/
+packages/db/
 
 # Embedded competitor repos (cloned for research)
-research/competitors/*/
-
-# Note: meow/, meowclaw/, packages/, research/, old-simpleclaw/
-# are NOT in .gitignore - they are tracked by default
+docs/research/competitors/*/
