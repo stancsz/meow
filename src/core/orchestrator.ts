@@ -2,7 +2,7 @@ import * as ff from '@google-cloud/functions-framework';
 import * as yaml from 'yaml';
 import { SwarmManifest, Task, PlanDiffApprove } from './types';
 import { parseIntentToManifest } from './llm';
-import { DBClient } from '../db/client';
+import { DBClient } from '../db/index';
 import { executeSwarmManifest } from './dispatcher';
 import { scheduleHeartbeat } from './heartbeat';
 import { checkGasBalance, debitGas } from './gas';
@@ -83,7 +83,7 @@ export const orchestratorHandler = async (req: ff.Request, res: ff.Response) => 
 
     const dbClient = new DBClient(process.env.DATABASE_URL || 'sqlite://local.db');
 
-    // Support for Continuous Mode
+    // Support for Continuous Mode flag in session context
     const continuous_mode = body?.continuous_mode;
     const heartbeat_triggered = body?.heartbeat_triggered;
 

@@ -63,7 +63,7 @@ describe("Heartbeat System", () => { // Core tests
         expect(queueCheck[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
     });
 
-    it("should process a specific pending heartbeat via handleHeartbeat", async () => {
+    it("should process a specific pending heartbeat and schedule recursively via handleHeartbeat", async () => {
         const sessionId = "session-789";
         const userId = "user-123";
         const triggerTime = new Date(Date.now() - 1000).toISOString().replace('T', ' ').replace('Z', '');
@@ -75,30 +75,28 @@ describe("Heartbeat System", () => { // Core tests
 
         db.upsertHeartbeat(sessionId, triggerTime, "pending");
 
-        // Let it call the real executeSwarmManifest but mock the DB gas lookup to bypass error,
-        // and let it complete. Wait, executeSwarmManifest relies on manifest logic.
-        // If manifest is empty list, it completes instantly with success.
-
-        try {
-            // Need to insert some gas balance so executeSwarmManifest doesn't fail early
-            if (!db.getGasBalance(userId)) {
-                db.incrementGasBalance(userId, 100);
-            }
-
-            await handleHeartbeat(sessionId, db);
-
-            // handleHeartbeat updates the queue to 'completed' AND queues the next one as 'pending'
-            // We should find one 'completed' (which getPendingHeartbeats ignores) and one new 'pending'
-            const pending = db.getPendingHeartbeats();
-            expect(pending.length).toBe(0); // the new one is 30 mins in future!
-
-            const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE status = 'pending' ORDER BY next_trigger DESC").all() as any[];
-            expect(queueCheck.length).toBeGreaterThan(0);
-            expect(queueCheck[0].status).toBe('pending');
-            expect(queueCheck[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
-        } finally {
-
+        // Need to insert some gas balance so executeSwarmManifest doesn't fail early
+        if (!db.getGasBalance(userId)) {
+            db.incrementGasBalance(userId, 100);
         }
+
+        await handleHeartbeat(sessionId, db);
+
+        // handleHeartbeat updates the queue to 'completed' AND queues the next one as 'pending'
+        // We should find one 'completed' (which getPendingHeartbeats ignores) and one new 'pending'
+        const pending = db.getPendingHeartbeats();
+        expect(pending.length).toBe(0); // the new one is 30 mins in future!
+
+        const queueCheck = db.db.query("SELECT * FROM heartbeat_queue WHERE status = 'pending' ORDER BY next_trigger DESC").all() as any[];
+        expect(queueCheck.length).toBeGreaterThan(0);
+        expect(queueCheck[0].status).toBe('pending');
+
+        const nextTriggerTime = new Date(queueCheck[0].next_trigger + 'Z').getTime();
+        const expectedTime = Date.now() + 30 * 60 * 1000;
+
+        // Assert it scheduled roughly 30 minutes in the future (within a few seconds tolerance)
+        expect(Math.abs(nextTriggerTime - expectedTime)).toBeLessThan(5000);
+        expect(queueCheck[0].next_trigger > new Date().toISOString().replace('T', ' ').replace('Z', '')).toBe(true);
     });
 
     it("should do nothing in handleHeartbeat if heartbeat is not pending or due", async () => {

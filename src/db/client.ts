@@ -488,6 +488,10 @@ export class DBClient {
     }
   }
 
+  createHeartbeatEntry(sessionId: string, nextTrigger: string): string | null {
+    return this.createHeartbeat(sessionId, nextTrigger);
+  }
+
   createHeartbeat(sessionId: string, nextTrigger: string): string | null {
     if (this.isSupabase) {
         console.warn("createHeartbeat called in Supabase mode.");
