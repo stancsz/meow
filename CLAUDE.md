@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-03-31] Cycle #51 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully functional and successfully tested. Checked the schema additions in `001_motherboard.sql`, and validated the `src/core/heartbeat.ts` handling. Tests in `src/core/heartbeat.test.ts` and `src/__tests__/heartbeat.integration.test.ts` pass reliably without regression. Marked 'Phase 2 — Heartbeat' as completed in BACKLOG.
 - Cycle #26 ✅ Implemented Phase 2 Heartbeat scheduler with local simulation and idempotency
 - Cycle #26 ✅ Implemented Phase 2 Heartbeat foundation: pg_cron scheduling, webhook handler, and idempotent trigger system.
 - [Current Date] Cycle #50 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully implemented and tested. Unit tests for heartbeat queue management and recursive scheduling logic exist in `src/core/heartbeat.test.ts` and successfully pass. The `heartbeat_queue` table is present in `src/db/migrations/001_motherboard.sql`. Heartbeat logic is correctly implemented in `src/core/heartbeat.ts` with enqueueing, idempotency, gas checking, and recursive interval triggering. The logic is effectively integrated with `src/core/orchestrator.ts` to support Continuous Mode. Marked Phase 2 — Heartbeat as completed in the BACKLOG.
@@ -179,7 +180,7 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 0 — Sub-Agent Integration:** Sub-Agent Delegation Engine integrated to delegate executions externally (e.g. opencode).
 - [x] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
 - [x] **Phase 2 — Heartbeat:** Implemented local foundation (heartbeat_queue, DBClient methods, processHeartbeat handler).
-- [~] **Phase 2 — Heartbeat:** Heartbeat feature for continuous mode as per SWARM_SPEC.md §14. ✅
+- [x] **Phase 2 — Heartbeat:** Heartbeat feature for continuous mode as per SWARM_SPEC.md §14. ✅
 - [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. ✅
 
 - [~] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)

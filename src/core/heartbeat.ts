@@ -460,6 +460,7 @@ export async function scheduleHeartbeat(sessionId: string, intervalMinutes: numb
     db.writeAuditLog(sessionId, 'continuous_mode_enabled', { interval_minutes: intervalMinutes, next_trigger: nextTriggerStr });
 }
 
+// Core heartbeat handler for Continuous Mode
 export async function handleHeartbeat(sessionId: string, providedDb?: DBClient): Promise<void> {
     const db = providedDb || new DBClient();
 
