@@ -1,20 +1,25 @@
-# 🦀 SimpleClaw
+# 🐱 Meow
 
-**The featherweight agent with heavyweight power.**
+**The sovereign agent platform with CLI and desktop power.**
 
-<img src="docs/image.png" alt="SimpleClaw Logo" width="200">
+<img src="docs/image.png" alt="Meow Logo" width="200">
 
-SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level autonomy** on a **Free Tier** budget. Optimized for AWS/GCP free instances, it bridges the gap between raw LLMs and real-world execution through native **Agentic Browsing**, **MCP** integration, and a modular **Skill** vault.
+Meow is an ultra-lean sovereign agent platform designed to deliver **Claude Code-level autonomy** on a **Free Tier** budget. It consists of two main components:
+
+- **meow** 🐱 - The featherweight CLI/TUI agent with heavyweight power
+- **meowclaw** 🦀 - The desktop app with Electron wrapper for GUI-based workflows
+
+Optimized for AWS/GCP free instances, Meow bridges the gap between raw LLMs and real-world execution through native **Agentic Browsing**, **MCP** integration, and a modular **Skill** vault.
 
 > [!IMPORTANT]
 > **Quick Start:** One-command installation:
 > ```bash
 > # macOS/Linux/Git Bash
-> curl -fsSL https://raw.githubusercontent.com/stancsz/simpleclaw/main/setup.sh | bash
+> curl -fsSL https://raw.githubusercontent.com/stancsz/meow/main/setup.sh | bash
 > ```
 > ```powershell
 > # Windows PowerShell
-> (irm https://raw.githubusercontent.com/stancsz/simpleclaw/main/setup.sh) | bash
+> (irm https://raw.githubusercontent.com/stancsz/meow/main/setup.sh) | bash
 > ```
 > Or download and run:
 > ```bash
@@ -24,10 +29,9 @@ SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level
 > **Windows Developers:** If you're building the Electron app, ensure **Developer Mode** is enabled in Windows settings to allow symbolic links.
 
 > [!TIP]
-> **⚡ 121 Lines of Pure Power.** The core engine in `src/core` is so lean, it fits in just 121 lines of dense, optimized code.
+> **⚡ 121 Lines of Pure Power.** The core engine in `packages/core` is so lean, it fits in just 121 lines of dense, optimized code.
 >
-> SimpleClaw is one of the very few **OpenCLAW-equivalent** frameworks that delivers high-tier agentic browser automation and advanced tools without demanding heavy infrastructure.
-
+> Meow is one of the very few **OpenCLAW-equivalent** frameworks that delivers high-tier agentic browser automation and advanced tools without demanding heavy infrastructure.
 
 ---
 
@@ -44,12 +48,34 @@ SimpleClaw is an ultra-lean "claw" agent designed to deliver **Claude Code-level
 
 ## 📂 Project Structure
 
-- `cli/`: LLM-integrated terminal interface for interacting with your agent.
-- `src/core/`: The "Brain" and execution logic of the framework.
-- `src/plugins/`: Extensible tools and platform integrations (Browser, Discord, etc.).
-- `.agents/skills/`: Markdown-based expertise for the agent (e.g., Exploratory Testing).
-- `terraform/`: Infrastructure-as-Code for GCP Free Tier deployment.
-- `server/`: Next.js management dashboard for bot orchestration.
+```
+meow/
+├── cli/                    # CLI entry point (meow CLI)
+├── src/                    # CLI source code
+│   ├── cli/               # CLI commands and interface
+│   ├── config/            # Configuration
+│   └── core/              # Orchestrator core
+└── package.json
+
+meowclaw/                  # Desktop App
+├── electron/              # Electron main/preload scripts
+└── server/                # Next.js dashboard (meowclaw UI)
+
+packages/
+├── core/                  # Shared engine (dispatcher, orchestrator, etc.)
+├── agents/                # .agents workspace (skills, workflows, comm)
+├── db/                    # Sovereign Motherboard (SQLite/Supabase)
+└── providers/             # LLM provider integrations
+```
+
+---
+
+## 🐱 Meow CLI vs 🦀 MeowClaw
+
+| Component | Description | Use Case |
+|-----------|-------------|----------|
+| **meow** | CLI/TUI agent | Terminal-first workflows, scripting, headless automation |
+| **meowclaw** | Desktop app | GUI-based workflows, visual monitoring, desktop integration |
 
 ---
 
@@ -69,8 +95,11 @@ cp .env.example .env
 # Edit .env with your OPENAI_API_KEY or DEEPSEEK_API_KEY
 # For Gas Tank payments integration, also provide STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET
 
-# Start SimpleClaw
+# Start Meow CLI
 bun run start
+
+# Start MeowClaw Desktop
+bun run electron:dev
 ```
 
 ### 2. Testing
@@ -84,7 +113,7 @@ To run the full end-to-end swarm orchestration integration test (simulating the 
 bun run test:integration:workflow
 ```
 
-### 2. Deployment
+### 3. Deployment
 Ready to go live? Check our [Setup & Deployment Guide](docs/setup_guide.md).
 
 ---
@@ -92,18 +121,19 @@ Ready to go live? Check our [Setup & Deployment Guide](docs/setup_guide.md).
 ## 📖 Documentation
 
 - [Setup & GCP Deployment Strategy](docs/setup_guide.md)
-- [How to add Agent Skills](.agents/skills/README.md)
-- [Browser Skill Documentation](.agents/skills/browser.md)
+- [How to add Agent Skills](packages/agents/skills/README.md)
+- [Browser Skill Documentation](packages/agents/skills/browser.md)
+- [Development Roadmap](docs/ROADMAP.md)
 
 ---
 
 ## 🧩 Default Skills
 
-The following skills are pre-installed in the `.agents/skills/` vault:
+The following skills are pre-installed in the `packages/agents/skills/` vault:
 - **Web Browsing**: Full-page navigation and interaction.
 - **Dogfooding**: Exploratory QA testing for web apps.
 - **Shell Management**: Advanced system operations.
 
 ---
 
-*SimpleClaw is built for speed, safety, and autonomy. Join the swarm. 🦀*
+*Meow is built for speed, safety, and autonomy. Join the swarm. 🦀*

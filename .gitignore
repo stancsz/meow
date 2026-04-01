@@ -1,4 +1,4 @@
-# dependencies (bun install)
+# dependencies
 node_modules
 
 # output
@@ -15,7 +15,7 @@ logs
 *.log
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# dotenv environment variable files
+# dotenv
 .env
 .env.development.local
 .env.test.local
@@ -27,10 +27,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .cache
 *.tsbuildinfo
 
-# IntelliJ based IDEs
+# IDEs
 .idea
-
-# Finder (MacOS) folder config
 .DS_Store
 **.db
 
@@ -39,7 +37,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 *.tfstate
 *.tfstate.*
 *.tfstate.backup
-.terraform.lock.hcl
 *.tfvars
 *.tfvars.json
 override.tf
@@ -50,38 +47,23 @@ _override.tf.json
 terraform.rc
 **.tar
 
-# 🔒 Git Lock: Protect root directory from new top-level entries
-/*
-!/.agents/
-!/cli/
-!/docker/
-!/docs/
-!/electron/
-!/server/
-!/src/
-!/terraform/
-!/test/
-!/worker/
-!/.env.example
-!/.gitignore
-!/README.md
-!/CLAUDE.md
-!/SPEC.md
-!/SWARM_SPEC.md
-!/EEW_SPEC.md
-!/bun.lock
-!/package.json
-!/package-lock.json
-!/tsconfig.json
-!/runtime.test.ts
-!/loop/
-!/setup.sh
-!/.github/
-!/scripts/
-!/examples/
+# Old/deprecated folders (archived to old-simpleclaw/)
+# These are kept in git history but ignored going forward
+.agents/
+cli/
+electron/
+examples/
+loop/
+scripts/
+server/
+src/
+terraform/
+test/
+test-data/
+tmp/
 
-# memory (keep local unless explicitly shared)
-.agents/memory/
+# Embedded competitor repos (cloned for research)
+research/competitors/*/
 
-# but track protocol-related memory if needed
-!/.agents/memory/memory.md
+# Note: meow/, meowclaw/, packages/, research/, old-simpleclaw/
+# are NOT in .gitignore - they are tracked by default
