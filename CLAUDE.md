@@ -9,6 +9,7 @@ It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive creden
 **Engineering summary:** [`SPEC.md`](./SPEC.md)
 
 ## AGENT WORKSPACE (MODIFIABLE BY AGENT)
+- [2026-04-01] Cycle #26 ✅ Implemented Phase 2 BYOS: GitHub skill import service with validation and API endpoint
 - [Current Date] Cycle #55 ✅ Implemented the Sovereign Motherboard integrity checker. Created `swarms.verify_motherboard_integrity` function in `src/db/migrations/003_integrity_checker.sql`. Integrated the check into `DBClient` and added logic in the orchestrator (`src/core/orchestrator.ts`) to verify table dependencies before execution and return an error on failure. Added unit tests for schema validity in `src/db/db.test.ts` and confirmed they pass successfully.
 - [Current Date] Cycle #54 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully implemented and tested. Restored missing dependencies, ran unit tests `bun test src/core/heartbeat.test.ts` and `bun test src/workers/heartbeat.test.ts`. Confirmed tests passed and 'Phase 2 — Heartbeat' is already completed.
 - [2026-05-18] Cycle #53 ✅ Verified that the Heartbeat system for Continuous Mode as described in SWARM_SPEC.md Section 14 is fully implemented and tested. Re-ran all tests including src/core/heartbeat.test.ts, src/__tests__/heartbeat.integration.test.ts, and src/workers/heartbeat.test.ts successfully after restoring missing dependencies. 'Phase 2 — Heartbeat' is already checked in the BACKLOG.
@@ -189,7 +190,8 @@ The transition from "Software as a Tool" to "Software as an Agent" dictates that
 - [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system for the orchestrator. ✅
 - [x] **Phase 2 — Integrity Checker:** Implemented Sovereign Motherboard integrity check before Worker dispatch.
 
-- [~] **Phase 1 — Custom Skill Uploader:** Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)
+- [x] **Phase 1 — Custom Skill Uploader:**
+- [x] **Phase 2 — BYOS (Bring Your Own Skills):** Implemented GitHub skill import service with validation and API endpoint. Allow users to upload their own `.md` skill files via UI and store them locally or in Supabase (Backend Skill Loader implemented ✅, UI upload pending)
 
 ## DISCOVERY LOG
 - The project is currently Bun-centric for the core engine.

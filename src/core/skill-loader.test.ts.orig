@@ -70,7 +70,7 @@ describe("Skill Loader", () => {
         beforeEach(() => {
             global.fetch = mock(async (url: string) => {
                 if (url === "https://example.com/mock-skill.md") {
-                    return new Response("---\nskill_name: web-skill\nversion: 1.0.0\n---\nWeb Content", { status: 200, statusText: "OK" });
+                    return new Response("---\nname: web-skill\nversion: 1.0.0\n---\nWeb Content", { status: 200, statusText: "OK" });
                 }
                 return new Response("Not Found", { status: 404, statusText: "Not Found" });
             });

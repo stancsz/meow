@@ -528,30 +528,6 @@ export class DBClient {
     }
   }
 
-  checkSkillExists(userId: string, skillName: string): boolean {
-    if (this.isSupabase) {
-        throw new Error("Not Implemented in Supabase mode");
-    }
-    if (this.db) {
-        const row = this.db.query(`SELECT * FROM skill_refs WHERE user_id = ? AND skill_name = ? AND is_active = 1`).get(userId, skillName);
-        return !!row;
-    }
-    return false;
-  }
-
-  addSkillRef(userId: string, skillName: string, source: string, ref: string) {
-    if (this.isSupabase) {
-        throw new Error("Not Implemented in Supabase mode");
-    }
-    if (this.db) {
-        const id = crypto.randomUUID();
-        this.db.run(
-            `INSERT INTO skill_refs (id, user_id, skill_name, source, ref) VALUES (?, ?, ?, ?, ?)`,
-            [id, userId, skillName, source, ref]
-        );
-    }
-  }
-
   deleteHeartbeat(id: string) {
     if (this.isSupabase) {
         console.warn("deleteHeartbeat called in Supabase mode.");
