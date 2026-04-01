@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
-import { createLLM } from "./deepseek.js";
+import { createLLM } from "./llm.js";
 import { JulesClient } from "./jules.js";
 import chalk from "chalk";
 
