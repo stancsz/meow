@@ -7,7 +7,7 @@ import { JulesClient } from "./jules";
 import chalk from "chalk";
 
 async function main() {
-    console.log(chalk.blue.bold("SimpleClaw Smart Job Delegator: Initializing..."));
+    console.log(chalk.blue.bold("Meow Smart Job Delegator: Initializing..."));
 
     console.log(chalk.cyan("Fetching latest state from development..."));
     execSync("git fetch origin development");
@@ -45,11 +45,11 @@ async function main() {
     const prs = prsJson ? JSON.parse(prsJson) : [];
 
     const llm = createLLM();
-    const model = process.env.MODEL || "deepseek-reasoner";
+    const model = process.env.LLM_MODEL || "gpt-4o";
     console.log(chalk.gray(`[Config] Using model: ${model}`));
 
-    const systemPrompt = `You are the "Principal Orchestrator" for the SimpleClaw project.
-Your mission is to guide the evolution of SimpleClaw into a world-class meta-orchestrator.
+    const systemPrompt = `You are the "Principal Orchestrator" for the Meow project.
+Your mission is to guide the evolution of Meow into a world-class meta-orchestrator.
 
 ### PROJECT CONTEXT:
 1. **MISSION & ARCHITECTURE (CLAUDE.md)**:

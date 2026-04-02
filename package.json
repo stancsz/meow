@@ -1,5 +1,5 @@
 {
-  "name": "simpleclaw",
+  "name": "meow",
   "version": "0.1.0",
   "description": "High-performance, local-first autonomous agent workstation",
   "main": "electron/main.cjs",
@@ -57,8 +57,8 @@
     "zod": "^4.3.6"
   },
   "build": {
-    "appId": "com.simpleclaw.app",
-    "productName": "SimpleClaw",
+    "appId": "com.meow.agent",
+    "productName": "Meow",
     "directories": {
       "output": "dist"
     },

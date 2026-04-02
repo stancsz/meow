@@ -40,9 +40,9 @@ jobs:
 
       - name: Run Job Delegator
         env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           GH_TOKEN: ${{ github.token }}
-          MODEL: "MiniMax-M2.7"
+          LLM_MODEL: "gpt-4o"
           STEERING_PROMPT: ${{ inputs.steering_prompt || github.event.inputs.steering_prompt || '' }}
         run: npx tsx .github/scripts/orchestrator.ts

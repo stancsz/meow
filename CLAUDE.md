@@ -50,9 +50,8 @@ meowclaw/                     # Desktop App
 ├── electron/                 # Electron main/preload
 └── server/server/            # Next.js dashboard + API
 
-docs/
-├── COMPANION_SKILLS.md      # Embers' companion specification
-└── research/competitors/     # Competitor research (gitignored)
+meow/src/skills/             # Embers' companion skills
+docs/research/competitors/    # Competitor research (gitignored)
 ```
 
 ## TOOLS

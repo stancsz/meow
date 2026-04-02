@@ -4,8 +4,8 @@ import "./globals.css";
 import Navigation from '@/components/Navigation';
 
 export const metadata: Metadata = {
-  title: "SimpleClaw",
-  description: "Agentic Management Cluster",
+  title: "Meow",
+  description: "Sovereign Agent Platform",
 };
 
 export default function RootLayout({

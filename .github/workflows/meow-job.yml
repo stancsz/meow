@@ -1,4 +1,4 @@
-name: SimpleClaw Job
+name: Meow Job
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
         description: 'What should the agent do?'
         required: true
       target_repo:
-        description: 'Target repository (owner/repo). If empty, works on SimpleClaw.'
+        description: 'Target repository (owner/repo). If empty, works on Meow.'
         required: false
       target_branch:
         description: 'Target branch for the target repository'
@@ -71,10 +71,10 @@ jobs:
           echo "ENV_VARS_JSON=${{ inputs.env_vars_json || github.event.inputs.env_vars_json }}" >> $GITHUB_ENV
           echo "INPUT_MODEL=${{ inputs.model || github.event.inputs.model || 'deepseek-reasoner' }}" >> $GITHUB_ENV
 
-      - name: Checkout SimpleClaw (The Brain)
+      - name: Checkout Meow (The Brain)
         uses: actions/checkout@v4
         with:
-          path: simpleclaw
+          path: meow
 
       - name: Checkout Target Repo (The Code)
         if: ${{ env.TARGET_REPO != '' }}
@@ -118,7 +118,7 @@ jobs:
           if [ -d "target_repo" ]; then
             WORKING_DIR="target_repo"
           else
-            WORKING_DIR="simpleclaw"
+            WORKING_DIR="meow"
           fi
           echo "WORKING_DIR=$WORKING_DIR" >> $GITHUB_ENV
           
@@ -148,7 +148,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          cd simpleclaw
+          cd meow
           bun install
           
           # Also install target repo deps if they exist and are needed
@@ -159,12 +159,11 @@ jobs:
 
       - name: Run Standalone Agent
         env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           OBJECTIVE: ${{ env.OBJECTIVE }}
           AGENT_MODEL: ${{ env.INPUT_MODEL }}
-          SIMPLECLAW_HOME: ${{ github.workspace }}/simpleclaw
+          MEOW_HOME: ${{ github.workspace }}/meow
           MAX_ITERATIONS: 15
         run: |
           cd $WORKING_DIR
@@ -173,4 +172,4 @@ jobs:
           bun --version
           node --version
           which bun
-          bun $SIMPLECLAW_HOME/.github/scripts/simpleclaw-job.ts
+          bun $MEOW_HOME/.github/scripts/meow-job.ts

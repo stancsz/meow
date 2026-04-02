@@ -1,4 +1,4 @@
--- SQLite migration for SimpleClaw local development
+-- SQLite migration for Meow local development
 -- This simulates the Supabase Sovereign Motherboard locally
 
 CREATE TABLE IF NOT EXISTS vault_user_secrets (

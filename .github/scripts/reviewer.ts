@@ -33,12 +33,12 @@ function getPRMergeability(prNumber: number): string {
 }
 
 async function main() {
-    console.log(chalk.blue.bold("SimpleClaw Smart Code Review & Merge: Initializing..."));
+    console.log(chalk.blue.bold("Meow Smart Code Review & Merge: Initializing..."));
 
     // 0. Setup Git Identity
     console.log(chalk.cyan("Setting up git identity..."));
-    execSync('git config --global user.name "simpleclaw"');
-    execSync('git config --global user.email "simpleclaw@users.noreply.github.com"');
+    execSync('git config --global user.name "meow"');
+    execSync('git config --global user.email "meow@users.noreply.github.com"');
 
     // 1. Fetch Open PRs
     console.log(chalk.cyan("Fetching open PRs..."));
@@ -110,7 +110,7 @@ async function main() {
             continue;
         }
 
-        const systemPrompt = `You are the "Principal Integrity Officer" for SimpleClaw.
+        const systemPrompt = `You are the "Principal Integrity Officer" for Meow.
 Your job is to review Pull Requests and decide whether to MERGE, CLOSE, or FIX them.
 
 ### DECISION CRITERIA:
@@ -124,7 +124,7 @@ Your job is to review Pull Requests and decide whether to MERGE, CLOSE, or FIX t
 ### HUMAN-LIKE BEHAVIOR:
 - **Proactive & Independent**: Like a senior engineer, don't just be a passive gatekeeper. If you see small issues that prevent merging (lint, missing imports, typos, small bugs), use the 'fix' decision to provide corrections. 
 - **Mission First**: Your primary goal is to advance the mission. If a PR is 90% there and helpful, FIX it and MERGE it. Only CLOSE if it's fundamentally broken, harmful, or out of scope.
-- **Let Agents Fix It**: If a PR fails due to tests, linting, or architectural violations that you cannot easily fix via the 'fix' decision, do not just stay silent. Provide the specific command to help the user resolve it. For example, recommend they run: \`npx simpleclaw opencode fix --pr ${pr.number}\` in their local environment.
+- **Let Agents Fix It**: If a PR fails due to tests, linting, or architectural violations that you cannot easily fix via the 'fix' decision, do not just stay silent. Provide the specific command to help the user resolve it. For example, recommend they run: \`npx meow fix --pr ${pr.number}\` in their local environment.
 
 ### DECISION TYPES:
 - **merge**: PR is high quality and ready to go.

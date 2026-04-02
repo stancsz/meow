@@ -15,13 +15,13 @@ User → messages[] → LLM API → response
 
 Most agent frameworks are over-engineered. They add dispatchers, task queues, gas tanks, heartbeat schedulers, and external sub-agent delegation before they can even read a file.
 
-Meow is different. The core loop is ~50 lines. The tools are inline. The API is MiniMax.
+Meow is different. The core loop is ~50 lines. The tools are inline. The API is OpenAI-compatible or Anthropic-compatible.
 
 ## Quick Start
 
 ```bash
 # Set your API key
-export MINIMAX_API_KEY=your_key_here
+export LLM_API_KEY=your_key_here
 
 # Interactive mode
 bun run start
@@ -81,9 +81,9 @@ while (iterations < maxIterations) {
 
 | Variable | Default | Required |
 |----------|---------|----------|
-| `MINIMAX_API_KEY` | — | Yes |
-| `MINIMAX_BASE_URL` | `https://api.minimax.io/v1` | No |
-| `MINIMAX_MODEL` | `MiniMax-M2.7` | No |
+| `LLM_API_KEY` | — | Yes |
+| `LLM_BASE_URL` | `https://api.openai.com/v1` | No |
+| `LLM_MODEL` | `gpt-4o` | No |
 
 ## Status
 

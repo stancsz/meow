@@ -4,7 +4,7 @@ import { startRuntime } from "../../meow/src/core/runtime.ts";
 import type { RuntimeDispatchEvent } from "../../meow/src/core/dispatcher.ts";
 
 async function main() {
-    console.log(chalk.blue.bold("SimpleClaw Job: Initializing..."));
+    console.log(chalk.blue.bold("Meow Job: Initializing..."));
 
     const objective = process.env.OBJECTIVE;
     if (!objective) {

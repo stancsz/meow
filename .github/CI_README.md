@@ -1,6 +1,6 @@
-# SimpleClaw CI/CD & Autonomy System
+# Meow CI/CD & Autonomy System
 
-This directory contains the automation logic for SimpleClaw's autonomous development loop.
+This directory contains the automation logic for Meow's autonomous development loop.
 
 ## Components
 

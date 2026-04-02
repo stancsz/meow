@@ -138,7 +138,7 @@ export default function Home() {
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
-        <h1>SimpleClaw Dashboard</h1>
+        <h1>Meow Dashboard</h1>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <Link href="/onboarding" style={{ color: '#00E5CC', textDecoration: 'none', fontSize: '0.9rem' }}>
             Onboarding

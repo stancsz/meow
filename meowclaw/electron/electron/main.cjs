@@ -149,7 +149,7 @@ function startAgent() {
 
     agentProcess.stdout.on('data', (data) => {
       console.log(`Agent: ${data}`);
-      if (data.toString().includes('SimpleClaw CLI') || data.toString().includes('ready')) {
+      if (data.toString().includes('Meow CLI') || data.toString().includes('ready')) {
         resolve(agentProcess);
       }
     });
@@ -172,7 +172,7 @@ function startAgent() {
 
 async function initializeApp() {
   try {
-    console.log('Starting SimpleClaw Desktop...');
+    console.log('Starting Meow Desktop...');
     
     // Start server first
     await startServer();

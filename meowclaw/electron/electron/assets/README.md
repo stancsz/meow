@@ -1,4 +1,4 @@
-# SimpleClaw Electron Assets
+# Meow Electron Assets
 
 Place application icons here:
 

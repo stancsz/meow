@@ -1,6 +1,6 @@
-# SimpleClaw Desktop Wrapper
+# Meow Desktop Wrapper
 
-This is the Electron-based desktop wrapper for SimpleClaw, providing a native desktop application experience.
+This is the Electron-based desktop wrapper for Meow, providing a native desktop application experience.
 
 ## Architecture
 

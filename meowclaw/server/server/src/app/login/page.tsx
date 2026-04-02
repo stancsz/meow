@@ -21,7 +21,7 @@ export default async function LoginPage({
         </div>
       ) : (
         <form className="form-container">
-          <h2>Login to SimpleClaw</h2>
+          <h2>Login to Meow</h2>
           <p>Sign in instantly via magic link.</p>
           <div className="input-group">
             <label htmlFor="email">Email</label>
