@@ -21,7 +21,7 @@
     "typescript": "^5"
   },
   "scripts": {
-    "start": "bun run --allow-read=./workspace --allow-net=api.anthropic.com,mcp-gateway.internal --permission-deny-sys src/index.ts",
+    "start": "bun run meow/cli/index.ts",
     "start:server": "bun run --allow-read=./workspace --allow-net=api.anthropic.com,mcp-gateway.internal --permission-deny-sys src/index.ts --mode=server",
     "start:hybrid": "bun run --allow-read=./workspace --allow-net=api.anthropic.com,mcp-gateway.internal --permission-deny-sys src/index.ts --mode=hybrid",
     "test": "bun test && cd server && bun test --preload ./setupTests.ts",
@@ -83,5 +83,19 @@
       "target": "AppImage",
       "category": "Development"
     }
-  }
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stancsz/meow.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/stancsz/meow/issues"
+  },
+  "homepage": "https://github.com/stancsz/meow#readme"
 }

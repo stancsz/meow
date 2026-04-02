@@ -1,7 +1,7 @@
 import "dotenv/config";
 import chalk from "chalk";
-import { startRuntime } from "../../src/core/runtime.ts";
-import type { RuntimeDispatchEvent } from "../../src/core/dispatcher.ts";
+import { startRuntime } from "../../meow/src/core/runtime.ts";
+import type { RuntimeDispatchEvent } from "../../meow/src/core/dispatcher.ts";
 
 async function main() {
     console.log(chalk.blue.bold("SimpleClaw Job: Initializing..."));
