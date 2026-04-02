@@ -14,6 +14,13 @@ export interface SessionMessage {
   timestamp: string;
 }
 
+export interface SessionInfo {
+  id: string;
+  preview: string;
+  timestamp: string;
+  forkedFrom?: string;  // Original session ID if this was forked
+}
+
 const SESSION_DIR = join(homedir(), ".meow", "sessions");
 
 function ensureDir(): void {
@@ -22,11 +29,13 @@ function ensureDir(): void {
   }
 }
 
-export function createSession(): string {
+export function createSession(forkedFrom?: string): string {
   ensureDir();
   const id = `session_${Date.now()}`;
   const file = join(SESSION_DIR, `${id}.jsonl`);
-  appendFileSync(file, "", "utf-8"); // create empty file
+  // Mark the session with fork info in first line
+  const forkInfo = forkedFrom ? JSON.stringify({ role: "system", content: `[Forked from session: ${forkedFrom}]`, timestamp: new Date().toISOString() }) + "\n" : "";
+  appendFileSync(file, forkInfo, "utf-8");
   return id;
 }
 
@@ -51,11 +60,32 @@ export function loadSession(sessionId: string): SessionMessage[] {
   }
 }
 
-export function listSessions(): { id: string; preview: string; timestamp: string }[] {
+/**
+ * Fork an existing session, creating a new session with the same messages.
+ * The forked session can diverge from the original.
+ */
+export function forkSession(sourceSessionId: string): { id: string; messages: SessionMessage[] } | null {
+  const sourceMessages = loadSession(sourceSessionId);
+  if (sourceMessages.length === 0) return null;
+
+  const newId = createSession(sourceSessionId);
+  const file = join(SESSION_DIR, `${newId}.jsonl`);
+
+  // Write all messages except the fork marker (first line if it's a fork marker)
+  const messagesToSave = sourceMessages[0]?.content?.startsWith("[Forked from") ? sourceMessages.slice(1) : sourceMessages;
+  const lines = messagesToSave.map((m) => JSON.stringify(m)).join("\n") + "\n";
+  appendFileSync(file, lines, "utf-8");
+
+  return { id: newId, messages: messagesToSave };
+}
+
+export function listSessions(): SessionInfo[] {
   ensureDir();
   try {
     const files = readdirSync(SESSION_DIR)
       .filter((f) => f.endsWith(".jsonl"))
+      // Only include sessions with numeric IDs (skip test_session_* etc)
+      .filter((f) => /^\d+\.jsonl$/.test(f) || /^session_\d+\.jsonl$/.test(f))
       .sort()
       .reverse();
 
@@ -64,10 +94,17 @@ export function listSessions(): { id: string; preview: string; timestamp: string
       const messages = loadSession(id);
       const firstUser = messages.find((m) => m.role === "user");
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      // Check if this session was forked
+      const forkMarker = messages.find((m) => m.content?.startsWith("[Forked from session:"));
+      const forkedFrom = forkMarker?.content?.match(/\[Forked from session: (.+)\]/)?.[1];
+      // Extract numeric timestamp from ID
+      const numericPart = id.replace(/^[^\d]*(\d+).*$/, "$1");
+      const timestamp = numericPart || id;
       return {
         id,
         preview: lastUser?.content?.slice(0, 60) || firstUser?.content?.slice(0, 60) || "(empty)",
-        timestamp: id.replace("session_", ""),
+        timestamp,
+        forkedFrom,
       };
     });
   } catch {
@@ -75,13 +112,15 @@ export function listSessions(): { id: string; preview: string; timestamp: string
   }
 }
 
-export function formatSessions(sessions: { id: string; preview: string; timestamp: string }[]): string {
+export function formatSessions(sessions: SessionInfo[]): string {
   if (sessions.length === 0) return "No sessions.";
 
   let output = "## Sessions\n";
   sessions.forEach((s) => {
-    const date = new Date(parseInt(s.timestamp)).toLocaleString();
-    output += `  [${s.id}]\n    ${s.preview}...\n    ${date}\n`;
+    const ts = parseInt(s.timestamp);
+    const date = isNaN(ts) ? "Unknown date" : new Date(ts).toLocaleString();
+    const forkNote = s.forkedFrom ? ` (forked from ${s.forkedFrom})` : "";
+    output += `  [${s.id}]${forkNote}\n    ${s.preview}...\n    ${date}\n`;
   });
   return output;
 }

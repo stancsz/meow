@@ -27,8 +27,8 @@
 ## Phase 1: Foundation (Must-Have)
 
 ### 1.1 Core Freeze ✅
-- [x] Lean agent loop (~80 lines)
-- [x] Core tools: read, write, shell, git
+- [x] Lean agent loop (~227 lines with sidecar integration)
+- [x] Core tools via sidecar: read, write, edit, shell, git
 - [x] Multi-provider LLM (OpenAI-compatible)
 
 ### 1.2 Tool Sidecar Registry ✅
@@ -46,17 +46,16 @@ interface Tool {
 ```
 
 - [x] Create `tool-registry.ts` ✅
-- [x] Built-in tools in registry (read, write, shell, git) ✅
+- [x] Built-in tools in registry (read, write, edit, shell, git) ✅
 - [x] Search tools loaded from `src/tools/search.ts` ✅
 - [ ] Hot-reload from `.meow/tools/` (future enhancement)
-- [ ] Move `glob`, `grep` to `.meow/tools/` (future enhancement)
 
 ### 1.3 Session Sidecar
 **Problem:** No resume, no history truncation.
-**Solution:** Session manager sidecar with compact.
+**Solution:** Session manager with compact.
 
 ```typescript
-// meow/src/sidecars/session.ts
+// meow/src/core/session-store.ts
 interface SessionStore {
   save(messages: Message[]): void
   load(id: string): Message[]
@@ -65,10 +64,9 @@ interface SessionStore {
 }
 ```
 
-- [ ] Create `session.ts`
-- [ ] JSONL persistence
+- [x] Basic session store exists (`meow/src/core/session-store.ts`)
 - [ ] Basic compact (keep last N messages + summary)
-- [ ] Resume from last session
+- [ ] Auto-resume from last session
 
 ---
 
@@ -128,14 +126,14 @@ Commands to support:
 - [ ] Built-in commands
 - [ ] Custom commands from `.meow/commands/`
 
-### 3.2 Task Sidecar
+### 3.2 Task Sidecar ✅
 **Problem:** No task tracking.
 **Solution:** File-based task store.
 
-- [ ] Create `task-store.ts` sidecar (already exists, wire it up)
-- [ ] `/add <task>` — add task
-- [ ] `/done <id>` — complete task
-- [ ] Task persistence in `.meow/tasks.json`
+- [x] `task-store.ts` exists (`meow/src/core/task-store.ts`)
+- [x] `/add <task>` — add task
+- [x] `/done <id>` — complete task
+- [x] Task persistence in `.meow/tasks.json`
 
 ### 3.3 REPL Sidecar
 **Problem:** CLI is single-shot. No interactive mode.
@@ -163,9 +161,9 @@ Commands to support:
 }
 ```
 
-- [ ] Create `mcp-client.ts` sidecar
-- [ ] stdio-based MCP server communication
-- [ ] Tool conversion (MCP → Meow format)
+- [x] Create `mcp-client.ts` sidecar ✅
+- [x] stdio-based MCP server communication
+- [x] Tool conversion (MCP → Meow format)
 - [ ] Resource and prompt support (future)
 
 ### 4.2 Skills Sidecar
@@ -268,38 +266,37 @@ function loadSidecars(): void {
 
 ---
 
-## File Structure (Target)
+## File Structure (Current)
 
 ```
 meow/
 ├── cli/index.ts              # CLI entry
 └── src/
     ├── core/
-    │   ├── lean-agent.ts    # ~100 lines (FROZEN)
-    │   └── loader.ts        # Sidecar loader
-    └── sidecars/
-        ├── tool-registry.ts
-        ├── session.ts
-        ├── permissions.ts
-        ├── interrupt.ts
-        ├── slash-commands.ts
-        ├── task-store.ts
-        ├── repl.ts
-        ├── mcp-client.ts
-        ├── skills.ts
-        ├── memory.ts
-        ├── hooks.ts
-        └── tui.ts
+    │   ├── lean-agent.ts    # ~227 lines (with sidecar integration)
+    │   ├── task-store.ts    # ✅ File-based task store
+    │   └── session-store.ts # ✅ JSONL session persistence
+    ├── sidecars/
+    │   ├── tool-registry.ts # ✅ Tools: read, write, edit, shell, git
+    │   └── mcp-client.ts    # ✅ MCP protocol client
+    ├── skills/
+    │   ├── index.ts        # ✅ Skill exports
+    │   ├── loader.ts       # ✅ Skill loader
+    │   ├── simplify.ts     # ✅ /simplify skill
+    │   ├── review.ts       # ✅ /review skill
+    │   └── commit.ts       # ✅ /commit skill
+    └── tools/
+        └── search.ts        # ✅ glob, grep
 
-.meow/                       # User config (gitignored)
-├── tools/                   # Custom tools
-├── skills/                  # Custom skills
-├── commands/                # Custom commands
-├── sidecars/                # Custom sidecars
-├── permissions.json
-├── mcp.json
-└── memory/
-    └── user.json
+.meow/                       # User config
+├── tasks.json               # Task persistence
+├── sidecars/               # Custom sidecars (future)
+├── tools/                  # Custom tools (future)
+├── skills/                 # Custom skills (future)
+├── commands/               # Custom commands (future)
+├── permissions.json        # Permission rules (future)
+├── mcp.json                # MCP servers (future)
+└── memory/                 # User memory (future)
 ```
 
 ---
@@ -327,25 +324,33 @@ meow/
 ## Progress
 
 ### Current State (2026-04-02)
-- [x] Core loop (~60 lines, frozen)
-- [x] Basic tools (read, write, shell, git) in tool-registry
-- [x] Search tools (glob, grep) loaded from sidecar
-- [x] Tool-registry sidecar (meow/src/sidecars/tool-registry.ts)
-- [x] Skills system (simplify, review, commit)
-- [x] Slash commands in CLI
-- [x] AbortController for Ctrl+C interruption
-- [x] Multi-provider LLM (MiniMax-M2.7 default)
-- [x] Session store with JSONL persistence
-- [x] Task store
-- [x] Tests (capability-matrix, integration-parity, gaps, sidecar-architecture)
+**Maturity Score: 4/10**
+
+Implemented sidecars:
+- [x] **tool-registry** ✅ — read, write, edit, shell, git, glob, grep
+- [x] **mcp-client** ✅ — MCP protocol client
+- [x] **task-store** ✅ — file-based task persistence
+- [x] **session-store** ✅ — JSONL session persistence
+- [x] **skills** ✅ — simplify, review, commit
+
+Missing sidecars:
+- [ ] **session** — compact/resume (P0)
+- [ ] **permissions** — pattern rules (P1)
+- [ ] **interrupt** — SIGINT, timeouts (P1)
+- [ ] **slash-commands** — /help, /plan, /resume (P1)
+- [ ] **repl** — interactive mode (P2)
+- [ ] **memory** — user memory (P3)
+- [ ] **hooks** — pre/post tool hooks (P4)
+- [ ] **tui** — rich terminal UI (P4)
+- [ ] **analytics** — usage tracking (P5)
 
 ### Next Action
-**P1: Permissions sidecar** — Pattern matching for tools
+**P0: Session sidecar** — Compact and auto-resume
 
 ```bash
 # Immediate todo:
-mkdir -p meow/src/sidecars/permissions.ts
-# Pattern matching rules (allow/deny/ask)
+mkdir -p meow/src/sidecars/session.ts
+# Add compact() and auto-resume
 ```
 
 ---

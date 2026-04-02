@@ -173,7 +173,7 @@ export async function runLeanAgent(
 
   const llm = createLLMClient(options);
   const systemPrompt = options.systemPrompt || buildSystemPrompt();
-  const messages: any[] = [
+  let messages: any[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: prompt },
   ];
@@ -234,6 +234,15 @@ export async function runLeanAgent(
         tool_call_id: toolCall.id,
         content: result.error || result.content,
       });
+    }
+
+    // Check for context compaction
+    const totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+    if (totalTokens > maxTokens) {
+      const compacted = compactMessages(messages, maxTokens);
+      if (compacted.length < messages.length) {
+        messages = compacted;
+      }
     }
   }
 

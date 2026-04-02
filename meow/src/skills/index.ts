@@ -21,5 +21,5 @@ for (const skill of allSkills) {
 }
 
 export const skills = allSkills;
-export { getAllSkills, findSkill, registerSkill } from "./loader.ts";
+export { getAllSkills, findSkill, registerSkill, formatSkillsList } from "./loader.ts";
 export type { Skill, SkillContext, SkillResult } from "./loader.ts";
