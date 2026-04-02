@@ -1,139 +1,92 @@
-# 🐱 Meow
+# Meow
 
-**The sovereign agent platform with CLI and desktop power.**
+**A lean sovereign agent that builds itself.**
 
-<img src="docs/image.png" alt="Meow Logo" width="200">
+Meow is a self-contained CLI agent inspired by Claude Code's architecture. It's not a framework, not a platform, not a swarm — just a clean agent loop that directly executes tasks against your codebase.
 
-Meow is an ultra-lean sovereign agent platform designed to deliver **Claude Code-level autonomy** on a **Free Tier** budget. It consists of two main components:
+```
+User → messages[] → LLM API → response
+                         ↓
+              tool_use? → execute → loop
+              else → return text
+```
 
-- **meow** 🐱 - The featherweight CLI/TUI agent with heavyweight power
-- **meowclaw** 🦀 - The desktop app with Electron wrapper for GUI-based workflows
+## Why
 
-Optimized for AWS/GCP free instances, Meow bridges the gap between raw LLMs and real-world execution through native **Agentic Browsing**, **MCP** integration, and a modular **Skill** vault.
+Most agent frameworks are over-engineered. They add dispatchers, task queues, gas tanks, heartbeat schedulers, and external sub-agent delegation before they can even read a file.
 
-> [!IMPORTANT]
-> **Quick Start:** One-command installation:
-> ```bash
-> # macOS/Linux/Git Bash
-> curl -fsSL https://raw.githubusercontent.com/stancsz/meow/main/setup.sh | bash
-> ```
-> ```powershell
-> # Windows PowerShell
-> (irm https://raw.githubusercontent.com/stancsz/meow/main/setup.sh) | bash
-> ```
-> Or download and run:
-> ```bash
-> ./setup.sh
-> ```
->
-> **Windows Developers:** If you're building the Electron app, ensure **Developer Mode** is enabled in Windows settings to allow symbolic links.
+Meow is different. The core loop is ~50 lines. The tools are inline. The API is MiniMax.
 
-> [!TIP]
-> **⚡ 121 Lines of Pure Power.** The core engine in `packages/core` is so lean, it fits in just 121 lines of dense, optimized code.
->
-> Meow is one of the very few **OpenCLAW-equivalent** frameworks that delivers high-tier agentic browser automation and advanced tools without demanding heavy infrastructure.
+## Quick Start
 
----
+```bash
+# Set your API key
+export MINIMAX_API_KEY=your_key_here
 
-## 🚀 Key Features
+# Interactive mode
+bun run start
 
-- **🌐 Agentic Browser**: Integrated `agent-browser` capabilities allow your AI to navigate the web, interact with elements, and extract data just like a human.
-- **🛠️ Modular Plugins**: Easily extend capabilities with plugins for **Discord**, **WhatsApp**, **Messenger**, and more.
-- **🧠 Skill System**: Inject specialized knowledge or workflows via Markdown files in the `.agents/skills/` directory. Supports Anthropic-style `SKILL.md` format.
-- **🐳 Cloud Ready**: Pre-configured Terraform and Docker setups for "Free Tier" deployment on Google Cloud.
-- **🔒 Security First**: Integrated **Triple Lock** security and IPI sanitization for AI safety.
-- **💾 Local First**: Zero-config SQLite support for rapid development without complex database setups.
+# Single task
+bun run start "Read package.json and tell me the dependencies"
+```
 
----
-
-## 📂 Project Structure
+## Architecture
 
 ```
 meow/
-├── cli/                    # CLI entry point (meow CLI)
-├── src/                    # CLI source code
-│   ├── cli/               # CLI commands and interface
-│   ├── config/            # Configuration
-│   └── core/              # Orchestrator core
-└── package.json
-
-meowclaw/                  # Desktop App
-├── electron/              # Electron main/preload scripts
-└── server/                # Next.js dashboard (meowclaw UI)
-
-packages/
-├── core/                  # Shared engine (dispatcher, orchestrator, etc.)
-├── agents/                # .agents workspace (skills, workflows, comm)
-├── db/                    # Sovereign Motherboard (SQLite/Supabase)
-└── providers/             # LLM provider integrations
+├── cli/
+│   └── index.ts          # CLI entry point
+└── src/
+    └── core/
+        └── lean-agent.ts # The entire agent (~250 lines)
 ```
 
----
+One file. One loop. That's it.
 
-## 🐱 Meow CLI vs 🦀 MeowClaw
+## The Core Loop
 
-| Component | Description | Use Case |
-|-----------|-------------|----------|
-| **meow** | CLI/TUI agent | Terminal-first workflows, scripting, headless automation |
-| **meowclaw** | Desktop app | GUI-based workflows, visual monitoring, desktop integration |
+```typescript
+while (iterations < maxIterations) {
+  const response = await llm.chat.completions.create({ model, messages, tools });
+  const { content, tool_calls } = response;
 
----
+  if (tool_calls?.length > 0) {
+    for (const toolCall of tool_calls) {
+      const result = await tools[toolCall.function.name](JSON.parse(toolCall.function.arguments));
+      messages.push({ role: "tool", content: result });
+    }
+    continue;
+  }
 
-## 🛠️ Getting Started
-
-### 1. Local Development
-```bash
-# One-command setup
-./setup.sh
-
-# Or manually:
-# Install dependencies
-bun install
-
-# Setup environment
-cp .env.example .env
-# Edit .env with your OPENAI_API_KEY or DEEPSEEK_API_KEY
-# For Gas Tank payments integration, also provide STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET
-
-# Start Meow CLI
-bun run start
-
-# Start MeowClaw Desktop
-bun run electron:dev
+  return content;
+}
 ```
 
-### 2. Testing
-To run the standard test suite:
-```bash
-bun run test
-```
+## Tools
 
-To run the full end-to-end swarm orchestration integration test (simulating the entire pipeline from plan generation to worker execution and Motherboard state updates):
-```bash
-bun run test:integration:workflow
-```
+| Tool | What it does |
+|------|-------------|
+| `read` | Read a file |
+| `write` | Write a file |
+| `shell` | Run a shell command |
+| `git` | Run a git command |
 
-### 3. Deployment
-Ready to go live? Check our [Setup & Deployment Guide](docs/setup_guide.md).
+## Design Philosophy
 
----
+1. **Lean** — No dispatcher, no task queues, no gas tank
+2. **Self-contained** — No external sub-agent delegation
+3. **Sovereign** — BYOK (Bring Your Own Keys)
 
-## 📖 Documentation
+## Environment Variables
 
-- [Setup & GCP Deployment Strategy](docs/setup_guide.md)
-- [How to add Agent Skills](packages/agents/skills/README.md)
-- [Browser Skill Documentation](packages/agents/skills/browser.md)
-- [Development Roadmap](docs/ROADMAP.md)
+| Variable | Default | Required |
+|----------|---------|----------|
+| `MINIMAX_API_KEY` | — | Yes |
+| `MINIMAX_BASE_URL` | `https://api.minimax.io/v1` | No |
+| `MINIMAX_MODEL` | `MiniMax-M2.7` | No |
 
----
+## Status
 
-## 🧩 Default Skills
+Meow is being rebuilt. The old architecture (dispatcher, runtime, heartbeat, extensions, payments) has been stripped. The lean agent core is ready.
 
-The following skills are pre-installed in the `packages/agents/skills/` vault:
-- **Web Browsing**: Full-page navigation and interaction.
-- **Dogfooding**: Exploratory QA testing for web apps.
-- **Shell Management**: Advanced system operations.
-
----
-
-*Meow is built for speed, safety, and autonomy. Join the swarm. 🦀*
+See [docs/TODO.md](docs/TODO.md) for progress.
