@@ -31,7 +31,7 @@
 - [x] Core tools: read, write, shell, git
 - [x] Multi-provider LLM (OpenAI-compatible)
 
-### 1.2 Tool Sidecar Registry
+### 1.2 Tool Sidecar Registry ✅
 **Problem:** Tools are hardcoded in core. Adding tools requires modifying core.
 **Solution:** Tool registry as a sidecar with hot-reload.
 
@@ -41,17 +41,15 @@ interface Tool {
   name: string
   description: string
   parameters: Record<string, unknown>
-  execute(args: unknown): Promise<ToolResult>
+  execute(args: unknown, context: ToolContext): Promise<ToolResult>
 }
-
-// Registry loads from .meow/tools/*.ts
-// Core only knows: { name, execute }
 ```
 
-- [ ] Create `tool-registry.ts`
-- [ ] Move `glob`, `grep` to `.meow/tools/`
-- [ ] Add `execute()` wrapper in core
-- [ ] Hot-reload on file change
+- [x] Create `tool-registry.ts` ✅
+- [x] Built-in tools in registry (read, write, shell, git) ✅
+- [x] Search tools loaded from `src/tools/search.ts` ✅
+- [ ] Hot-reload from `.meow/tools/` (future enhancement)
+- [ ] Move `glob`, `grep` to `.meow/tools/` (future enhancement)
 
 ### 1.3 Session Sidecar
 **Problem:** No resume, no history truncation.
@@ -329,21 +327,25 @@ meow/
 ## Progress
 
 ### Current State (2026-04-02)
-- [x] Core loop (~80 lines)
-- [x] Basic tools (read, write, shell, git)
-- [x] Sidecar structure (search.ts)
-- [x] Multi-provider LLM
-- [x] Session store skeleton
-- [x] Task store skeleton
+- [x] Core loop (~60 lines, frozen)
+- [x] Basic tools (read, write, shell, git) in tool-registry
+- [x] Search tools (glob, grep) loaded from sidecar
+- [x] Tool-registry sidecar (meow/src/sidecars/tool-registry.ts)
+- [x] Skills system (simplify, review, commit)
+- [x] Slash commands in CLI
+- [x] AbortController for Ctrl+C interruption
+- [x] Multi-provider LLM (MiniMax-M2.7 default)
+- [x] Session store with JSONL persistence
+- [x] Task store
+- [x] Tests (capability-matrix, integration-parity, gaps, sidecar-architecture)
 
 ### Next Action
-**P0: Tool Registry** — The blocker for everything else.
+**P1: Permissions sidecar** — Pattern matching for tools
 
 ```bash
 # Immediate todo:
-mkdir -p .meow/tools
-mv src/tools/search.ts .meow/tools/search.ts
-# Update loader to scan .meow/tools/
+mkdir -p meow/src/sidecars/permissions.ts
+# Pattern matching rules (allow/deny/ask)
 ```
 
 ---
