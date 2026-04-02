@@ -56,3 +56,4 @@ packages/db/
 
 # Embedded competitor repos (cloned for research)
 docs/research/competitors/*/
+docs/research/
