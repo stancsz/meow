@@ -563,7 +563,7 @@ describe("LIVE: Dangerous Mode", () => {
 // ============================================================================
 
 describe("LIVE: Skills System", () => {
-  skipIfNoApiKey();
+  // Skills registration doesn't require API key - it's local
 
   test("Skills are registered", async () => {
     const { getAllSkills, findSkill } = await import("../src/skills/index.ts");
@@ -639,27 +639,46 @@ describe("LIVE: Error Handling", () => {
 // ============================================================================
 
 describe("LIVE: Performance", () => {
-  skipIfNoApiKey();
+  if (apiKeyMissing) {
+    test.skip("API key not configured", () => {});
+    return;
+  }
 
   test("Simple prompt responds quickly", async () => {
-    const start = Date.now();
-    const result = await runLeanAgent("Say: ok", { maxIterations: 2 });
-    const elapsed = Date.now() - start;
-    expect(result.completed).toBe(true);
-    console.log(`  Simple prompt took ${elapsed}ms`);
-    // Should respond in under 30 seconds
-    expect(elapsed).toBeLessThan(30000);
+    try {
+      const start = Date.now();
+      const result = await runLeanAgent("Say: ok", { maxIterations: 2 });
+      const elapsed = Date.now() - start;
+      expect(result.completed).toBe(true);
+      console.log(`  Simple prompt took ${elapsed}ms`);
+      // Should respond in under 30 seconds
+      expect(elapsed).toBeLessThan(30000);
+    } catch (e: any) {
+      if (is401Error(e)) {
+        test.skip("API key invalid (401)")();
+        return;
+      }
+      throw e;
+    }
   });
 
   test("Tool use adds latency but reasonable", async () => {
-    const start = Date.now();
-    const result = await runLeanAgent(`Read the file at ${TEST_FILE}`, {
-      maxIterations: 4,
-    });
-    const elapsed = Date.now() - start;
-    expect(result.completed).toBe(true);
-    console.log(`  Tool use took ${elapsed}ms`);
-    expect(elapsed).toBeLessThan(60000);
+    try {
+      const start = Date.now();
+      const result = await runLeanAgent(`Read the file at ${TEST_FILE}`, {
+        maxIterations: 4,
+      });
+      const elapsed = Date.now() - start;
+      expect(result.completed).toBe(true);
+      console.log(`  Tool use took ${elapsed}ms`);
+      expect(elapsed).toBeLessThan(60000);
+    } catch (e: any) {
+      if (is401Error(e)) {
+        test.skip("API key invalid (401)")();
+        return;
+      }
+      throw e;
+    }
   });
 });
 
