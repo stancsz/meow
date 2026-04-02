@@ -36,6 +36,49 @@ export interface LeanAgentOptions {
   dangerous?: boolean;
   systemPrompt?: string;
   abortSignal?: AbortSignal;
+  maxTokens?: number;  // Max tokens before compaction (default ~80k)
+}
+
+// ============================================================================
+// Context Compaction
+// ============================================================================
+
+function estimateTokens(text: string): number {
+  // Rough estimate: ~4 chars per token for English
+  return Math.ceil(text.length / 4);
+}
+
+function compactMessages(messages: any[], maxTokens: number): any[] {
+  if (messages.length <= 4) return messages;  // Keep system + 1-2 exchanges minimum
+
+  const systemMsg = messages[0];
+  const otherMessages = messages.slice(1);
+
+  let totalTokens = estimateTokens(systemMsg.content);
+
+  // Find how many messages we can keep
+  const keptMessages: any[] = [systemMsg];
+  let summaryAdded = false;
+
+  for (let i = otherMessages.length - 1; i >= 0; i--) {
+    const msg = otherMessages[i];
+    const msgTokens = estimateTokens(msg.content) + 10;  // overhead per message
+    if (totalTokens + msgTokens < maxTokens * 0.6) {
+      keptMessages.unshift(msg);
+      totalTokens += msgTokens;
+    } else if (!summaryAdded) {
+      // Replace remaining messages with a summary
+      const summarizedContent = `[Previous conversation summarized - ${i} messages condensed]`;
+      keptMessages.unshift({
+        role: "system",
+        content: summarizedContent,
+      });
+      summaryAdded = true;
+      break;
+    }
+  }
+
+  return keptMessages;
 }
 
 export interface AgentResult {
