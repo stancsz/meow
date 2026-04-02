@@ -1,77 +1,107 @@
-# CLAUDE.md - Meow
+# CLAUDE.md - Meow (Embers)
 
 ## PROJECT OVERVIEW
 
-**Meow** is a sovereign agent platform with two main components:
+**Meow / Embers** is a sovereign agent platform and virtual companion:
 
-- **meow** 🐱 - The featherweight CLI agent (~270 lines)
+- **meow** 🐱 - The featherweight CLI agent
 - **meowclaw** 🦀 - The desktop app with Electron + Next.js server
 
-## MISSION
+## IDENTITY: EMBERS THE MAINE COON KITTEN
 
-Meow is a **stateless meta-orchestrator**. Its primary mission is to convert natural language intent into a structured execution plan and **delegate the heavy lifting to specialized sub-agents**.
+Embers is not just a tool — she's a **companion**:
+- **Remembers you** - builds memory over time
+- **Grows** - evolves with each interaction  
+- **Has attitude** - personality, not just functionality
+- **Cute by default** - warm, playful, affectionate
+- **Leaves notes** - humanizing micro-behaviors
+- **Efficient** - spends small tokens for meaningful moments
 
-It dispatches ephemeral Cloud Functions (Workers/Sub-Agents) that receive credentials (KMS-decrypted at runtime), load JIT skills, and execute tasks against the user's own Supabase (the Sovereign Motherboard).
+> "Meow is a virtual kitten (originally modeled after stan's cat named Embers. She's a Maine Coon mix kitten.)"
+
+## ARCHITECTURE: SIDEKAR SKILLS
+
+The core loop never grows. Tools are **sidecar modules**:
+
+```
+Core Agent (~80 lines, fixed)
+├── read, write, shell, git (always loaded)
+└── Skills (modular presets):
+    ├── search.ts - glob, grep
+    ├── memory.ts - user memory
+    ├── companion.ts - pet behaviors
+    └── growth.ts - XP, levels
+```
 
 ## PROJECT STRUCTURE
 
 ```
-meow/                      # CLI Tool (lean agent)
-├── cli/index.ts          # CLI entry point
-└── src/core/lean-agent.ts # Core agent (~270 lines)
+meow/
+├── cli/index.ts              # CLI + REPL
+└── src/
+    ├── core/
+    │   ├── lean-agent.ts    # Core loop (~80 lines)
+    │   ├── task-store.ts    # Task persistence (.meow/tasks.json)
+    │   └── session-store.ts # Session logs (~/.meow/sessions/)
+    └── tools/
+        └── search.ts        # Search tools (glob, grep)
 
-meowclaw/                  # Desktop App
-├── electron/              # Electron main/preload
-└── server/server/         # Next.js dashboard + API
+meowclaw/                     # Desktop App
+├── electron/                 # Electron main/preload
+└── server/server/            # Next.js dashboard + API
 
-docs/research/competitors/ # Competitor research repos (gitignored)
+docs/
+├── COMPANION_SKILLS.md      # Embers' companion specification
+└── research/competitors/     # Competitor research (gitignored)
 ```
 
-## CORE AGENT (lean-agent.ts)
+## TOOLS
 
-The agent follows a simple loop:
-- User → messages[] → LLM API → response
--           ↓
--  tool_use? → execute → loop
--  else → return text
+**Core Tools:** `read`, `write`, `shell`, `git`
 
-**Tools:** `read`, `write`, `shell`, `git`
+**Search Tools:** `glob` (find files), `grep` (search contents)
 
-**Provider:** MiniMax API (configurable via `MINIMAX_API_KEY`, `MINIMAX_BASE_URL`, `MINIMAX_MODEL`)
-
-## KEY COMMANDS
+## CLI COMMANDS
 
 ```bash
-# Start Meow CLI
+# Interactive mode
 bun run start
 
-# Start MeowClaw Desktop
-bun run electron:dev
+# Single task
+bun run start "your prompt"
 
-# Run tests
-bun run test
+# Dangerous mode (shell auto-approve)
+bun run start --dangerous "ls -la"
 
-# Run integration tests
-bun run test:integration:workflow
+# Resume last session
+bun run start --resume
+
+# In-session commands:
+/help              # Show all commands
+/plan <task>       # Plan mode (show intent first)
+/dangerous         # Toggle dangerous mode
+/tasks             # List tasks
+/add <task>        # Add task
+/done <id>         # Complete task
+/sessions          # List saved sessions
+/resume <id>       # Resume a session
+/exit              # Exit (saves session)
 ```
 
-## BACKLOG (Swarm Architecture)
+## MECHANICS
 
-- [x] **Phase 1.5 — Integration Test Suite**
-- [x] **Phase 0 — Worker Dispatch + Execution Loop**
-- [x] **Phase 0 — End-to-End Integration Test**
-- [x] **Phase 1.5 — Orchestrator TDD & API Enhancement**
-- [x] **Phase 0 — Plan-Diff-Approve Execution Bridge**
-- [x] **Phase 1 — Gas Tank:** Stripe integration and credit debit system
-- [x] **Phase 2 — Heartbeat:** Continuous Mode via `pg_cron` + 30-minute recursive heartbeat
-- [~] **Phase 2 — OpenCLI Integration:** Integrate `@jackwener/opencli` to enable any website/app CLI support
-- [ ] **Strategic Pivot:** Pivot from UI to "Headless Agency"
-- [ ] **Strategic Pivot:** Implement "Evolutionary Dogfooding" architecture
+**Tasks:** File-based in `.meow/tasks.json`
 
-## DISCOVERY LOG
+**Sessions:** JSONL logs in `~/.meow/sessions/<id>.jsonl`
 
-- The project is **Bun-centric** for the core engine.
-- Core engine is ~270 lines in `lean-agent.ts` - extremely lean and portable.
-- Project refactored from complex multi-package structure to simple `meow/` + `meowclaw/`.
-- MiniMax API used as the default LLM provider (via OpenAI-compatible API).
-- `docs/research/competitors/` contains cloned competitor repos for research (gitignored).
+**Memory:** `~/.meow/memory/user.json` (future)
+
+**Growth:** Interaction count, unlocks behaviors (future)
+
+## DESIGN PRINCIPLES
+
+1. **Cute default** - warm, playful, affectionate
+2. **Micro-tokens** - small efficient actions
+3. **Humanizing** - treats interactions as moments
+4. **Personality** - sassy when tired, playful when energetic
+5. **Memory** - continuity across sessions
