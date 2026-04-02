@@ -3,22 +3,23 @@
  *
  * Central export for all skills. Import this to register all skills.
  */
-import { registerSkill, type Skill } from "./loader.ts";
+import { registerSkill, getAllSkills, findSkill, type Skill } from "./loader.ts";
 import { simplify } from "./simplify.ts";
 import { review } from "./review.ts";
 import { commit } from "./commit.ts";
 
 // Register all skills
-export const skills: Skill[] = [
+const allSkills: Skill[] = [
   simplify,
   review,
   commit,
 ];
 
 // Auto-register on import
-for (const skill of skills) {
+for (const skill of allSkills) {
   registerSkill(skill);
 }
 
-export { simplify, review, commit } from "./loader.ts";
+export const skills = allSkills;
+export { getAllSkills, findSkill, registerSkill } from "./loader.ts";
 export type { Skill, SkillContext, SkillResult } from "./loader.ts";

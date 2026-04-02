@@ -12,7 +12,7 @@
 import OpenAI from "openai";
 import { readFileSync, writeFileSync } from "node:fs";
 import { exec, type ExecOptions } from "node:child_process";
-import { glob, grep } from "./tools/search.ts";
+import { glob, grep } from "../tools/search.ts";
 
 // ============================================================================
 // Types
@@ -263,7 +263,7 @@ function getToolSchemas(extraTools?: ToolDefinition[]) {
 function createLLMClient(options: LeanAgentOptions) {
   const apiKey = options.apiKey || process.env.LLM_API_KEY;
   const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.openai.com/v1";
-  const model = options.model || process.env.LLM_MODEL || "gpt-4o";
+  const model = options.model || process.env.LLM_MODEL || "MiniMax-M2.7";
 
   if (!apiKey) {
     throw new Error("LLM_API_KEY is required");

@@ -5,7 +5,8 @@
  * Sessions stored in ~/.meow/sessions/<timestamp>.jsonl
  */
 import { readFileSync, appendFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { join, homedir } from "node:path";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 export interface SessionMessage {
   role: "system" | "user" | "assistant";
