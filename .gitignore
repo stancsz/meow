@@ -61,6 +61,7 @@ docs/research/competitors/*/
 .meow/
 
 # Test output
+test-*/
 test-output*/
 playwright-report/
 test-results/
