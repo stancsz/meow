@@ -83,5 +83,19 @@
       "target": "AppImage",
       "category": "Development"
     }
-  }
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stancsz/meow.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/stancsz/meow/issues"
+  },
+  "homepage": "https://github.com/stancsz/meow#readme"
 }
