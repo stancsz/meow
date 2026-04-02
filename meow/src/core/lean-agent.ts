@@ -164,6 +164,7 @@ export async function runLeanAgent(
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
+  const maxTokens = options.maxTokens || 80000;  // Default to 80k tokens
 
   // Check if already aborted
   if (abortSignal?.aborted) {
