@@ -17,6 +17,7 @@ import {
   initializeToolRegistry,
   getToolDefinitions,
   getTool,
+  executeTool,
 } from "../sidecars/tool-registry.ts";
 
 // ============================================================================
@@ -37,6 +38,8 @@ export interface LeanAgentOptions {
   systemPrompt?: string;
   abortSignal?: AbortSignal;
   maxTokens?: number;  // Max tokens before compaction (default ~80k)
+  // Message accumulation for multi-turn conversations
+  messages?: any[];    // Existing conversation history to continue
 }
 
 // ============================================================================
@@ -85,7 +88,25 @@ export interface AgentResult {
   content: string;
   iterations: number;
   completed: boolean;
+  messages?: any[];  // Updated conversation for accumulation
 }
+
+// ============================================================================
+// Streaming Types
+// ============================================================================
+
+export interface StreamEvent {
+  type: "content" | "tool_start" | "tool_end" | "done" | "error";
+  content?: string;
+  toolId?: string;
+  toolName?: string;
+  toolResult?: string;
+  error?: string;
+  // When true, caller should submit tool result back to LLM and continue
+  needsContinuation?: boolean;
+}
+
+export type TokenHandler = (token: string) => void;
 
 // ============================================================================
 // LLM Client
@@ -119,6 +140,72 @@ function createLLMClient(options: LeanAgentOptions) {
         })),
       });
       return response;
+    },
+    generateStream: async function* (messages: any[], onToken?: TokenHandler): AsyncGenerator<StreamEvent> {
+      const toolDefinitions = getToolDefinitions();
+      const stream = await client.chat.completions.create({
+        model,
+        messages,
+        stream: true,
+        tools: toolDefinitions.map((t) => ({
+          type: "function" as const,
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+          },
+        })),
+      });
+
+      let currentToolCall: { id?: string; name?: string; arguments?: string } | null = null;
+      let contentBuffer = "";
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+
+        if (!delta) continue;
+
+        // Handle content delta
+        if (delta.content) {
+          contentBuffer += delta.content;
+          onToken?.(delta.content);
+          yield { type: "content", content: delta.content };
+        }
+
+        // Handle tool calls
+        if (delta.tool_calls) {
+          for (const toolCall of delta.tool_calls) {
+            if (toolCall.id) {
+              currentToolCall = { id: toolCall.id };
+            }
+            if (toolCall.function?.name) {
+              currentToolCall!.name = toolCall.function.name;
+              yield { type: "tool_start", toolId: toolCall.id, toolName: toolCall.function.name };
+            }
+            if (toolCall.function?.arguments) {
+              currentToolCall!.arguments = (currentToolCall!.arguments || "") + toolCall.function.arguments;
+            }
+          }
+        }
+      }
+
+      // Parse and execute tool calls if present
+      if (currentToolCall?.name && currentToolCall?.arguments) {
+        try {
+          const args = JSON.parse(currentToolCall.arguments);
+          const result = await executeTool(currentToolCall.name!, args, { dangerous: options.dangerous || false, abortSignal: options.abortSignal, cwd: process.cwd() });
+          yield { type: "tool_end", toolName: currentToolCall.name, toolResult: result.error || result.content };
+          // Signal that we need to continue with the tool result
+          yield { type: "done", needsContinuation: true };
+          return;  // Exit so caller can call again with tool result
+        } catch (e: any) {
+          yield { type: "error", error: `Tool execution failed: ${e.message}` };
+          yield { type: "done" };
+          return;
+        }
+      }
+
+      yield { type: "done" };
     },
   };
 }
@@ -173,10 +260,17 @@ export async function runLeanAgent(
 
   const llm = createLLMClient(options);
   const systemPrompt = options.systemPrompt || buildSystemPrompt();
-  let messages: any[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: prompt },
-  ];
+
+  // Message accumulation: use existing messages if provided, otherwise create fresh
+  let messages: any[];
+  if (options.messages && options.messages.length > 0) {
+    messages = [...options.messages, { role: "user", content: prompt }];
+  } else {
+    messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ];
+  }
 
   const context = { dangerous, abortSignal, cwd: process.cwd() };
   let iterations = 0;
@@ -200,7 +294,9 @@ export async function runLeanAgent(
 
     // No tool calls - return content directly
     if (!tool_calls || tool_calls.length === 0) {
-      return { content: content || "", iterations, completed: true };
+      // Add assistant response to messages for accumulation
+      messages.push({ role: "assistant", content: content || "" });
+      return { content: content || "", iterations, completed: true, messages };
     }
 
     // Execute tool calls
@@ -208,24 +304,15 @@ export async function runLeanAgent(
       const { name, arguments: argsString } = toolCall.function;
       const args = JSON.parse(argsString);
 
-      const tool = getTool(name);
-      if (!tool) {
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: `Unknown tool: ${name}`,
-        });
-        continue;
-      }
-
-      const result = await tool.execute(args, context);
+      const result = await executeTool(name, args, context);
 
       // If dangerous operation was blocked, return the error
-      if (result.error?.startsWith("[shell:BLOCKED]")) {
+      if (result.error?.startsWith("[shell:BLOCKED]") || result.error?.includes(":BLOCKED]")) {
         return {
           content: result.error,
           iterations,
           completed: false,
+          messages,
         };
       }
 
@@ -246,7 +333,164 @@ export async function runLeanAgent(
     }
   }
 
-  return { content: "Max iterations reached", iterations, completed: false };
+  return { content: "Max iterations reached", iterations, completed: false, messages };
+}
+
+// ============================================================================
+// Streaming Agent Loop
+// ============================================================================
+
+/**
+ * Streaming version of runLeanAgent.
+ * Yields content tokens as they arrive from the API.
+ */
+export async function runLeanAgentStream(
+  prompt: string,
+  options: LeanAgentOptions = {},
+  onToken?: TokenHandler
+): Promise<AsyncGenerator<StreamEvent>> {
+  const maxIterations = options.maxIterations || 10;
+  const dangerous = options.dangerous || false;
+  const abortSignal = options.abortSignal;
+  const maxTokens = options.maxTokens || 80000;
+
+  if (abortSignal?.aborted) {
+    return (async function* () {
+      yield { type: "error", error: "Interrupted" };
+    })();
+  }
+
+  const llm = createLLMClient(options);
+  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+  let messages: any[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: prompt },
+  ];
+
+  const context = { dangerous, abortSignal, cwd: process.cwd() };
+  let iterations = 0;
+
+  async function* streamGenerator(): AsyncGenerator<StreamEvent> {
+    while (iterations < maxIterations) {
+      if (abortSignal?.aborted) {
+        yield { type: "error", error: "Interrupted" };
+        return;
+      }
+
+      iterations++;
+
+      let fullContent = "";
+      let toolCallToExecute: { id?: string; name?: string; arguments?: string } | null = null;
+
+      // Stream the response
+      for await (const event of llm.generateStream(messages, onToken)) {
+        if (event.type === "content" && event.content) {
+          fullContent += event.content;
+        }
+        if (event.type === "tool_start" && event.toolName) {
+          toolCallToExecute = { name: event.toolName };
+        }
+        if (event.type === "tool_end" && event.toolResult) {
+          if (toolCallToExecute) {
+            toolCallToExecute.arguments = toolCallToExecute.arguments || "";
+          }
+        }
+        yield event;
+      }
+
+      // If we have content, return it
+      if (fullContent) {
+        yield { type: "done", content: fullContent };
+        return;
+      }
+
+      // If no content but tool call detected, execute it
+      // Note: This simplified version doesn't fully handle tool execution in stream mode
+      yield { type: "done", content: "" };
+      return;
+    }
+
+    yield { type: "error", error: "Max iterations reached" };
+  }
+
+  return streamGenerator();
+}
+
+/**
+ * Simple streaming version that returns combined content.
+ * Handles tool calls properly by continuing the stream after tool execution.
+ */
+export async function runLeanAgentSimpleStream(
+  prompt: string,
+  options: LeanAgentOptions = {},
+  onToken?: TokenHandler
+): Promise<AgentResult> {
+  const maxIterations = options.maxIterations || 10;
+  const dangerous = options.dangerous || false;
+  const abortSignal = options.abortSignal;
+
+  if (abortSignal?.aborted) {
+    return { content: "Interrupted", iterations: 0, completed: false };
+  }
+
+  const llm = createLLMClient(options);
+  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+  const messages: any[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: prompt },
+  ];
+
+  let fullContent = "";
+  let iterations = 0;
+  let lastToolCallId: string | undefined;
+  let lastToolName: string | undefined;
+
+  while (iterations < maxIterations) {
+    if (abortSignal?.aborted) {
+      return { content: "Interrupted", iterations, completed: false };
+    }
+
+    let needsContinuation = false;
+
+    for await (const event of llm.generateStream(messages, onToken)) {
+      if (event.type === "content" && event.content) {
+        fullContent += event.content;
+      }
+      if (event.type === "tool_start") {
+        lastToolCallId = event.toolId;
+        lastToolName = event.toolName;
+      }
+      if (event.type === "error") {
+        return { content: event.error || "Stream error", iterations, completed: false };
+      }
+      if (event.type === "tool_end" && event.toolResult) {
+        // Add tool result to messages for continuation
+        messages.push({
+          role: "tool",
+          tool_call_id: lastToolCallId,
+          content: event.toolResult,
+        });
+      }
+      if (event.type === "done") {
+        if (event.needsContinuation) {
+          needsContinuation = true;
+        }
+        break;
+      }
+    }
+
+    iterations++;
+
+    if (needsContinuation) {
+      // Continue to next iteration to submit tool result to LLM
+      continue;
+    }
+
+    // No continuation needed, we're done
+    return { content: fullContent, iterations, completed: true };
+  }
+
+  return { content: fullContent || "Max iterations reached", iterations, completed: false };
 }
 
 // ============================================================================

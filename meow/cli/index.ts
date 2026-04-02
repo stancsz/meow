@@ -9,7 +9,7 @@
  */
 import * as readline from "node:readline";
 import { stdin as input, stdout as output, abort } from "node:process";
-import { runLeanAgent, type LeanAgentOptions } from "../src/core/lean-agent.ts";
+import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions, type StreamEvent } from "../src/core/lean-agent.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
 import { createSession, appendToSession, loadSession, listSessions, formatSessions } from "../src/core/session-store.ts";
@@ -35,6 +35,7 @@ const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "
 
 let abortController: AbortController | null = null;
 let isThinking = false;
+let isStreaming = false;  // Toggle for streaming mode
 
 function interrupt(): void {
   if (abortController) {
@@ -241,6 +242,7 @@ async function main() {
     console.log(`  ${colors.green}/clear${colors.reset}     Clear screen and conversation`);
     console.log(`  ${colors.green}/plan${colors.reset}      Plan mode: show intent before executing`);
     console.log(`  ${colors.green}/dangerous${colors.reset} Toggle dangerous mode (auto-approve shell)`);
+    console.log(`  ${colors.green}/stream${colors.reset}    Toggle streaming mode (show tokens as they arrive)`);
     console.log();
     console.log(`${colors.bold}Tasks:${colors.reset}`);
     console.log(`  ${colors.green}/tasks${colors.reset}     List all tasks`);
@@ -261,8 +263,14 @@ async function main() {
   const runAgent = async (prompt: string, options: LeanAgentOptions = {}) => {
     setCursorVisible(false);
     try {
+      // Pass conversation messages to agent for multi-turn context
+      const agentMessages = conversation.filter(m => m.role !== "system").map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+
       const result = await withSpinner(
-        runLeanAgent(prompt, { dangerous, ...options, abortSignal: abortController?.signal }),
+        runLeanAgent(prompt, { dangerous, ...options, abortSignal: abortController?.signal, messages: agentMessages }),
         "thinking...",
         () => {
           console.log(`\n${colors.yellow}⏹️ Stopped thinking${colors.reset}`);
@@ -270,6 +278,10 @@ async function main() {
       );
       console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
       console.log(`\n--- ---\n${result.content}\n`);
+
+      // Update conversation for next turn
+      conversation.push({ role: "user", content: prompt });
+      conversation.push({ role: "assistant", content: result.content });
 
       // Save to session
       currentSessionMessages.push(
@@ -288,6 +300,54 @@ async function main() {
       throw e;
     } finally {
       setCursorVisible(true);
+    }
+  };
+
+  const runAgentStream = async (prompt: string, options: LeanAgentOptions = {}) => {
+    // Streaming mode - shows tokens as they arrive
+    process.stdout.write(`${colors.dim}`);
+    let lastFrame = 0;
+    let totalTokens = 0;
+    let aborted = false;
+
+    const onToken = (token: string) => {
+      process.stdout.write(token);
+      totalTokens++;
+      lastFrame++;
+      if (lastFrame % 10 === 0) {
+        process.stdout.write(`${colors.reset}${colors.dim}`);
+      }
+    };
+
+    abortController = new AbortController();
+    const signal = abortController.signal;
+
+    signal.addEventListener("abort", () => {
+      aborted = true;
+    });
+
+    try {
+      const result = await runLeanAgentSimpleStream(prompt, { dangerous, ...options }, onToken);
+      console.log(`${colors.reset}`);
+      console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s) (${totalTokens} tokens)${colors.reset}\n`);
+
+      currentSessionMessages.push(
+        { role: "user", content: prompt, timestamp: new Date().toISOString() },
+        { role: "assistant", content: result.content, timestamp: new Date().toISOString() }
+      );
+      saveSession();
+
+      return result;
+    } catch (e: any) {
+      console.log(`${colors.reset}`);
+      if (aborted) {
+        console.log(`${colors.yellow}⏹️ Cancelled${colors.reset}\n`);
+      } else {
+        console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}\n`);
+      }
+      throw e;
+    } finally {
+      abortController = null;
     }
   };
 
@@ -379,6 +439,14 @@ Respond with ONLY the plan.`;
       dangerous = !dangerous;
       console.log(
         `${dangerous ? colors.red : colors.green}Dangerous mode: ${dangerous ? "ON" : "OFF"}${colors.reset}\n`
+      );
+      return;
+    }
+
+    if (trimmed === "/stream") {
+      isStreaming = !isStreaming;
+      console.log(
+        `${isStreaming ? colors.cyan : colors.dim}Streaming mode: ${isStreaming ? "ON" : "OFF"}${colors.reset}\n`
       );
       return;
     }
@@ -483,7 +551,11 @@ Respond with ONLY the plan.`;
     // Run agent with conversation context
     conversation.push({ role: "user", content: trimmed });
     try {
-      await runAgent(trimmed);
+      if (isStreaming) {
+        await runAgentStream(trimmed);
+      } else {
+        await runAgent(trimmed);
+      }
     } catch (e) {
       // Error already printed
     }

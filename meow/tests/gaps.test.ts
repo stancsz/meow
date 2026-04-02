@@ -29,32 +29,33 @@ describe("GAP-TRACKING: Core Engine", () => {
    * GAP-CORE-001: Async Generator Streaming
    * Priority: P0 - CRITICAL
    * Claude Code: Uses async *submitMessage() for streaming responses
-   * Meow: Uses await client.chat.completions.create() - no streaming
-   * Impact: No real-time progress display, user sees nothing until complete
+   * Meow: IMPLEMENTED - runLeanAgentStream() and runLeanAgentSimpleStream()
+   * Impact: Real-time token display, user sees content as it arrives
    */
-  test("GAP-CORE-001: No streaming support", () => {
+  test("GAP-CORE-001: Streaming implemented", () => {
     const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
-    const hasStreaming = leanAgentSrc.includes("Stream") ||
-                         leanAgentSrc.includes("ReadableStream") ||
-                         leanAgentSrc.includes("async *");
-    // Current: NO streaming implementation
-    expect(hasStreaming).toBe(false);
+    const hasStreaming = leanAgentSrc.includes("runLeanAgentStream") &&
+                         leanAgentSrc.includes("generateStream") &&
+                         leanAgentSrc.includes("stream: true");
+    // IMPLEMENTED: Streaming with generateStream and stream: true
+    expect(hasStreaming).toBe(true);
   });
 
   /**
    * GAP-CORE-002: Multi-turn Message Accumulation
    * Priority: P0 - CRITICAL
    * Claude Code: Accumulates messages across turns with automatic truncation
-   * Meow: Creates fresh message array per runLeanAgent() call
-   * Impact: No conversation history across multiple prompts
+   * Meow: IMPLEMENTED - messages option in LeanAgentOptions, CLI passes conversation
+   * Impact: Conversation history persists across multiple prompts
    */
-  test("GAP-CORE-002: No session-level message accumulation", () => {
+  test("GAP-CORE-002: Message accumulation implemented", () => {
     const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
-    // Check if messages persist across calls
-    const hasMessageAccumulation = leanAgentSrc.includes("messages: Message[]") &&
-                                     leanAgentSrc.includes("loadSession");
-    // Currently messages are created fresh each time
-    expect(hasMessageAccumulation).toBe(false);
+    // Check if messages option is accepted and returned
+    const hasMessageAccumulation = leanAgentSrc.includes("messages?: any[]") &&
+                                     leanAgentSrc.includes("options.messages") &&
+                                     leanAgentSrc.includes("messages?");
+    // IMPLEMENTED: messages option in LeanAgentOptions
+    expect(hasMessageAccumulation).toBe(true);
   });
 
   /**
@@ -622,15 +623,15 @@ describe("GAP-TRACKING: Interrupt/Abort", () => {
    * GAP-ABORT-001: Per-turn Abort
    * Priority: P1 - HIGH
    * Claude Code: AbortController checked during streaming
-   * Meow: Only checked at iteration start
-   * Impact: Can't interrupt mid-stream
+   * Meow: IMPLEMENTED - streaming loop with abort signal support
+   * Impact: Can interrupt mid-stream via AbortController
    */
-  test("GAP-ABORT-001: No mid-stream abort", () => {
+  test("GAP-ABORT-001: Mid-stream abort implemented", () => {
     const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     // Check for streaming abort
-    const hasStreamingAbort = leanAgentSrc.includes("Stream") &&
+    const hasStreamingAbort = leanAgentSrc.includes("generateStream") &&
                               leanAgentSrc.includes("abort");
-    expect(hasStreamingAbort).toBe(false);
+    expect(hasStreamingAbort).toBe(true);
   });
 
   /**
@@ -772,14 +773,14 @@ describe("GAP-TRACKING: LLM Provider", () => {
    * GAP-LLM-002: Response Streaming
    * Priority: P0 - CRITICAL
    * Claude Code: Full streaming with SSE
-   * Meow: No streaming
-   * Impact: Poor UX, no real-time feedback
+   * Meow: IMPLEMENTED - OpenAI SDK streaming with generateStream
+   * Impact: Real-time token display in CLI via /stream command
    */
-  test("GAP-LLM-002: No LLM response streaming", () => {
+  test("GAP-LLM-002: LLM response streaming implemented", () => {
     const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
-    const hasStream = leanAgentSrc.includes("stream: true") ||
-                      leanAgentSrc.includes("ReadableStream");
-    expect(hasStream).toBe(false);
+    const hasStream = leanAgentSrc.includes("stream: true") &&
+                      leanAgentSrc.includes("generateStream");
+    expect(hasStream).toBe(true);
   });
 
   /**

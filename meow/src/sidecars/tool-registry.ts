@@ -310,3 +310,49 @@ export function registerTool(tool: Tool): void {
     tools.push(tool);
   }
 }
+
+// ============================================================================
+// Tool Execution with Permissions
+// ============================================================================
+
+export async function executeTool(
+  toolName: string,
+  args: unknown,
+  context: ToolContext
+): Promise<ToolResult> {
+  const { checkPermission } = await import("./permissions.ts");
+
+  const permission = checkPermission(toolName, args);
+
+  if (permission.action === "deny") {
+    return {
+      content: "",
+      error: `[${toolName}:DENIED] Permission denied${permission.reason ? ` (${permission.reason})` : ""}`,
+    };
+  }
+
+  if (permission.action === "ask") {
+    const { promptPermission } = await import("./permissions.ts");
+    const { dangerous } = context;
+
+    // If already in dangerous mode, auto-allow
+    if (dangerous) {
+      // Continue to execute
+    } else {
+      // Check if we should prompt - this is a sync operation
+      // For now, auto-deny in non-dangerous ask mode
+      return {
+        content: "",
+        error: `[${toolName}:BLOCKED] Tool requires permission. Use --dangerous flag to run.`,
+      };
+    }
+  }
+
+  // permission.action === "allow" or dangerous mode
+  const tool = getTool(toolName);
+  if (!tool) {
+    return { content: "", error: `Unknown tool: ${toolName}` };
+  }
+
+  return tool.execute(args, context);
+}

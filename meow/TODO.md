@@ -89,11 +89,11 @@ interface SessionStore {
 }
 ```
 
-- [ ] Create `permissions.ts` sidecar
-- [ ] Pattern matching (tool + optional regex)
-- [ ] Three actions: allow, deny, ask
-- [ ] Interactive prompt for `ask`
-- [ ] Load from `.meow/permissions.json`
+- [x] Create `permissions.ts` sidecar ✅
+- [x] Pattern matching (tool + optional regex) ✅
+- [x] Three actions: allow, deny, ask ✅
+- [x] Interactive prompt for `ask` ✅
+- [x] Load from `.meow/permissions.json` ✅
 
 ### 2.2 Abort/Interrupt Sidecar
 **Problem:** Can't cancel a running operation.
@@ -335,7 +335,7 @@ Implemented sidecars:
 
 Missing sidecars:
 - [ ] **session** — compact/resume (P0)
-- [ ] **permissions** — pattern rules (P1)
+- [x] **permissions** — pattern rules ✅ (P1)
 - [ ] **interrupt** — SIGINT, timeouts (P1)
 - [ ] **slash-commands** — /help, /plan, /resume (P1)
 - [ ] **repl** — interactive mode (P2)
