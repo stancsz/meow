@@ -5,10 +5,13 @@
  *   bun run start                    # Interactive mode
  *   bun run start "your prompt"     # Single task mode
  *   bun run start --dangerous "cmd"  # Single task with shell auto-approve
+ *   bun run start --resume           # Resume last session
  */
 import * as readline from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import { runLeanAgent, type LeanAgentOptions } from "../src/core/lean-agent.ts";
+import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
+import { createSession, appendToSession, loadSession, listSessions, formatSessions } from "../src/core/session-store.ts";
 
 const colors = {
   reset: "\x1b[0m",
@@ -34,10 +37,6 @@ function setCursorVisible(visible: boolean): void {
 
 function eraseLine(): void {
   process.stdout.write("\x1B[2K");
-}
-
-function moveCursorUp(lines: number = 1): void {
-  process.stdout.write(`\x1B[${lines}A`);
 }
 
 async function withSpinner<T>(
@@ -70,6 +69,19 @@ async function withSpinner<T>(
 }
 
 // ============================================================================
+// Session Management
+// ============================================================================
+
+let currentSessionId: string | null = null;
+let currentSessionMessages: { role: string; content: string; timestamp: string }[] = [];
+
+function saveSession() {
+  if (currentSessionId && currentSessionMessages.length > 0) {
+    appendToSession(currentSessionId, currentSessionMessages);
+  }
+}
+
+// ============================================================================
 // Message History (Conversation Context)
 // ============================================================================
 
@@ -81,21 +93,64 @@ interface Message {
 const conversation: Message[] = [];
 
 // ============================================================================
+// System Prompt
+// ============================================================================
+
+function buildSystemPrompt(): string {
+  return `You are Meow, a lean sovereign agent.
+
+You have access to tools:
+- read(path) → read file contents
+- write(path, content) → write content to a file
+- shell(cmd) → execute shell command (requires --dangerous flag)
+- git(cmd) → execute git command
+- glob(pattern) → find files by name pattern
+- grep(pattern, path?) → search file contents
+
+When using tools:
+1. Parse the user's intent
+2. Use minimal necessary tools
+3. Prefer safe, read operations when possible
+4. Always confirm destructive actions
+
+Respond directly unless tool use is clearly necessary.`;
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
 async function main() {
   const args = process.argv.slice(2);
   let dangerous = false;
+  let resumeSession = false;
 
-  // Parse --dangerous flag
+  // Parse flags
   const filteredArgs = args.filter((arg) => {
     if (arg === "--dangerous" || arg === "-d") {
       dangerous = true;
       return false;
     }
+    if (arg === "--resume" || arg === "-r") {
+      resumeSession = true;
+      return false;
+    }
     return true;
   });
+
+  // Handle --resume flag
+  if (resumeSession) {
+    const sessions = listSessions();
+    if (sessions.length === 0) {
+      console.log(`${colors.yellow}No sessions to resume.${colors.reset}`);
+      process.exit(0);
+    }
+    const lastSession = sessions[0];
+    currentSessionId = lastSession.id;
+    currentSessionMessages = loadSession(lastSession.id);
+    console.log(`${colors.dim}Resumed session: ${lastSession.id}${colors.reset}`);
+    console.log(`${colors.dim}Preview: ${lastSession.preview}...${colors.reset}\n`);
+  }
 
   if (filteredArgs.length > 0) {
     // Single task mode
@@ -124,6 +179,11 @@ async function main() {
   console.log(`${colors.blue}${colors.bold}🐱 meow — lean sovereign agent${colors.reset}`);
   console.log(`${colors.dim}Type /help for commands. Type /exit to quit.${colors.reset}\n`);
 
+  // Initialize session
+  if (!currentSessionId) {
+    currentSessionId = createSession();
+  }
+
   const systemPrompt = buildSystemPrompt();
   conversation.push({ role: "system", content: systemPrompt });
 
@@ -131,11 +191,20 @@ async function main() {
 
   const printHelp = () => {
     console.log(`${colors.bold}Commands:${colors.reset}`);
-    console.log(`  ${colors.green}/help${colors.reset}    Show this help`);
-    console.log(`  ${colors.green}/exit${colors.reset}   Exit meow`);
-    console.log(`  ${colors.green}/clear${colors.reset}  Clear screen and conversation`);
-    console.log(`  ${colors.green}/plan${colors.reset}   Plan mode: show intent before executing`);
+    console.log(`  ${colors.green}/help${colors.reset}       Show this help`);
+    console.log(`  ${colors.green}/exit${colors.reset}      Exit meow`);
+    console.log(`  ${colors.green}/clear${colors.reset}     Clear screen and conversation`);
+    console.log(`  ${colors.green}/plan${colors.reset}      Plan mode: show intent before executing`);
     console.log(`  ${colors.green}/dangerous${colors.reset} Toggle dangerous mode (auto-approve shell)`);
+    console.log();
+    console.log(`${colors.bold}Tasks:${colors.reset}`);
+    console.log(`  ${colors.green}/tasks${colors.reset}     List all tasks`);
+    console.log(`  ${colors.green}/add${colors.reset}       Add a new task (e.g., /add Write tests)`);
+    console.log(`  ${colors.green}/done${colors.reset}      Complete a task (e.g., /done t123)`);
+    console.log();
+    console.log(`${colors.bold}Sessions:${colors.reset}`);
+    console.log(`  ${colors.green}/sessions${colors.reset}  List saved sessions`);
+    console.log(`  ${colors.green}/resume${colors.reset}    Resume a session (e.g., /resume session_123)`);
     console.log();
   };
 
@@ -148,6 +217,14 @@ async function main() {
       );
       console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
       console.log(`\n--- ---\n${result.content}\n`);
+
+      // Save to session
+      currentSessionMessages.push(
+        { role: "user", content: prompt, timestamp: new Date().toISOString() },
+        { role: "assistant", content: result.content, timestamp: new Date().toISOString() }
+      );
+      saveSession();
+
       return result;
     } catch (e: any) {
       console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}\n`);
@@ -222,6 +299,7 @@ Respond with ONLY the plan.`;
 
     // Built-in commands
     if (trimmed === "/exit") {
+      saveSession();
       console.log(`${colors.yellow}Goodbye!${colors.reset}`);
       rl.close();
       return;
@@ -245,6 +323,72 @@ Respond with ONLY the plan.`;
       console.log(
         `${dangerous ? colors.red : colors.green}Dangerous mode: ${dangerous ? "ON" : "OFF"}${colors.reset}\n`
       );
+      return;
+    }
+
+    // Task commands
+    if (trimmed === "/tasks") {
+      const tasks = listTasks();
+      console.log(formatTasks(tasks));
+      console.log();
+      return;
+    }
+
+    if (trimmed.startsWith("/add ")) {
+      const content = trimmed.slice(5);
+      if (!content) {
+        console.log(`${colors.red}Usage: /add <task description>${colors.reset}\n`);
+        return;
+      }
+      const task = addTask(content);
+      console.log(`${colors.green}Added task [${task.id}]: ${task.content}${colors.reset}\n`);
+      return;
+    }
+
+    if (trimmed.startsWith("/done ")) {
+      const id = trimmed.slice(6);
+      if (!id) {
+        console.log(`${colors.red}Usage: /done <task-id>${colors.reset}\n`);
+        return;
+      }
+      const task = completeTask(id);
+      if (task) {
+        console.log(`${colors.green}Completed task [${task.id}]: ${task.content}${colors.reset}\n`);
+      } else {
+        console.log(`${colors.red}Task not found: ${id}${colors.reset}\n`);
+      }
+      return;
+    }
+
+    // Session commands
+    if (trimmed === "/sessions") {
+      const sessions = listSessions();
+      console.log(formatSessions(sessions));
+      console.log();
+      return;
+    }
+
+    if (trimmed.startsWith("/resume ")) {
+      const sessionId = trimmed.slice(8);
+      if (!sessionId) {
+        console.log(`${colors.red}Usage: /resume <session-id>${colors.reset}\n`);
+        return;
+      }
+      const messages = loadSession(sessionId);
+      if (messages.length === 0) {
+        console.log(`${colors.red}Session not found: ${sessionId}${colors.reset}\n`);
+        return;
+      }
+      currentSessionId = sessionId;
+      currentSessionMessages = messages;
+      conversation.length = 0;
+      // Rebuild conversation from session
+      messages.forEach((m) => {
+        if (m.role !== "tool") {
+          conversation.push({ role: m.role as "system" | "user" | "assistant", content: m.content });
+        }
+      });
+      console.log(`${colors.green}Resumed session: ${sessionId}${colors.reset}\n`);
       return;
     }
 
@@ -273,6 +417,7 @@ Respond with ONLY the plan.`;
   };
 
   rl.on("close", () => {
+    saveSession();
     setCursorVisible(true);
     process.stdout.write("\n");
     process.exit(0);
@@ -280,29 +425,12 @@ Respond with ONLY the plan.`;
 
   // Handle Ctrl+C gracefully
   process.on("SIGINT", () => {
+    saveSession();
     setCursorVisible(true);
     console.log(`\n${colors.yellow}Interrupted. Use /exit to quit.${colors.reset}\n`);
   });
 
   promptUser();
-}
-
-function buildSystemPrompt(): string {
-  return `You are Meow, a lean sovereign agent.
-
-You have access to tools:
-- read(path) → read file contents
-- write(path, content) → write content to file
-- shell(cmd) → execute shell command
-- git(cmd) → execute git command
-
-When using tools:
-1. Parse the user's intent
-2. Use minimal necessary tools
-3. Prefer safe, read operations when possible
-4. Always confirm destructive actions
-
-Respond directly unless tool use is clearly necessary.`;
 }
 
 main();

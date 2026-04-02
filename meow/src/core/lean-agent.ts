@@ -7,11 +7,12 @@
  *             tool_use? → execute → loop
  *             else → return text
  *
- * ~50-100 lines of core logic. Everything else is bloat.
+ * CORE: ~80 lines of core logic. Tools are sidecars.
  */
 import OpenAI from "openai";
 import { readFileSync, writeFileSync } from "node:fs";
 import { exec, type ExecOptions } from "node:child_process";
+import { glob, grep } from "./tools/search.ts";
 
 // ============================================================================
 // Types
@@ -34,6 +35,7 @@ export interface LeanAgentOptions {
   baseURL?: string;
   dangerous?: boolean;
   systemPrompt?: string;
+  tools?: ToolDefinition[];
 }
 
 export interface AgentResult {
@@ -42,11 +44,17 @@ export interface AgentResult {
   completed: boolean;
 }
 
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
 // ============================================================================
-// Tool Handlers
+// Core Tools (always available)
 // ============================================================================
 
-function createTools(dangerous: boolean = false) {
+function createCoreTools(dangerous: boolean = false) {
   return {
     read: async (args: { path: string }): Promise<ToolResult> => {
       try {
@@ -134,6 +142,108 @@ function createTools(dangerous: boolean = false) {
 }
 
 // ============================================================================
+// Sidecar Skills (modular tools)
+// ============================================================================
+
+const sidecarTools = {
+  glob,
+  grep,
+};
+
+function getToolSchemas(extraTools?: ToolDefinition[]) {
+  const coreSchemas = [
+    {
+      type: "function" as const,
+      function: {
+        name: "read",
+        description: "Read file contents from disk",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string", description: "File path to read" } },
+          required: ["path"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "write",
+        description: "Write content to a file",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "File path to write" },
+            content: { type: "string", description: "Content to write" },
+          },
+          required: ["path", "content"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "shell",
+        description: "Execute a shell command",
+        parameters: {
+          type: "object",
+          properties: { cmd: { type: "string", description: "Shell command to execute" } },
+          required: ["cmd"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "git",
+        description: "Execute a git command",
+        parameters: {
+          type: "object",
+          properties: { cmd: { type: "string", description: "Git arguments (e.g., 'status', 'diff')" } },
+          required: ["cmd"],
+        },
+      },
+    },
+  ];
+
+  // Search tools from sidecar
+  const searchSchemas = [
+    {
+      type: "function" as const,
+      function: {
+        name: "glob",
+        description: "Find files by name pattern. Use ** for recursive matching.",
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: { type: "string", description: "File pattern to match (e.g., '*.ts', '**/*.js')" },
+            cwd: { type: "string", description: "Working directory to search in" },
+          },
+          required: ["pattern"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "grep",
+        description: "Search file contents using regex pattern",
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: { type: "string", description: "Regex pattern to search for" },
+            path: { type: "string", description: "Directory or file path to search in" },
+            recursive: { type: "boolean", description: "Search recursively (default true)" },
+          },
+          required: ["pattern"],
+        },
+      },
+    },
+  ];
+
+  return [...coreSchemas, ...searchSchemas];
+}
+
+// ============================================================================
 // LLM Client
 // ============================================================================
 
@@ -155,59 +265,7 @@ function createLLMClient(options: LeanAgentOptions) {
       const response = await client.chat.completions.create({
         model,
         messages,
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "read",
-              description: "Read file contents from disk",
-              parameters: {
-                type: "object",
-                properties: { path: { type: "string", description: "File path to read" } },
-                required: ["path"],
-              },
-            },
-          },
-          {
-            type: "function",
-            function: {
-              name: "write",
-              description: "Write content to a file",
-              parameters: {
-                type: "object",
-                properties: {
-                  path: { type: "string", description: "File path to write" },
-                  content: { type: "string", description: "Content to write" },
-                },
-                required: ["path", "content"],
-              },
-            },
-          },
-          {
-            type: "function",
-            function: {
-              name: "shell",
-              description: "Execute a shell command",
-              parameters: {
-                type: "object",
-                properties: { cmd: { type: "string", description: "Shell command to execute" } },
-                required: ["cmd"],
-              },
-            },
-          },
-          {
-            type: "function",
-            function: {
-              name: "git",
-              description: "Execute a git command",
-              parameters: {
-                type: "object",
-                properties: { cmd: { type: "string", description: "Git arguments (e.g., 'status', 'diff')" } },
-                required: ["cmd"],
-              },
-            },
-          },
-        ],
+        tools: getToolSchemas(options.tools),
       });
       return response;
     },
@@ -226,6 +284,8 @@ You have access to tools:
 - write(path, content) → write content to a file
 - shell(cmd) → execute shell command
 - git(cmd) → execute git command
+- glob(pattern) → find files by pattern
+- grep(pattern, path?) → search file contents
 
 When using tools:
 1. Parse the user's intent
@@ -254,7 +314,7 @@ export async function runLeanAgent(
     { role: "user", content: prompt },
   ];
 
-  const tools = createTools(dangerous);
+  const coreTools = createCoreTools(dangerous);
   let iterations = 0;
 
   while (iterations < maxIterations) {
@@ -279,7 +339,8 @@ export async function runLeanAgent(
       const { name, arguments: argsString } = toolCall.function;
       const args = JSON.parse(argsString);
 
-      const handler = tools[name as keyof typeof tools];
+      // Try core tools first, then sidecar tools
+      const handler = coreTools[name as keyof typeof coreTools] || sidecarTools[name as keyof typeof sidecarTools];
       if (!handler) {
         messages.push({
           role: "tool",
