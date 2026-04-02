@@ -17,7 +17,7 @@ import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions } from ".
 import { runAutoAgent, formatAutoResults } from "../src/core/auto-agent.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
-import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId } from "../src/core/session-store.ts";
+import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 
 // Load .env file if present
@@ -145,6 +145,73 @@ let currentSessionMessages: { role: string; content: string; timestamp: string }
 function saveSession(): void {
   if (currentSessionId && currentSessionMessages.length > 0) {
     appendToSession(currentSessionId, currentSessionMessages);
+  }
+}
+
+// ============================================================================
+// Session Compaction (LLM-powered context management)
+// ============================================================================
+
+const MAX_SESSION_TOKENS = 60000; // Compact when session exceeds this
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+async function checkAndCompact(): Promise<void> {
+  if (!currentSessionId) return;
+
+  let totalTokens = 0;
+  for (const msg of currentSessionMessages) {
+    totalTokens += estimateTokens(msg.content) + 10;
+  }
+
+  if (totalTokens < MAX_SESSION_TOKENS) return;
+
+  console.log(`\n${colors.dim}📦 Session getting long (${totalTokens} tokens) - compacting...${colors.reset}`);
+
+  try {
+    const result = await compactSession(currentSessionId, {
+      maxTokens: MAX_SESSION_TOKENS,
+      summarizeFn: async (oldMessages) => {
+        // Build a summary prompt for the LLM
+        const conversationText = oldMessages
+          .filter((m) => m.role !== "system")
+          .map((m) => `${m.role}: ${m.content}`)
+          .join("\n");
+
+        // Use the agent to summarize
+        const summaryResult = await runLeanAgent(
+          `Summarize this conversation concisely, preserving key facts, decisions, and context:\n\n${conversationText.slice(0, 8000)}`,
+          { maxIterations: 1 }
+        );
+
+        return summaryResult.content;
+      },
+    });
+
+    if (result.summary) {
+      console.log(`${colors.green}✓ Compacted ${result.originalCount} messages → ${result.compactedCount}${colors.reset}`);
+
+      // Update local session messages with the compacted version
+      currentSessionMessages = result.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+      }));
+
+      // Rebuild conversation array from compacted session
+      conversation.length = 0;
+      const systemPrompt = buildSystemPrompt();
+      conversation.push({ role: "system", content: systemPrompt });
+      for (const msg of currentSessionMessages) {
+        if (msg.role !== "system" || !msg.content.includes("[Previous conversation summarized]")) {
+          conversation.push({ role: msg.role as "system" | "user" | "assistant", content: msg.content });
+        }
+      }
+    }
+  } catch (e: any) {
+    console.log(`${colors.yellow}⚠️ Session compaction failed: ${e.message}${colors.reset}`);
   }
 }
 
@@ -431,6 +498,9 @@ async function main() {
       );
       saveSession();
 
+      // Check if session needs compaction
+      await checkAndCompact();
+
       return result;
     } catch (e: any) {
       if (e.message === "Interrupted") {
@@ -478,6 +548,7 @@ async function main() {
         { role: "assistant", content: result.content, timestamp: new Date().toISOString() }
       );
       saveSession();
+      await checkAndCompact();
 
       return result;
     } catch (e: any) {

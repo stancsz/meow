@@ -25,6 +25,7 @@ export interface ToolContext {
   cwd: string;
   dangerous: boolean;
   abortSignal?: AbortSignal;
+  timeoutMs?: number;  // Timeout for tool execution in milliseconds
 }
 
 export interface ToolResult {
@@ -144,13 +145,33 @@ const builtInTools: Tool[] = [
       return new Promise((resolve) => {
         const output: string[] = [];
         const errOutput: string[] = [];
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let settled = false;
+
+        const finish = (
+          content: string,
+          error?: string
+        ) => {
+          if (settled) return;
+          settled = true;
+          if (timeoutId) clearTimeout(timeoutId);
+          resolve({ content, error });
+        };
 
         const child = exec(cmd, { encoding: "utf-8" } as ExecOptions);
+
+        // Handle timeout
+        if (context.timeoutMs && context.timeoutMs > 0) {
+          timeoutId = setTimeout(() => {
+            child.kill("SIGTERM");
+            finish("", `Shell command timed out after ${context.timeoutMs}ms`);
+          }, context.timeoutMs);
+        }
 
         // Handle abort
         const abortHandler = () => {
           child.kill("SIGTERM");
-          resolve({ content: "", error: "Shell command aborted" });
+          finish("", "Shell command aborted");
         };
         context.abortSignal?.addEventListener("abort", abortHandler);
 
@@ -167,14 +188,14 @@ const builtInTools: Tool[] = [
         child.on("close", (code) => {
           context.abortSignal?.removeEventListener("abort", abortHandler);
           const fullOutput = output.join("") + errOutput.join("");
-          resolve({
-            content: fullOutput || `[Shell exited with code ${code}]`,
-            error: code === 0 ? undefined : `Exit code: ${code}`,
-          });
+          finish(
+            fullOutput || `[Shell exited with code ${code}]`,
+            code === 0 ? undefined : `Exit code: ${code}`
+          );
         });
 
         child.on("error", (e) => {
-          resolve({ content: "", error: `Shell failed: ${e.message}` });
+          finish("", `Shell failed: ${e.message}`);
         });
       });
     },
@@ -194,12 +215,30 @@ const builtInTools: Tool[] = [
 
       return new Promise((resolve) => {
         const output: string[] = [];
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let settled = false;
+
+        const finish = (content: string, error?: string) => {
+          if (settled) return;
+          settled = true;
+          if (timeoutId) clearTimeout(timeoutId);
+          resolve({ content, error });
+        };
+
         const child = exec(`git ${cmd}`, { encoding: "utf-8" });
+
+        // Handle timeout
+        if (context.timeoutMs && context.timeoutMs > 0) {
+          timeoutId = setTimeout(() => {
+            child.kill("SIGTERM");
+            finish("", `Git command timed out after ${context.timeoutMs}ms`);
+          }, context.timeoutMs);
+        }
 
         // Handle abort
         const abortHandler = () => {
           child.kill("SIGTERM");
-          resolve({ content: "", error: "Git command aborted" });
+          finish("", "Git command aborted");
         };
         context.abortSignal?.addEventListener("abort", abortHandler);
 
@@ -214,14 +253,14 @@ const builtInTools: Tool[] = [
 
         child.on("close", (code) => {
           context.abortSignal?.removeEventListener("abort", abortHandler);
-          resolve({
-            content: output.join("") || `[Git command exited with code ${code}]`,
-            error: code === 0 ? undefined : `Exit code: ${code}`,
-          });
+          finish(
+            output.join("") || `[Git command exited with code ${code}]`,
+            code === 0 ? undefined : `Exit code: ${code}`
+          );
         });
 
         child.on("error", (e) => {
-          resolve({ content: "", error: `Git failed: ${e.message}` });
+          finish("", `Git failed: ${e.message}`);
         });
       });
     },

@@ -25,6 +25,7 @@ export interface LeanAgentOptions {
   abortSignal?: AbortSignal;
   maxTokens?: number;
   messages?: { role: string; content: string }[];
+  timeoutMs?: number;
 }
 
 export interface AgentResult {
@@ -171,6 +172,7 @@ export async function runLeanAgent(
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
   const maxTokens = options.maxTokens || 80000;
+  const timeoutMs = options.timeoutMs;
 
   if (abortSignal?.aborted) {
     return { content: "Interrupted", iterations: 0, completed: false };
@@ -193,7 +195,7 @@ export async function runLeanAgent(
     ];
   }
 
-  const context = { dangerous, abortSignal, cwd: process.cwd() };
+  const context = { dangerous, abortSignal, cwd: process.cwd(), timeoutMs };
   let iterations = 0;
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
@@ -324,6 +326,7 @@ export async function* runLeanAgentStream(
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
+  const timeoutMs = options.timeoutMs;
 
   if (abortSignal?.aborted) {
     yield { type: "error", error: "Interrupted" };
@@ -403,7 +406,7 @@ export async function* runLeanAgentStream(
         args = {};
       }
 
-      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd() });
+      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs });
       yield { type: "tool_end", toolName: toolCall.function.name, toolResult: result.error || result.content };
 
       messages.push({
@@ -429,6 +432,7 @@ export async function runLeanAgentSimpleStream(
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
+  const timeoutMs = options.timeoutMs;
 
   if (abortSignal?.aborted) {
     return { content: "Interrupted", iterations: 0, completed: false };
@@ -522,7 +526,7 @@ export async function runLeanAgentSimpleStream(
         args = {};
       }
 
-      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd() });
+      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs });
 
       messages.push({
         role: "tool",

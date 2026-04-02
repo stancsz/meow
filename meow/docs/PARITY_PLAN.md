@@ -1,13 +1,13 @@
 # Meow Parity Plan — Path to Claude Code Equivalence
 
-> **Honest Assessment (2026-04-02, post-dogfood): ~45-50% of Claude Code's capabilities**
-> Architecture: 75% | Core Functionality: 50% | UX: 25% | Security: 60%
+> **Honest Assessment (2026-04-03, post-OODA and OpenAI SDK): ~50-55% of Claude Code's capabilities**
+> Architecture: 80% | Core Functionality: 55% | UX: 30% | Security: 60%
 
-## Implementation Score (Updated: 2026-04-02 - Post Permissions Sidecar)
+## Implementation Score (Updated: 2026-04-03 - Post OODA and OpenAI SDK)
 
 | Category | Score | Status |
 |----------|-------|--------|
-| Core Loop | 75% | ✅ Streaming, ✅ Message accumulation, ✅ Context compaction |
+| Core Loop | 85% | ✅ Streaming, ✅ Message accumulation, ✅ Context compaction |
 | File Tools | 80% | read, write, edit, git, glob, grep |
 | Shell Tool | 70% | ✅ Pattern permissions, ✅ --dangerous guard, ✅ SIGINT abort |
 | Task System | 30% | ✅ Store + CLI commands, no kill/monitor/named tasks |
@@ -17,6 +17,8 @@
 | Abort Handling | 75% | ✅ Streaming abort, ✅ SIGINT handler, ✅ AbortController propagation |
 | Slash Commands | 90% | ✅ /help, /exit, /clear, /plan, /dangerous, /stream, /tasks, /sessions, /resume, /skills, /add, /done |
 | Permissions | 75% | ✅ Pattern-matching rules, ✅ Default allow/deny/ask, ✅ ~/.meow/permissions.json |
+| Auto/Tick Modes | 75% | ✅ OODA loop, ✅ tick/auto modes, ✅ observe-orient-decide-act |
+| OpenAI SDK | 80% | ✅ MiniMax compatible, ✅ streaming via OpenAI SDK |
 | Rich TUI | 15% | ✅ ANSI colors, ✅ /stream toggle, ✅ Spinner, no scrollback |
 | Budget/Cost | 0% | Not implemented |
 | Sub-agents | 0% | Not implemented |

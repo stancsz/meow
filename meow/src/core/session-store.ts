@@ -1,8 +1,14 @@
 /**
  * session-store.ts
  *
- * Simple JSONL-based session persistence.
+ * JSONL-based session persistence with LLM-powered compaction.
  * Sessions stored in ~/.meow/sessions/<timestamp>.jsonl
+ *
+ * Features:
+ * - Save/load sessions
+ * - Auto-resume from last session
+ * - Fork sessions
+ * - Compact (summarize old messages when context gets long)
  */
 import { readFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +25,14 @@ export interface SessionInfo {
   preview: string;
   timestamp: string;
   forkedFrom?: string;  // Original session ID if this was forked
+  messageCount: number;
+}
+
+export interface CompactedSession {
+  messages: SessionMessage[];
+  summary: string;
+  originalCount: number;
+  compactedCount: number;
 }
 
 const SESSION_DIR = join(homedir(), ".meow", "sessions");
@@ -84,6 +98,113 @@ export function loadSession(sessionId: string): SessionMessage[] {
 }
 
 /**
+ * Overwrite a session file with new messages (used after compaction)
+ */
+export function saveSession(sessionId: string, messages: SessionMessage[]): void {
+  ensureDir();
+  const file = join(SESSION_DIR, `${sessionId}.jsonl`);
+  const lines = messages.map((m) => JSON.stringify(m)).join("\n") + "\n";
+  writeFileSync(file, lines, "utf-8");
+}
+
+/**
+ * Estimate token count (rough approximation)
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Compact a session by summarizing old messages.
+ * Returns the compacted messages and summary info.
+ */
+export async function compactSession(
+  sessionId: string,
+  options: {
+    maxTokens?: number;
+    summarizeFn: (messages: SessionMessage[]) => Promise<string>;
+  }
+): Promise<CompactedSession> {
+  const messages = loadSession(sessionId);
+  const maxTokens = options.maxTokens || 80000;
+
+  // Calculate total tokens
+  let totalTokens = 0;
+  for (const msg of messages) {
+    totalTokens += estimateTokens(msg.content) + 10; // overhead per message
+  }
+
+  // If under limit, no need to compact
+  if (totalTokens <= maxTokens * 0.8) {
+    return {
+      messages,
+      summary: "",
+      originalCount: messages.length,
+      compactedCount: messages.length,
+    };
+  }
+
+  // Keep system message(s) and recent messages
+  const systemMessages = messages.filter((m) => m.role === "system" && !m.content.includes("[Previous conversation summarized]"));
+  const conversationMessages = messages.filter((m) => m.role !== "system" || !m.content.includes("[Previous conversation summarized]"));
+
+  // Keep last 4-6 exchanges (8-12 messages)
+  const keepRecent = 12;
+  const recentMessages = conversationMessages.slice(-keepRecent);
+  const oldMessages = conversationMessages.slice(0, -keepRecent);
+
+  if (oldMessages.length === 0) {
+    return {
+      messages,
+      summary: "",
+      originalCount: messages.length,
+      compactedCount: messages.length,
+    };
+  }
+
+  // Generate summary using LLM
+  const summary = await options.summarizeFn(oldMessages);
+
+  // Build compacted session
+  const compactedMessages: SessionMessage[] = [
+    ...systemMessages,
+    {
+      role: "system",
+      content: `[Previous conversation summarized - ${oldMessages.length} messages condensed into ${estimateTokens(summary)} tokens]`,
+      timestamp: new Date().toISOString(),
+    },
+    {
+      role: "system",
+      content: `## Conversation Summary\n${summary}`,
+      timestamp: new Date().toISOString(),
+    },
+    ...recentMessages,
+  ];
+
+  // Save compacted session
+  saveSession(sessionId, compactedMessages);
+
+  return {
+    messages: compactedMessages,
+    summary,
+    originalCount: messages.length,
+    compactedCount: compactedMessages.length,
+  };
+}
+
+export function getSessionStats(sessionId: string): { messageCount: number; estimatedTokens: number } {
+  const messages = loadSession(sessionId);
+  let totalTokens = 0;
+  for (const msg of messages) {
+    totalTokens += estimateTokens(msg.content) + 10;
+  }
+  return {
+    messageCount: messages.length,
+    estimatedTokens: totalTokens,
+  };
+}
+
+/**
  * Fork an existing session, creating a new session with the same messages.
  * The forked session can diverge from the original.
  */
@@ -128,6 +249,7 @@ export function listSessions(): SessionInfo[] {
         preview: lastUser?.content?.slice(0, 60) || firstUser?.content?.slice(0, 60) || "(empty)",
         timestamp,
         forkedFrom,
+        messageCount: messages.length,
       };
     });
   } catch {
@@ -143,7 +265,7 @@ export function formatSessions(sessions: SessionInfo[]): string {
     const ts = parseInt(s.timestamp);
     const date = isNaN(ts) ? "Unknown date" : new Date(ts).toLocaleString();
     const forkNote = s.forkedFrom ? ` (forked from ${s.forkedFrom})` : "";
-    output += `  [${s.id}]${forkNote}\n    ${s.preview}...\n    ${date}\n`;
+    output += `  [${s.id}]${forkNote}\n    ${s.preview}...\n    ${date} · ${s.messageCount} msgs\n`;
   });
   return output;
 }
