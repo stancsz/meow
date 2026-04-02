@@ -95,6 +95,33 @@ const builtInTools: Tool[] = [
     },
   },
   {
+    name: "edit",
+    description: "Edit a file by replacing text. Use for precise, targeted changes.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File path to edit" },
+        old_string: { type: "string", description: "Exact text to find and replace" },
+        new_string: { type: "string", description: "Replacement text" },
+      },
+      required: ["path", "old_string", "new_string"],
+    },
+    execute: async (args: unknown) => {
+      const { path, old_string, new_string } = args as { path: string; old_string: string; new_string: string };
+      try {
+        const content = readFileSync(path, "utf-8");
+        if (!content.includes(old_string)) {
+          return { content: "", error: `Could not find "${old_string}" in ${path}` };
+        }
+        const newContent = content.replace(old_string, new_string);
+        writeFileSync(path, newContent, "utf-8");
+        return { content: `[Edited ${path}]` };
+      } catch (e: any) {
+        return { content: "", error: `Failed to edit ${path}: ${e.message}` };
+      }
+    },
+  },
+  {
     name: "shell",
     description: "Execute a shell command",
     parameters: {
