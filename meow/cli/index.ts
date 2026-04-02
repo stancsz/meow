@@ -6,14 +6,37 @@
  *   bun run start "your prompt"     # Single task mode
  *   bun run start --dangerous "cmd"  # Single task with shell auto-approve
  *   bun run start --resume           # Resume last session
+ *   bun run start --auto "task"     # Autonomous mode (OODA loop)
+ *   bun run start --tick "task"     # Continuous mode with tick heartbeats
  */
 import * as readline from "node:readline";
-import { stdin as input, stdout as output, abort } from "node:process";
-import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions, type StreamEvent } from "../src/core/lean-agent.ts";
+import { stdin as input, stdout as output } from "node:process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions } from "../src/core/lean-agent.ts";
+import { runAutoAgent, formatAutoResults } from "../src/core/auto-agent.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
 import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
+
+// Load .env file if present
+function loadEnv() {
+  const envPath = join(process.cwd(), ".env");
+  if (existsSync(envPath)) {
+    const content = readFileSync(envPath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        const [key, ...valueParts] = trimmed.split("=");
+        if (key && valueParts.length > 0) {
+          process.env[key.trim()] = valueParts.join("=").trim();
+        }
+      }
+    }
+  }
+}
+loadEnv();
 
 const colors = {
   reset: "\x1b[0m",
@@ -168,6 +191,8 @@ async function main() {
   const args = process.argv.slice(2);
   let dangerous = false;
   let resumeSession = false;
+  let autoMode = false;
+  let tickMode = false;
 
   // Parse flags
   const filteredArgs = args.filter((arg) => {
@@ -177,6 +202,14 @@ async function main() {
     }
     if (arg === "--resume" || arg === "-r") {
       resumeSession = true;
+      return false;
+    }
+    if (arg === "--auto" || arg === "-a") {
+      autoMode = true;
+      return false;
+    }
+    if (arg === "--tick" || arg === "-t") {
+      tickMode = true;
       return false;
     }
     return true;
@@ -211,6 +244,46 @@ async function main() {
     const prompt = filteredArgs.join(" ");
     console.log(`${colors.dim}🐱 meow${colors.reset}\n`);
     console.log(`${colors.dim}Prompt: ${prompt}${colors.reset}\n`);
+
+    // Auto/Tick mode - OODA loop autonomous operation
+    if (autoMode || tickMode) {
+      console.log(`${colors.cyan}⚡ Auto mode${tickMode ? " (tick)" : ""} - OODA loop engaged${colors.reset}\n`);
+
+      setCursorVisible(false);
+      try {
+        const { ticks, results, finalResult } = await withSpinner(
+          runAutoAgent(prompt, {
+            dangerous,
+            tickMode,
+            ghostMode: true,
+            autoCommit: dangerous,
+            autoPush: dangerous,
+            confidenceThreshold: 0.7,
+          }),
+          tickMode ? "autonomous..." : "thinking..."
+        );
+
+        console.log(`\n${colors.green}✅ Autonomous operation complete${colors.reset}`);
+        console.log(`${colors.dim}Ticks: ${ticks} | Iterations: ${finalResult.iterations}${colors.reset}`);
+        console.log(formatUsage(finalResult.usage));
+
+        if (results.length > 0 && tickMode) {
+          console.log(`\n${colors.bold}━━━ OODA Loop Summary ━━━${colors.reset}`);
+          console.log(formatAutoResults(results));
+        }
+
+        console.log(`\n--- Output ---\n${finalResult.content}`);
+      } catch (e: any) {
+        if (e.message === "Interrupted") {
+          process.exit(130);
+        }
+        console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}`);
+        process.exit(1);
+      } finally {
+        setCursorVisible(true);
+      }
+      return;
+    }
 
     setCursorVisible(false);
     try {
@@ -305,6 +378,10 @@ async function main() {
     console.log(`  ${colors.green}/plan${colors.reset}      Plan mode: show intent before executing`);
     console.log(`  ${colors.green}/dangerous${colors.reset} Toggle dangerous mode (auto-approve shell)`);
     console.log(`  ${colors.green}/stream${colors.reset}    Toggle streaming mode (show tokens as they arrive)`);
+    console.log();
+    console.log(`${colors.bold}Auto Mode (OODA Loop):${colors.reset}`);
+    console.log(`  ${colors.green}/auto${colors.reset}       Run autonomous OODA loop (single pass)`);
+    console.log(`  ${colors.green}/tick${colors.reset}      Continuous autonomous mode with heartbeats`);
     console.log();
     console.log(`${colors.bold}Tasks:${colors.reset}`);
     console.log(`  ${colors.green}/tasks${colors.reset}     List all tasks`);
@@ -513,6 +590,19 @@ Respond with ONLY the plan.`;
       console.log(
         `${isStreaming ? colors.cyan : colors.dim}Streaming mode: ${isStreaming ? "ON" : "OFF"}${colors.reset}\n`
       );
+      return;
+    }
+
+    // Auto mode commands
+    if (trimmed === "/auto") {
+      console.log(`${colors.cyan}⚡ Enter autonomous mode (OODA loop)${colors.reset}`);
+      console.log(`${colors.dim}Type a task and I'll observe-orient-decide-act autonomously${colors.reset}\n`);
+      return;
+    }
+
+    if (trimmed === "/tick") {
+      console.log(`${colors.cyan}⚡⚡ Enter tick mode (continuous OODA loop)${colors.reset}`);
+      console.log(`${colors.dim}I'll run continuously with tick heartbeats until done${colors.reset}\n`);
       return;
     }
 

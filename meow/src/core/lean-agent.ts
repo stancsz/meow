@@ -1,10 +1,10 @@
 /**
  * lean-agent.ts
  *
- * Meow's lean agent loop using Anthropic SDK.
- * Supports MiniMax-M2.7 via MiniMax's /anthropic endpoint.
+ * Meow's lean agent loop using OpenAI SDK.
+ * MiniMax-M2.7 via MiniMax's /anthropic endpoint (OpenAI-compatible).
  */
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import {
   initializeToolRegistry,
   getToolDefinitions,
@@ -43,13 +43,24 @@ export interface AgentResult {
 export type TokenHandler = (token: string) => void;
 
 // ============================================================================
+// Streaming Types
+// ============================================================================
+
+export interface StreamEvent {
+  type: "content" | "tool_start" | "tool_end" | "done" | "error";
+  content?: string;
+  toolName?: string;
+  toolResult?: string;
+  error?: string;
+}
+
+// ============================================================================
 // Cost Estimation
 // ============================================================================
 
 const COST_PER_MILLION_TOKENS: Record<string, { input: number; output: number }> = {
   "MiniMax-M2.7": { input: 0.5, output: 1.5 },
-  "claude-3-5-sonnet": { input: 3, output: 15 },
-  "claude-3-5-haiku": { input: 0.8, output: 4 },
+  "gpt-4o": { input: 5, output: 15 },
 };
 
 function estimateCost(promptTokens: number, completionTokens: number, model: string): number {
@@ -93,10 +104,10 @@ function compactMessages(messages: any[], maxTokens: number): any[] {
 }
 
 // ============================================================================
-// Anthropic Client
+// OpenAI Client
 // ============================================================================
 
-function createAnthropicClient(options: LeanAgentOptions) {
+function createOpenAIClient(options: LeanAgentOptions) {
   const apiKey = options.apiKey || process.env.LLM_API_KEY;
   const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic";
   const model = options.model || process.env.LLM_MODEL || "MiniMax-M2.7";
@@ -105,13 +116,7 @@ function createAnthropicClient(options: LeanAgentOptions) {
     throw new Error("LLM_API_KEY is required");
   }
 
-  const client = new Anthropic({
-    apiKey,
-    baseURL,
-    defaultHeaders: {
-      "anthropic-version": "2023-06-01",
-    },
-  });
+  const client = new OpenAI({ apiKey, baseURL });
 
   return { model, client };
 }
@@ -139,14 +144,17 @@ Respond directly unless tool use is clearly necessary.`;
 }
 
 // ============================================================================
-// Tool Definitions for Anthropic
+// Tool Definitions for OpenAI
 // ============================================================================
 
-function getAnthropicTools() {
+function getOpenAITools() {
   return getToolDefinitions().map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.parameters,
+    type: "function" as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    },
   }));
 }
 
@@ -167,19 +175,19 @@ export async function runLeanAgent(
     return { content: "Interrupted", iterations: 0, completed: false };
   }
 
-  const { model, client } = createAnthropicClient(options);
+  const { model, client } = createOpenAIClient(options);
   const systemPrompt = options.systemPrompt || buildSystemPrompt();
 
-  let messages: Anthropic.MessageParam[];
+  let messages: OpenAI.Chat.ChatCompletionMessageParam[];
   if (options.messages && options.messages.length > 0) {
     messages = [
-      { role: "user", content: systemPrompt },
+      { role: "system", content: systemPrompt },
       ...options.messages,
       { role: "user", content: prompt },
     ];
   } else {
     messages = [
-      { role: "user", content: systemPrompt },
+      { role: "system", content: systemPrompt },
       { role: "user", content: prompt },
     ];
   }
@@ -188,6 +196,7 @@ export async function runLeanAgent(
   let iterations = 0;
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
+  let lastContent = "";
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
@@ -196,52 +205,34 @@ export async function runLeanAgent(
 
     iterations++;
 
-    const response = await client.messages.create({
-      model,
-      messages,
-      tools: getAnthropicTools(),
-      max_tokens: 4096,
-    });
-
-    if (response.usage) {
-      totalPromptTokens += response.usage.input_tokens || 0;
-      totalCompletionTokens += response.usage.output_tokens || 0;
-    }
-
-    let textContent = "";
-    const toolUses: Anthropic.ToolUseBlock[] = [];
-
-    for (const block of response.content) {
-      if (block.type === "text") {
-        textContent += block.text;
-      } else if (block.type === "tool_use") {
-        toolUses.push(block);
-      }
-    }
-
-    if (toolUses.length === 0) {
-      return {
-        content: textContent || "",
-        iterations,
-        completed: true,
+    try {
+      const response = await client.chat.completions.create({
+        model,
         messages,
-        usage: {
-          promptTokens: totalPromptTokens,
-          completionTokens: totalCompletionTokens,
-          totalTokens: totalPromptTokens + totalCompletionTokens,
-          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
-        },
-      };
-    }
+        tools: getOpenAITools(),
+        tool_choice: "auto",
+      });
 
-    for (const toolUse of toolUses) {
-      const result = await executeTool(toolUse.name, toolUse.input, context);
+      const choice = response.choices[0];
+      if (!choice?.message) {
+        break;
+      }
 
-      if (result.error?.startsWith("[shell:BLOCKED]") || result.error?.includes(":BLOCKED]")) {
+      const { content, tool_calls } = choice.message;
+      lastContent = content || lastContent;
+
+      // Track usage if available
+      if (response.usage) {
+        totalPromptTokens += response.usage.prompt_tokens || 0;
+        totalCompletionTokens += response.usage.completion_tokens || 0;
+      }
+
+      // No tool calls - return content directly
+      if (!tool_calls || tool_calls.length === 0) {
         return {
-          content: result.error,
+          content: content || "",
           iterations,
-          completed: false,
+          completed: true,
           messages,
           usage: {
             promptTokens: totalPromptTokens,
@@ -252,21 +243,50 @@ export async function runLeanAgent(
         };
       }
 
-      messages.push({
-        role: "user",
-        content: [
-          {
-            type: "tool_result" as const,
-            tool_use_id: toolUse.id,
-            content: result.error || result.content,
-          },
-        ],
-      });
+      // Execute tool calls
+      for (const toolCall of tool_calls) {
+        const name = toolCall.function.name;
+        const args = JSON.parse(toolCall.function.arguments);
+
+        const result = await executeTool(name, args, context);
+
+        if (result.error?.startsWith("[shell:BLOCKED]") || result.error?.includes(":BLOCKED]")) {
+          return {
+            content: result.error,
+            iterations,
+            completed: false,
+            messages,
+          };
+        }
+
+        // MiniMax workaround: strip "call_function_" prefix from tool IDs
+        // MiniMax returns IDs like "call_function_xxx" but can't correlate them on return
+        const toolId = toolCall.id?.replace(/^call_function_/, "") || toolCall.id;
+
+        messages.push({
+          role: "tool",
+          tool_call_id: toolId,
+          content: result.error || result.content,
+        });
+      }
+    } catch (e: any) {
+      // Tool-related errors - return what we have so far
+      const errorMsg = e?.message || "";
+      if (errorMsg.includes("tool") || errorMsg.includes("not found") || errorMsg.includes("empty")) {
+        return {
+          content: lastContent || "Tool execution failed. " + errorMsg,
+          iterations,
+          completed: false,
+          messages,
+        };
+      }
+      throw e;
     }
 
+    // Check for context compaction
     const totalTokensCalc = messages.reduce((sum, m) => {
-      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
-      return sum + estimateTokens(content);
+      const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+      return sum + estimateTokens(c);
     }, 0);
     if (totalTokensCalc > maxTokens) {
       messages = compactMessages(messages, maxTokens);
@@ -274,28 +294,120 @@ export async function runLeanAgent(
   }
 
   return {
-    content: "Max iterations reached",
+    content: lastContent || "Max iterations reached",
     iterations,
     completed: false,
     messages,
-    usage: {
-      promptTokens: totalPromptTokens,
-      completionTokens: totalCompletionTokens,
-      totalTokens: totalPromptTokens + totalCompletionTokens,
-      estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
-    },
   };
 }
 
 // ============================================================================
-// Streaming Agent Loop
+// Streaming Agent Loop (event-based)
 // ============================================================================
 
-interface CapturedTool {
-  id: string;
-  name: string;
-  input: string;
+export async function* runLeanAgentStream(
+  prompt: string,
+  options: LeanAgentOptions = {}
+): AsyncGenerator<StreamEvent> {
+  const maxIterations = options.maxIterations || 10;
+  const dangerous = options.dangerous || false;
+  const abortSignal = options.abortSignal;
+
+  if (abortSignal?.aborted) {
+    yield { type: "error", error: "Interrupted" };
+    return;
+  }
+
+  const { model, client } = createOpenAIClient(options);
+  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: prompt },
+  ];
+
+  let iterations = 0;
+
+  while (iterations < maxIterations) {
+    if (abortSignal?.aborted) {
+      yield { type: "error", error: "Interrupted" };
+      return;
+    }
+
+    iterations++;
+
+    const stream = await client.chat.completions.create({
+      model,
+      messages,
+      tools: getOpenAITools(),
+      tool_choice: "auto",
+      stream: true,
+    });
+
+    let fullContent = "";
+    let toolCalls: OpenAI.Chat.ChatCompletionMessage.ToolCall[] = [];
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+
+      if (!delta) continue;
+
+      if (delta.content) {
+        fullContent += delta.content;
+        yield { type: "content", content: delta.content };
+      }
+
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          if (tc.id) {
+            const existing = toolCalls.find((t) => t.id === tc.id);
+            if (!existing) {
+              toolCalls.push({ id: tc.id, type: "function", function: { name: tc.function?.name || "", arguments: tc.function?.arguments || "" } });
+              yield { type: "tool_start", toolName: tc.function?.name };
+            }
+          }
+          if (tc.function?.arguments) {
+            const tcIndex = toolCalls.length - 1;
+            if (tcIndex >= 0) {
+              toolCalls[tcIndex].function.arguments += tc.function.arguments;
+            }
+          }
+        }
+      }
+    }
+
+    // No tool calls - done
+    if (toolCalls.length === 0) {
+      yield { type: "done" };
+      return;
+    }
+
+    // Execute tool calls
+    for (const toolCall of toolCalls) {
+      let args: Record<string, unknown>;
+      try {
+        args = JSON.parse(toolCall.function.arguments);
+      } catch {
+        args = {};
+      }
+
+      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd() });
+      yield { type: "tool_end", toolName: toolCall.function.name, toolResult: result.error || result.content };
+
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: result.error || result.content,
+      });
+    }
+  }
+
+  yield { type: "error", error: "Max iterations reached" };
 }
+
+// ============================================================================
+// Simple Streaming (returns combined content)
+// ============================================================================
 
 export async function runLeanAgentSimpleStream(
   prompt: string,
@@ -310,11 +422,11 @@ export async function runLeanAgentSimpleStream(
     return { content: "Interrupted", iterations: 0, completed: false };
   }
 
-  const { model, client } = createAnthropicClient(options);
+  const { model, client } = createOpenAIClient(options);
   const systemPrompt = options.systemPrompt || buildSystemPrompt();
 
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: systemPrompt },
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
     { role: "user", content: prompt },
   ];
 
@@ -329,70 +441,52 @@ export async function runLeanAgentSimpleStream(
     }
 
     iterations++;
-    let streamFinished = false;
-    const capturedTools: CapturedTool[] = [];
-    let currentTool: CapturedTool | null = null;
-    let inputTokens = 0;
 
-    const stream = await client.messages.stream({
+    const stream = await client.chat.completions.create({
       model,
       messages,
-      tools: getAnthropicTools(),
-      max_tokens: 4096,
+      tools: getOpenAITools(),
+      tool_choice: "auto",
+      stream: true,
     });
 
-    for await (const event of stream) {
-      if (event.type === "message_delta") {
-        if (event.usage) {
-          totalCompletionTokens += event.usage.output_tokens || 0;
+    let toolCalls: OpenAI.Chat.ChatCompletionMessage.ToolCall[] = [];
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+
+      if (!delta) continue;
+
+      if (chunk.usage) {
+        totalPromptTokens = chunk.usage.prompt_tokens || 0;
+        totalCompletionTokens = chunk.usage.completion_tokens || 0;
+      }
+
+      if (delta.content) {
+        fullContent += delta.content;
+        onToken?.(delta.content);
+      }
+
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          if (tc.id) {
+            const existing = toolCalls.find((t) => t.id === tc.id);
+            if (!existing) {
+              toolCalls.push({ id: tc.id, type: "function", function: { name: tc.function?.name || "", arguments: tc.function?.arguments || "" } });
+            }
+          }
+          if (tc.function?.arguments) {
+            const tcIndex = toolCalls.length - 1;
+            if (tcIndex >= 0) {
+              toolCalls[tcIndex].function.arguments += tc.function.arguments;
+            }
+          }
         }
       }
-
-      if (event.type === "message_start") {
-        // Could capture usage here if needed
-      }
-
-      if (event.type === "content_block_start") {
-        const block = event.content_block;
-        if (block.type === "tool_use") {
-          currentTool = { id: block.id, name: block.name, input: "" };
-          capturedTools.push(currentTool);
-        }
-      }
-
-      if (event.type === "content_block_delta") {
-        if (event.delta.type === "text_delta") {
-          const text = event.delta.text;
-          fullContent += text;
-          onToken?.(text);
-        } else if (event.delta.type === "input_json_delta" && currentTool) {
-          currentTool.input += (event.delta as any).partial_json || "";
-        }
-      }
-
-      if (event.type === "message_stop") {
-        streamFinished = true;
-        break;
-      }
-    }
-
-    if (!streamFinished) {
-      stream.controller.abort();
-      return {
-        content: "Interrupted",
-        iterations,
-        completed: false,
-        usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
-          promptTokens: totalPromptTokens,
-          completionTokens: totalCompletionTokens,
-          totalTokens: totalPromptTokens + totalCompletionTokens,
-          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
-        } : undefined,
-      };
     }
 
     // No tool calls - done
-    if (capturedTools.length === 0) {
+    if (toolCalls.length === 0) {
       return {
         content: fullContent,
         iterations,
@@ -408,33 +502,21 @@ export async function runLeanAgentSimpleStream(
     }
 
     // Execute tool calls and continue
-    for (const tool of capturedTools) {
-      let toolArgs: Record<string, unknown>;
+    for (const toolCall of toolCalls) {
+      let args: Record<string, unknown>;
       try {
-        toolArgs = JSON.parse(tool.input);
+        args = JSON.parse(toolCall.function.arguments);
       } catch {
-        toolArgs = {};
+        args = {};
       }
 
-      const result = await executeTool(tool.name, toolArgs, { dangerous, abortSignal, cwd: process.cwd() });
+      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd() });
 
       messages.push({
-        role: "user",
-        content: [
-          {
-            type: "tool_result" as const,
-            tool_use_id: tool.id,
-            content: result.error || result.content,
-          },
-        ],
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: result.error || result.content,
       });
-    }
-
-    // First iteration prompt tokens
-    if (iterations === 1 && capturedTools.length > 0) {
-      // Estimate input tokens from message content
-      inputTokens = Math.ceil(JSON.stringify(messages).length / 4);
-      totalPromptTokens = inputTokens;
     }
   }
 
