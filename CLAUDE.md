@@ -11,7 +11,7 @@
 
 Embers is not just a tool — she's a **companion**:
 - **Remembers you** - builds memory over time
-- **Grows** - evolves with each interaction  
+- **Grows** - evolves with each interaction
 - **Has attitude** - personality, not just functionality
 - **Cute by default** - warm, playful, affectionate
 - **Leaves notes** - humanizing micro-behaviors
@@ -24,13 +24,13 @@ Embers is not just a tool — she's a **companion**:
 The core loop never grows. Tools are **sidecar modules**:
 
 ```
-Core Agent (~80 lines, fixed)
+Core Agent (~100 lines, fixed)
 ├── read, write, shell, git (always loaded)
 └── Skills (modular presets):
-    ├── search.ts - glob, grep
-    ├── memory.ts - user memory
-    ├── companion.ts - pet behaviors
-    └── growth.ts - XP, levels
+    ├── skills/simplify.ts - code refactoring
+    ├── skills/review.ts - code review
+    ├── skills/commit.ts - conventional commits
+    └── tools/search.ts - glob, grep
 ```
 
 ## PROJECT STRUCTURE
@@ -40,18 +40,21 @@ meow/
 ├── cli/index.ts              # CLI + REPL
 └── src/
     ├── core/
-    │   ├── lean-agent.ts    # Core loop (~80 lines)
+    │   ├── lean-agent.ts    # Core loop (~100 lines)
     │   ├── task-store.ts    # Task persistence (.meow/tasks.json)
     │   └── session-store.ts # Session logs (~/.meow/sessions/)
+    ├── skills/
+    │   ├── index.ts         # Skill exports
+    │   ├── loader.ts        # Skill loader
+    │   ├── simplify.ts      # Refactoring skill
+    │   ├── review.ts        # Code review skill
+    │   └── commit.ts        # Conventional commit skill
     └── tools/
         └── search.ts        # Search tools (glob, grep)
 
 meowclaw/                     # Desktop App
 ├── electron/                 # Electron main/preload
 └── server/server/            # Next.js dashboard + API
-
-meow/src/skills/             # Embers' companion skills
-docs/research/competitors/    # Competitor research (gitignored)
 ```
 
 ## TOOLS
@@ -59,6 +62,8 @@ docs/research/competitors/    # Competitor research (gitignored)
 **Core Tools:** `read`, `write`, `shell`, `git`
 
 **Search Tools:** `glob` (find files), `grep` (search contents)
+
+**Skills:** `simplify`, `review`, `commit`
 
 ## CLI COMMANDS
 
@@ -84,6 +89,10 @@ bun run start --resume
 /done <id>         # Complete task
 /sessions          # List saved sessions
 /resume <id>       # Resume a session
+/skills            # List available skills
+/simplify <file>   # Refactor code
+/review <file>     # Review code
+/commit            # Git commit helper
 /exit              # Exit (saves session)
 ```
 
@@ -93,9 +102,13 @@ bun run start --resume
 
 **Sessions:** JSONL logs in `~/.meow/sessions/<id>.jsonl`
 
+**Skills:** Modular capabilities loaded from `meow/src/skills/`
+
 **Memory:** `~/.meow/memory/user.json` (future)
 
 **Growth:** Interaction count, unlocks behaviors (future)
+
+**Interrupt:** Ctrl+C to abort in-progress operations
 
 ## DESIGN PRINCIPLES
 
@@ -104,3 +117,4 @@ bun run start --resume
 3. **Humanizing** - treats interactions as moments
 4. **Personality** - sassy when tired, playful when energetic
 5. **Memory** - continuity across sessions
+6. **Core never grows** - capabilities via sidecar skills
