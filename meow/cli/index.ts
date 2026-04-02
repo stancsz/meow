@@ -10,6 +10,7 @@
 import * as readline from "node:readline";
 import { stdin as input, stdout as output, abort } from "node:process";
 import { runLeanAgent, type LeanAgentOptions } from "../src/core/lean-agent.ts";
+import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
 import { createSession, appendToSession, loadSession, listSessions, formatSessions } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
@@ -174,8 +175,10 @@ async function main() {
     return true;
   });
 
-  // Initialize skills
-  console.log(`${colors.dim}Loaded ${skills.length} skills${colors.reset}`);
+  // Initialize tools and skills
+  await initializeToolRegistry();
+  const tools = getAllTools();
+  console.log(`${colors.dim}Loaded ${tools.length} tools and ${skills.length} skills${colors.reset}`);
 
   // Handle --resume flag
   if (resumeSession) {

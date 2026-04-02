@@ -7,12 +7,17 @@
  *             tool_use? → execute → loop
  *             else → return text
  *
- * CORE: ~80 lines of core logic. Tools are sidecars.
+ * CORE: ~60 lines of core logic. Tools come from tool-registry sidecar.
  */
 import OpenAI from "openai";
-import { readFileSync, writeFileSync } from "node:fs";
-import { exec, type ExecOptions } from "node:child_process";
-import { glob, grep } from "../tools/search.ts";
+import {
+  type Tool,
+  type ToolDefinition,
+  type ToolResult,
+  initializeToolRegistry,
+  getToolDefinitions,
+  getTool,
+} from "../sidecars/tool-registry.ts";
 
 // ============================================================================
 // Types
@@ -23,11 +28,6 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
-export interface ToolResult {
-  content: string;
-  error?: string;
-}
-
 export interface LeanAgentOptions {
   model?: string;
   maxIterations?: number;
@@ -35,7 +35,6 @@ export interface LeanAgentOptions {
   baseURL?: string;
   dangerous?: boolean;
   systemPrompt?: string;
-  tools?: ToolDefinition[];
   abortSignal?: AbortSignal;
 }
 
@@ -45,224 +44,13 @@ export interface AgentResult {
   completed: boolean;
 }
 
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
-
-// ============================================================================
-// Core Tools (always available)
-// ============================================================================
-
-function createCoreTools(dangerous: boolean = false) {
-  return {
-    read: async (args: { path: string }): Promise<ToolResult> => {
-      try {
-        const content = readFileSync(args.path, "utf-8");
-        return { content: `[Read ${args.path}]\n${content}` };
-      } catch (e: any) {
-        return { content: "", error: `Failed to read ${args.path}: ${e.message}` };
-      }
-    },
-
-    write: async (args: { path: string; content: string }): Promise<ToolResult> => {
-      try {
-        writeFileSync(args.path, args.content, "utf-8");
-        return { content: `[Wrote ${args.path}]` };
-      } catch (e: any) {
-        return { content: "", error: `Failed to write ${args.path}: ${e.message}` };
-      }
-    },
-
-    shell: async (args: { cmd: string }, abortSignal?: AbortSignal): Promise<ToolResult> => {
-      if (!dangerous) {
-        return {
-          content: "",
-          error: `[shell:BLOCKED] Dangerous operation requires --dangerous flag\nCommand: ${args.cmd}`,
-        };
-      }
-
-      return new Promise((resolve) => {
-        const output: string[] = [];
-        const errOutput: string[] = [];
-
-        const child = exec(args.cmd, { encoding: "utf-8" } as ExecOptions, (error) => {
-          if (error && !output.length && !errOutput.length) {
-            resolve({ content: "", error: `Shell failed: ${error.message}` });
-          }
-        });
-
-        // Handle abort
-        const abortHandler = () => {
-          child.kill("SIGTERM");
-          resolve({ content: "", error: "Shell command aborted" });
-        };
-        abortSignal?.addEventListener("abort", abortHandler);
-
-        child.stdout?.on("data", (data) => {
-          process.stdout.write(data);
-          output.push(data);
-        });
-
-        child.stderr?.on("data", (data) => {
-          process.stderr.write(data);
-          errOutput.push(data);
-        });
-
-        child.on("close", (code) => {
-          abortSignal?.removeEventListener("abort", abortHandler);
-          const fullOutput = output.join("") + errOutput.join("");
-          resolve({
-            content: fullOutput || `[Shell exited with code ${code}]`,
-            error: code === 0 ? undefined : `Exit code: ${code}`,
-          });
-        });
-
-        child.on("error", (e) => {
-          resolve({ content: "", error: `Shell failed: ${e.message}` });
-        });
-      });
-    },
-
-    git: async (args: { cmd: string }): Promise<ToolResult> => {
-      return new Promise((resolve) => {
-        const output: string[] = [];
-        const child = exec(`git ${args.cmd}`, { encoding: "utf-8" });
-
-        child.stdout?.on("data", (data) => {
-          process.stdout.write(data);
-          output.push(data);
-        });
-
-        child.stderr?.on("data", (data) => {
-          process.stderr.write(data);
-        });
-
-        child.on("close", (code) => {
-          resolve({
-            content: output.join("") || `[Git command exited with code ${code}]`,
-            error: code === 0 ? undefined : `Exit code: ${code}`,
-          });
-        });
-
-        child.on("error", (e) => {
-          resolve({ content: "", error: `Git failed: ${e.message}` });
-        });
-      });
-    },
-  };
-}
-
-// ============================================================================
-// Sidecar Skills (modular tools)
-// ============================================================================
-
-const sidecarTools = {
-  glob,
-  grep,
-};
-
-function getToolSchemas(extraTools?: ToolDefinition[]) {
-  const coreSchemas = [
-    {
-      type: "function" as const,
-      function: {
-        name: "read",
-        description: "Read file contents from disk",
-        parameters: {
-          type: "object",
-          properties: { path: { type: "string", description: "File path to read" } },
-          required: ["path"],
-        },
-      },
-    },
-    {
-      type: "function" as const,
-      function: {
-        name: "write",
-        description: "Write content to a file",
-        parameters: {
-          type: "object",
-          properties: {
-            path: { type: "string", description: "File path to write" },
-            content: { type: "string", description: "Content to write" },
-          },
-          required: ["path", "content"],
-        },
-      },
-    },
-    {
-      type: "function" as const,
-      function: {
-        name: "shell",
-        description: "Execute a shell command",
-        parameters: {
-          type: "object",
-          properties: { cmd: { type: "string", description: "Shell command to execute" } },
-          required: ["cmd"],
-        },
-      },
-    },
-    {
-      type: "function" as const,
-      function: {
-        name: "git",
-        description: "Execute a git command",
-        parameters: {
-          type: "object",
-          properties: { cmd: { type: "string", description: "Git arguments (e.g., 'status', 'diff')" } },
-          required: ["cmd"],
-        },
-      },
-    },
-  ];
-
-  // Search tools from sidecar
-  const searchSchemas = [
-    {
-      type: "function" as const,
-      function: {
-        name: "glob",
-        description: "Find files by name pattern. Use ** for recursive matching.",
-        parameters: {
-          type: "object",
-          properties: {
-            pattern: { type: "string", description: "File pattern to match (e.g., '*.ts', '**/*.js')" },
-            cwd: { type: "string", description: "Working directory to search in" },
-          },
-          required: ["pattern"],
-        },
-      },
-    },
-    {
-      type: "function" as const,
-      function: {
-        name: "grep",
-        description: "Search file contents using regex pattern",
-        parameters: {
-          type: "object",
-          properties: {
-            pattern: { type: "string", description: "Regex pattern to search for" },
-            path: { type: "string", description: "Directory or file path to search in" },
-            recursive: { type: "boolean", description: "Search recursively (default true)" },
-          },
-          required: ["pattern"],
-        },
-      },
-    },
-  ];
-
-  return [...coreSchemas, ...searchSchemas];
-}
-
 // ============================================================================
 // LLM Client
 // ============================================================================
 
 function createLLMClient(options: LeanAgentOptions) {
   const apiKey = options.apiKey || process.env.LLM_API_KEY;
-  const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.openai.com/v1";
+  const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.minimax.io/v1";
   const model = options.model || process.env.LLM_MODEL || "MiniMax-M2.7";
 
   if (!apiKey) {
@@ -278,7 +66,14 @@ function createLLMClient(options: LeanAgentOptions) {
       const response = await client.chat.completions.create({
         model,
         messages,
-        tools: getToolSchemas(options.tools),
+        tools: getToolDefinitions().map((t) => ({
+          type: "function" as const,
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+          },
+        })),
       });
       return response;
     },
@@ -290,15 +85,13 @@ function createLLMClient(options: LeanAgentOptions) {
 // ============================================================================
 
 function buildSystemPrompt(): string {
+  const tools = getToolDefinitions();
+  const toolList = tools.map((t) => `- ${t.name}(${describeParams(t.parameters)}) → ${t.description}`).join("\n");
+
   return `You are Meow, a lean sovereign agent.
 
 You have access to tools:
-- read(path) → read file contents
-- write(path, content) → write content to a file
-- shell(cmd) → execute shell command
-- git(cmd) → execute git command
-- glob(pattern) → find files by pattern
-- grep(pattern, path?) → search file contents
+${toolList}
 
 When using tools:
 1. Parse the user's intent
@@ -307,6 +100,14 @@ When using tools:
 4. Always confirm destructive actions
 
 Respond directly unless tool use is clearly necessary.`;
+}
+
+function describeParams(params: Record<string, unknown>): string {
+  if (!params || !params.properties) return "";
+  const props = params.properties as Record<string, { description?: string; type?: string }>;
+  return Object.keys(props)
+    .map((k) => `${k}: ${props[k].type || "any"}`)
+    .join(", ");
 }
 
 // ============================================================================
@@ -319,7 +120,6 @@ export async function runLeanAgent(
 ): Promise<AgentResult> {
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
-  const systemPrompt = options.systemPrompt || buildSystemPrompt();
   const abortSignal = options.abortSignal;
 
   // Check if already aborted
@@ -328,12 +128,13 @@ export async function runLeanAgent(
   }
 
   const llm = createLLMClient(options);
+  const systemPrompt = options.systemPrompt || buildSystemPrompt();
   const messages: any[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: prompt },
   ];
 
-  const coreTools = createCoreTools(dangerous);
+  const context = { dangerous, abortSignal, cwd: process.cwd() };
   let iterations = 0;
 
   while (iterations < maxIterations) {
@@ -363,9 +164,8 @@ export async function runLeanAgent(
       const { name, arguments: argsString } = toolCall.function;
       const args = JSON.parse(argsString);
 
-      // Try core tools first, then sidecar tools
-      const handler = coreTools[name as keyof typeof coreTools] || sidecarTools[name as keyof typeof sidecarTools];
-      if (!handler) {
+      const tool = getTool(name);
+      if (!tool) {
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
@@ -374,7 +174,7 @@ export async function runLeanAgent(
         continue;
       }
 
-      const result = await handler(args as any);
+      const result = await tool.execute(args, context);
 
       // If dangerous operation was blocked, return the error
       if (result.error?.startsWith("[shell:BLOCKED]")) {
@@ -401,6 +201,9 @@ export async function runLeanAgent(
 // ============================================================================
 
 if (import.meta.main) {
+  // Initialize tool registry first
+  await initializeToolRegistry();
+
   const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   const prompt = args.join(" ") || "Hello world";
 
