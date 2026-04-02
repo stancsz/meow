@@ -8,10 +8,11 @@
  *   bun run start --resume           # Resume last session
  */
 import * as readline from "node:readline";
-import { stdin as input, stdout as output } from "node:process";
+import { stdin as input, stdout as output, abort } from "node:process";
 import { runLeanAgent, type LeanAgentOptions } from "../src/core/lean-agent.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
 import { createSession, appendToSession, loadSession, listSessions, formatSessions } from "../src/core/session-store.ts";
+import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 
 const colors = {
   reset: "\x1b[0m",
@@ -28,6 +29,20 @@ const prefix = `${colors.cyan}${colors.bold}🐱 meow > ${colors.reset}`;
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 // ============================================================================
+// AbortController for interrupting
+// ============================================================================
+
+let abortController: AbortController | null = null;
+let isThinking = false;
+
+function interrupt(): void {
+  if (abortController) {
+    abortController.abort();
+    console.log(`\n${colors.yellow}⏹️ Interrupted${colors.reset}`);
+  }
+}
+
+// ============================================================================
 // CLI Helpers
 // ============================================================================
 
@@ -41,30 +56,51 @@ function eraseLine(): void {
 
 async function withSpinner<T>(
   promise: Promise<T>,
-  message: string = "thinking..."
+  message: string = "thinking...",
+  onAbort?: () => void
 ): Promise<T> {
   let frame = 0;
   let interrupted = false;
 
   const spin = async () => {
-    while (!interrupted) {
+    while (!interrupted && isThinking) {
       process.stdout.write(`${colors.dim}${spinnerFrames[frame % spinnerFrames.length]} ${message}${colors.reset}\r`);
       frame++;
       await new Promise((r) => setTimeout(r, 80));
     }
-    eraseLine();
+    if (!interrupted) {
+      eraseLine();
+    }
   };
 
+  abortController = new AbortController();
+  isThinking = true;
   const spinPromise = spin();
+
   try {
-    const result = await promise;
+    const result = await Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        abortController!.signal.addEventListener("abort", () => {
+          reject(new Error("INTERRUPTED"));
+        })
+      ),
+    ]);
     interrupted = true;
+    isThinking = false;
     await spinPromise;
     return result;
-  } catch (e) {
+  } catch (e: any) {
     interrupted = true;
+    isThinking = false;
     await spinPromise;
+    if (e.message === "INTERRUPTED") {
+      onAbort?.();
+      throw new Error("Interrupted");
+    }
     throw e;
+  } finally {
+    abortController = null;
   }
 }
 
@@ -75,7 +111,7 @@ async function withSpinner<T>(
 let currentSessionId: string | null = null;
 let currentSessionMessages: { role: string; content: string; timestamp: string }[] = [];
 
-function saveSession() {
+function saveSession(): void {
   if (currentSessionId && currentSessionMessages.length > 0) {
     appendToSession(currentSessionId, currentSessionMessages);
   }
@@ -138,6 +174,9 @@ async function main() {
     return true;
   });
 
+  // Initialize skills
+  console.log(`${colors.dim}Loaded ${skills.length} skills${colors.reset}`);
+
   // Handle --resume flag
   if (resumeSession) {
     const sessions = listSessions();
@@ -167,6 +206,9 @@ async function main() {
       console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
       console.log(`\n--- Output ---\n${result.content}`);
     } catch (e: any) {
+      if (e.message === "Interrupted") {
+        process.exit(130);
+      }
       console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}`);
       process.exit(1);
     } finally {
@@ -206,14 +248,22 @@ async function main() {
     console.log(`  ${colors.green}/sessions${colors.reset}  List saved sessions`);
     console.log(`  ${colors.green}/resume${colors.reset}    Resume a session (e.g., /resume session_123)`);
     console.log();
+    console.log(`${colors.bold}Skills:${colors.reset}`);
+    for (const skill of skills) {
+      console.log(`  ${colors.green}/${skill.name}${colors.reset}   ${skill.description}`);
+    }
+    console.log();
   };
 
   const runAgent = async (prompt: string, options: LeanAgentOptions = {}) => {
     setCursorVisible(false);
     try {
       const result = await withSpinner(
-        runLeanAgent(prompt, { dangerous, ...options }),
-        "thinking..."
+        runLeanAgent(prompt, { dangerous, ...options, abortSignal: abortController?.signal }),
+        "thinking...",
+        () => {
+          console.log(`\n${colors.yellow}⏹️ Stopped thinking${colors.reset}`);
+        }
       );
       console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
       console.log(`\n--- ---\n${result.content}\n`);
@@ -227,6 +277,10 @@ async function main() {
 
       return result;
     } catch (e: any) {
+      if (e.message === "Interrupted") {
+        console.log(`${colors.yellow}⏹️ Cancelled${colors.reset}\n`);
+        return;
+      }
       console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}\n`);
       throw e;
     } finally {
@@ -326,6 +380,12 @@ Respond with ONLY the plan.`;
       return;
     }
 
+    if (trimmed === "/skills") {
+      console.log(formatSkillsList());
+      console.log();
+      return;
+    }
+
     // Task commands
     if (trimmed === "/tasks") {
       const tasks = listTasks();
@@ -398,6 +458,25 @@ Respond with ONLY the plan.`;
       return;
     }
 
+    // Check for skill commands
+    if (trimmed.startsWith("/")) {
+      const parts = trimmed.slice(1).split(/\s+/);
+      const skillName = parts[0];
+      const skillArgs = parts.slice(1).join(" ");
+
+      const skill = findSkill(skillName);
+      if (skill) {
+        console.log(`${colors.dim}Running skill: /${skill.name}${colors.reset}`);
+        const result = await skill.execute(skillArgs, { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    }
+
     // Run agent with conversation context
     conversation.push({ role: "user", content: trimmed });
     try {
@@ -425,9 +504,13 @@ Respond with ONLY the plan.`;
 
   // Handle Ctrl+C gracefully
   process.on("SIGINT", () => {
-    saveSession();
-    setCursorVisible(true);
-    console.log(`\n${colors.yellow}Interrupted. Use /exit to quit.${colors.reset}\n`);
+    if (isThinking) {
+      interrupt();
+    } else {
+      saveSession();
+      setCursorVisible(true);
+      console.log(`\n${colors.yellow}Interrupted. Use /exit to quit.${colors.reset}\n`);
+    }
   });
 
   promptUser();

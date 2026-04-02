@@ -36,6 +36,7 @@ export interface LeanAgentOptions {
   dangerous?: boolean;
   systemPrompt?: string;
   tools?: ToolDefinition[];
+  abortSignal?: AbortSignal;
 }
 
 export interface AgentResult {
@@ -74,7 +75,7 @@ function createCoreTools(dangerous: boolean = false) {
       }
     },
 
-    shell: async (args: { cmd: string }): Promise<ToolResult> => {
+    shell: async (args: { cmd: string }, abortSignal?: AbortSignal): Promise<ToolResult> => {
       if (!dangerous) {
         return {
           content: "",
@@ -86,7 +87,18 @@ function createCoreTools(dangerous: boolean = false) {
         const output: string[] = [];
         const errOutput: string[] = [];
 
-        const child = exec(args.cmd, { encoding: "utf-8" } as ExecOptions);
+        const child = exec(args.cmd, { encoding: "utf-8" } as ExecOptions, (error) => {
+          if (error && !output.length && !errOutput.length) {
+            resolve({ content: "", error: `Shell failed: ${error.message}` });
+          }
+        });
+
+        // Handle abort
+        const abortHandler = () => {
+          child.kill("SIGTERM");
+          resolve({ content: "", error: "Shell command aborted" });
+        };
+        abortSignal?.addEventListener("abort", abortHandler);
 
         child.stdout?.on("data", (data) => {
           process.stdout.write(data);
@@ -99,6 +111,7 @@ function createCoreTools(dangerous: boolean = false) {
         });
 
         child.on("close", (code) => {
+          abortSignal?.removeEventListener("abort", abortHandler);
           const fullOutput = output.join("") + errOutput.join("");
           resolve({
             content: fullOutput || `[Shell exited with code ${code}]`,
@@ -307,6 +320,12 @@ export async function runLeanAgent(
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
   const systemPrompt = options.systemPrompt || buildSystemPrompt();
+  const abortSignal = options.abortSignal;
+
+  // Check if already aborted
+  if (abortSignal?.aborted) {
+    return { content: "Interrupted", iterations: 0, completed: false };
+  }
 
   const llm = createLLMClient(options);
   const messages: any[] = [
@@ -318,6 +337,11 @@ export async function runLeanAgent(
   let iterations = 0;
 
   while (iterations < maxIterations) {
+    // Check for abort before each iteration
+    if (abortSignal?.aborted) {
+      return { content: "Interrupted", iterations, completed: false };
+    }
+
     iterations++;
 
     const response = await llm.generate(messages);
