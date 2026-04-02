@@ -47,18 +47,8 @@ _override.tf.json
 terraform.rc
 **.tar
 
-# Old/deprecated folders at ROOT level only (archived to old-simpleclaw/)
+# Legacy archived directories (see Git history for reference)
 /.agents/
-/electron/
-/examples/
-/loop/
-/scripts/
-/server/
-/src/
-/terraform/
-/test/
-/test-data/
-/tmp/
 
 # Specific subdirs in packages to ignore (not the whole packages/)
 packages/core/
