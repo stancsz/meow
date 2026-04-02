@@ -359,9 +359,11 @@ Missing/incomplete sidecars:
 ## Dogfood Findings (2026-04-03)
 
 ### Fixed During Dogfood
-1. **Multi-turn tool calls broken** — assistant message with tool_calls was never pushed to messages array before tool results. Fixed by pushing assistant message before tool results.
-2. **Glob pattern matching broken** — `git ls-files --others` only returned untracked files, and pattern `**/*.ts` was being simplified to "ts" (matching anything containing "ts"). Fixed with proper glob-to-regex conversion.
-3. **compactMessages crashed** — tool_call messages have `content: undefined`. Fixed by handling null/undefined content.
+1. **Multi-turn tool calls broken** — assistant message with tool_calls was never pushed to messages array before tool results. Fixed by pushing assistant message before tool results. ✅ (e0c359a)
+2. **Glob pattern matching broken** — `git ls-files --others` only returned untracked files, and pattern `**/*.ts` was being simplified to "ts" (matching anything containing "ts"). Fixed with proper glob-to-regex conversion. ✅ (e0c359a)
+3. **compactMessages crashed** — tool_call messages have `content: undefined`. Fixed by handling null/undefined content. ✅ (e0c359a)
+4. **OpenAI SDK migration** — switched from Anthropic to OpenAI SDK for MiniMax compatibility. Streaming works, env loading added. ✅ (c667c45)
+5. **OODA auto-agent** — observe-orient-decide-act loop with tick/auto modes. Dogfood: tick mode gives step-by-step control, auto mode runs autonomously. ✅ (ba4bf54/c667c45)
 
 ### Test Failures
 - **113 tests fail** due to path resolution issues — tests use relative paths like `"meow/src/core/lean-agent.ts"` but CWD is repo root
