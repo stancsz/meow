@@ -80,13 +80,14 @@ function compactMessages(messages: any[], maxTokens: number): any[] {
   const systemMsg = messages[0];
   const otherMessages = messages.slice(1);
 
-  let totalTokens = estimateTokens(systemMsg.content);
+  let totalTokens = estimateTokens(systemMsg.content || "");
   const keptMessages: any[] = [systemMsg];
   let summaryAdded = false;
 
   for (let i = otherMessages.length - 1; i >= 0; i--) {
     const msg = otherMessages[i];
-    const msgTokens = estimateTokens(msg.content) + 10;
+    const msgContent = msg.content || "";
+    const msgTokens = estimateTokens(msgContent) + 10;
     if (totalTokens + msgTokens < maxTokens * 0.6) {
       keptMessages.unshift(msg);
       totalTokens += msgTokens;
@@ -221,6 +222,18 @@ export async function runLeanAgent(
       const { content, tool_calls } = choice.message;
       lastContent = content || lastContent;
 
+      // Push assistant message with tool_calls to messages array
+      if (tool_calls && tool_calls.length > 0) {
+        messages.push({
+          role: "assistant",
+          tool_calls: tool_calls.map((tc) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: tc.function,
+          })),
+        });
+      }
+
       // Track usage if available
       if (response.usage) {
         totalPromptTokens += response.usage.prompt_tokens || 0;
@@ -259,9 +272,8 @@ export async function runLeanAgent(
           };
         }
 
-        // MiniMax workaround: strip "call_function_" prefix from tool IDs
-        // MiniMax returns IDs like "call_function_xxx" but can't correlate them on return
-        const toolId = toolCall.id?.replace(/^call_function_/, "") || toolCall.id;
+        // Use tool call ID as-is (OpenAI SDK format)
+        const toolId = toolCall.id;
 
         messages.push({
           role: "tool",
@@ -285,7 +297,7 @@ export async function runLeanAgent(
 
     // Check for context compaction
     const totalTokensCalc = messages.reduce((sum, m) => {
-      const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+      const c = typeof m.content === "string" ? m.content : (m.content ? String(m.content) : "");
       return sum + estimateTokens(c);
     }, 0);
     if (totalTokensCalc > maxTokens) {

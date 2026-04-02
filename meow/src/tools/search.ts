@@ -21,15 +21,22 @@ export async function glob(args: { pattern: string; cwd?: string }): Promise<Too
   try {
     const cwd = args.cwd || process.cwd();
 
-    // Use git ls-files if in a git repo for speed
+    // Use git ls-files if in a git repo for speed (include tracked and untracked)
     try {
       const output = execSync(
-        `git ls-files --others --exclude-standard -z`,
+        `git ls-files -z`,
         { cwd, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
       );
       const allFiles = output.split("\0").filter(Boolean);
-      const pattern = args.pattern.replace("**/", "").replace("**", "");
-      const matched = allFiles.filter((f) => f.includes(pattern));
+      // Convert glob pattern to regex - use placeholder to preserve ** before replacing *
+      const pattern = args.pattern
+        .replace(/\./g, "\\.")
+        .replace(/\*\*/g, "__DS__")
+        .replace(/\*/g, "[^/]*")
+        .replace(/__DS__/g, ".*")
+        .replace(/\?/g, ".");
+      const regex = new RegExp(`^${pattern}$`);
+      const matched = allFiles.filter((f) => regex.test(f));
       return { content: matched.join("\n") };
     } catch {
       // Fallback to find command
