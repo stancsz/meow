@@ -45,7 +45,7 @@ _override.tf
 _override.tf.json
 .terraformrc
 terraform.rc
-**.tar
+*.tar
 
 # Legacy archived directories (see Git history for reference)
 /.agents/
@@ -61,4 +61,13 @@ docs/research/competitors/*/
 .meow/
 
 # Test output
-test-output/
+test-output*/
+playwright-report/
+test-results/
+
+# Bundler cache
+.parcel-cache/
+
+# Editor swap files
+*.swp
+*.swo
