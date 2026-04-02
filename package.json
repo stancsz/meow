@@ -39,6 +39,7 @@
     "package:linux": "electron-builder --linux"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
     "@happy-dom/global-registrator": "^20.8.4",
     "@jackwener/opencli": "^1.5.2",
     "@supabase/supabase-js": "^2.101.1",

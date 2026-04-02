@@ -28,7 +28,7 @@ const TEST_TS_FILE = join(TEST_DIR, "test.ts");
 const TEST_JSON_FILE = join(TEST_DIR, "test.json");
 
 function loadEnv() {
-  const envPath = join(process.cwd(), "../../.env");
+  const envPath = join(process.cwd(), "../.env");
   if (existsSync(envPath)) {
     const content = readFileSync(envPath, "utf-8");
     for (const line of content.split("\n")) {

@@ -1,33 +1,19 @@
 /**
  * lean-agent.ts
  *
- * Meow's lean agent loop. Inspired by Claude Code's core pattern:
- * User → messages[] → LLM API → response
- *                        ↓
- *             tool_use? → execute → loop
- *             else → return text
- *
- * CORE: ~60 lines of core logic. Tools come from tool-registry sidecar.
+ * Meow's lean agent loop using Anthropic SDK.
+ * Supports MiniMax-M2.7 via MiniMax's /anthropic endpoint.
  */
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import {
-  type Tool,
-  type ToolDefinition,
-  type ToolResult,
   initializeToolRegistry,
   getToolDefinitions,
-  getTool,
   executeTool,
 } from "../sidecars/tool-registry.ts";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-export interface ToolCall {
-  name: string;
-  arguments: Record<string, unknown>;
-}
 
 export interface LeanAgentOptions {
   model?: string;
@@ -37,84 +23,20 @@ export interface LeanAgentOptions {
   dangerous?: boolean;
   systemPrompt?: string;
   abortSignal?: AbortSignal;
-  maxTokens?: number;  // Max tokens before compaction (default ~80k)
-  // Message accumulation for multi-turn conversations
-  messages?: any[];    // Existing conversation history to continue
-}
-
-// ============================================================================
-// Context Compaction
-// ============================================================================
-
-function estimateTokens(text: string): number {
-  // Rough estimate: ~4 chars per token for English
-  return Math.ceil(text.length / 4);
-}
-
-function compactMessages(messages: any[], maxTokens: number): any[] {
-  if (messages.length <= 4) return messages;  // Keep system + 1-2 exchanges minimum
-
-  const systemMsg = messages[0];
-  const otherMessages = messages.slice(1);
-
-  let totalTokens = estimateTokens(systemMsg.content);
-
-  // Find how many messages we can keep
-  const keptMessages: any[] = [systemMsg];
-  let summaryAdded = false;
-
-  for (let i = otherMessages.length - 1; i >= 0; i--) {
-    const msg = otherMessages[i];
-    const msgTokens = estimateTokens(msg.content) + 10;  // overhead per message
-    if (totalTokens + msgTokens < maxTokens * 0.6) {
-      keptMessages.unshift(msg);
-      totalTokens += msgTokens;
-    } else if (!summaryAdded) {
-      // Replace remaining messages with a summary
-      const summarizedContent = `[Previous conversation summarized - ${i} messages condensed]`;
-      keptMessages.unshift({
-        role: "system",
-        content: summarizedContent,
-      });
-      summaryAdded = true;
-      break;
-    }
-  }
-
-  return keptMessages;
+  maxTokens?: number;
+  messages?: { role: string; content: string }[];
 }
 
 export interface AgentResult {
   content: string;
   iterations: number;
   completed: boolean;
-  messages?: any[];  // Updated conversation for accumulation
+  messages?: { role: string; content: string }[];
   usage?: {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
-    estimatedCost: number;  // in cents (USD)
-  };
-}
-
-// ============================================================================
-// Streaming Types
-// ============================================================================
-
-export interface StreamEvent {
-  type: "content" | "tool_start" | "tool_end" | "done" | "error";
-  content?: string;
-  toolId?: string;
-  toolName?: string;
-  toolResult?: string;
-  error?: string;
-  // When true, caller should submit tool result back to LLM and continue
-  needsContinuation?: boolean;
-  // Usage stats from the API response (available on final done event)
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
+    estimatedCost: number;
   };
 }
 
@@ -124,12 +46,8 @@ export type TokenHandler = (token: string) => void;
 // Cost Estimation
 // ============================================================================
 
-// Approximate pricing per 1M tokens (USD cents)
-// MiniMax M2.7 pricing is not public, using conservative estimates
 const COST_PER_MILLION_TOKENS: Record<string, { input: number; output: number }> = {
-  "MiniMax-M2.7": { input: 0.5, output: 1.5 },  // Approximate
-  "gpt-4o": { input: 2.5, output: 10 },
-  "gpt-4o-mini": { input: 0.15, output: 0.6 },
+  "MiniMax-M2.7": { input: 0.5, output: 1.5 },
   "claude-3-5-sonnet": { input: 3, output: 15 },
   "claude-3-5-haiku": { input: 0.8, output: 4 },
 };
@@ -138,127 +56,64 @@ function estimateCost(promptTokens: number, completionTokens: number, model: str
   const pricing = COST_PER_MILLION_TOKENS[model] || COST_PER_MILLION_TOKENS["MiniMax-M2.7"];
   const inputCost = (promptTokens / 1_000_000) * pricing.input;
   const outputCost = (completionTokens / 1_000_000) * pricing.output;
-  return (inputCost + outputCost) * 100;  // Return in cents
+  return (inputCost + outputCost) * 100;
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function compactMessages(messages: any[], maxTokens: number): any[] {
+  if (messages.length <= 4) return messages;
+
+  const systemMsg = messages[0];
+  const otherMessages = messages.slice(1);
+
+  let totalTokens = estimateTokens(systemMsg.content);
+  const keptMessages: any[] = [systemMsg];
+  let summaryAdded = false;
+
+  for (let i = otherMessages.length - 1; i >= 0; i--) {
+    const msg = otherMessages[i];
+    const msgTokens = estimateTokens(msg.content) + 10;
+    if (totalTokens + msgTokens < maxTokens * 0.6) {
+      keptMessages.unshift(msg);
+      totalTokens += msgTokens;
+    } else if (!summaryAdded) {
+      keptMessages.unshift({
+        role: "system",
+        content: `[Previous conversation summarized - ${i} messages condensed]`,
+      });
+      summaryAdded = true;
+      break;
+    }
+  }
+
+  return keptMessages;
 }
 
 // ============================================================================
-// LLM Client
+// Anthropic Client
 // ============================================================================
 
-function createLLMClient(options: LeanAgentOptions) {
+function createAnthropicClient(options: LeanAgentOptions) {
   const apiKey = options.apiKey || process.env.LLM_API_KEY;
-  const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.minimax.io/v1";
+  const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic";
   const model = options.model || process.env.LLM_MODEL || "MiniMax-M2.7";
 
   if (!apiKey) {
     throw new Error("LLM_API_KEY is required");
   }
 
-  const client = new OpenAI({ apiKey, baseURL });
-
-  return {
-    model,
-    client,
-    generate: async (messages: any[]) => {
-      const response = await client.chat.completions.create({
-        model,
-        messages,
-        tools: getToolDefinitions().map((t) => ({
-          type: "function" as const,
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters,
-          },
-        })),
-      });
-      return {
-        response,
-        usage: response.usage ? {
-          promptTokens: response.usage.prompt_tokens || 0,
-          completionTokens: response.usage.completion_tokens || 0,
-          totalTokens: response.usage.total_tokens || 0,
-        } : undefined,
-      };
+  const client = new Anthropic({
+    apiKey,
+    baseURL,
+    defaultHeaders: {
+      "anthropic-version": "2023-06-01",
     },
-    generateStream: async function* (messages: any[], onToken?: TokenHandler): AsyncGenerator<StreamEvent> {
-      const toolDefinitions = getToolDefinitions();
-      const stream = await client.chat.completions.create({
-        model,
-        messages,
-        stream: true,
-        tools: toolDefinitions.map((t) => ({
-          type: "function" as const,
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters,
-          },
-        })),
-      });
+  });
 
-      let currentToolCall: { id?: string; name?: string; arguments?: string } | null = null;
-      let contentBuffer = "";
-      let streamUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | null = null;
-
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta;
-
-        // Capture usage from final chunk
-        if (chunk.usage) {
-          streamUsage = {
-            promptTokens: chunk.usage.prompt_tokens || 0,
-            completionTokens: chunk.usage.completion_tokens || 0,
-            totalTokens: chunk.usage.total_tokens || 0,
-          };
-        }
-
-        if (!delta) continue;
-
-        // Handle content delta
-        if (delta.content) {
-          contentBuffer += delta.content;
-          onToken?.(delta.content);
-          yield { type: "content", content: delta.content };
-        }
-
-        // Handle tool calls
-        if (delta.tool_calls) {
-          for (const toolCall of delta.tool_calls) {
-            if (toolCall.id) {
-              currentToolCall = { id: toolCall.id };
-            }
-            if (toolCall.function?.name) {
-              currentToolCall!.name = toolCall.function.name;
-              yield { type: "tool_start", toolId: toolCall.id, toolName: toolCall.function.name };
-            }
-            if (toolCall.function?.arguments) {
-              currentToolCall!.arguments = (currentToolCall!.arguments || "") + toolCall.function.arguments;
-            }
-          }
-        }
-      }
-
-      // Parse and execute tool calls if present
-      if (currentToolCall?.name && currentToolCall?.arguments) {
-        try {
-          const args = JSON.parse(currentToolCall.arguments);
-          const result = await executeTool(currentToolCall.name!, args, { dangerous: options.dangerous || false, abortSignal: options.abortSignal, cwd: process.cwd() });
-          yield { type: "tool_end", toolName: currentToolCall.name, toolResult: result.error || result.content };
-          // Signal that we need to continue with the tool result
-          yield { type: "done", needsContinuation: true };
-          return;  // Exit so caller can call again with tool result
-        } catch (e: any) {
-          yield { type: "error", error: `Tool execution failed: ${e.message}` };
-          yield { type: "done" };
-          return;
-        }
-      }
-
-      // Yield usage with done event if available
-      yield { type: "done", usage: streamUsage || undefined };
-    },
-  };
+  return { model, client };
 }
 
 // ============================================================================
@@ -267,7 +122,7 @@ function createLLMClient(options: LeanAgentOptions) {
 
 function buildSystemPrompt(): string {
   const tools = getToolDefinitions();
-  const toolList = tools.map((t) => `- ${t.name}(${describeParams(t.parameters)}) → ${t.description}`).join("\n");
+  const toolList = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
 
   return `You are Meow, a lean sovereign agent.
 
@@ -283,16 +138,20 @@ When using tools:
 Respond directly unless tool use is clearly necessary.`;
 }
 
-function describeParams(params: Record<string, unknown>): string {
-  if (!params || !params.properties) return "";
-  const props = params.properties as Record<string, { description?: string; type?: string }>;
-  return Object.keys(props)
-    .map((k) => `${k}: ${props[k].type || "any"}`)
-    .join(", ");
+// ============================================================================
+// Tool Definitions for Anthropic
+// ============================================================================
+
+function getAnthropicTools() {
+  return getToolDefinitions().map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters,
+  }));
 }
 
 // ============================================================================
-// Core Agent Loop
+// Core Agent Loop (non-streaming)
 // ============================================================================
 
 export async function runLeanAgent(
@@ -302,108 +161,115 @@ export async function runLeanAgent(
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
-  const maxTokens = options.maxTokens || 80000;  // Default to 80k tokens
+  const maxTokens = options.maxTokens || 80000;
 
-  // Check if already aborted
   if (abortSignal?.aborted) {
     return { content: "Interrupted", iterations: 0, completed: false };
   }
 
-  const llm = createLLMClient(options);
+  const { model, client } = createAnthropicClient(options);
   const systemPrompt = options.systemPrompt || buildSystemPrompt();
 
-  // Message accumulation: use existing messages if provided, otherwise create fresh
-  let messages: any[];
+  let messages: Anthropic.MessageParam[];
   if (options.messages && options.messages.length > 0) {
-    messages = [...options.messages, { role: "user", content: prompt }];
+    messages = [
+      { role: "user", content: systemPrompt },
+      ...options.messages,
+      { role: "user", content: prompt },
+    ];
   } else {
     messages = [
-      { role: "system", content: systemPrompt },
+      { role: "user", content: systemPrompt },
       { role: "user", content: prompt },
     ];
   }
 
   const context = { dangerous, abortSignal, cwd: process.cwd() };
   let iterations = 0;
-
-  // Accumulate usage across iterations
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
 
   while (iterations < maxIterations) {
-    // Check for abort before each iteration
     if (abortSignal?.aborted) {
       return { content: "Interrupted", iterations, completed: false };
     }
 
     iterations++;
 
-    const { response, usage } = await llm.generate(messages);
-    const choice = response.choices[0];
+    const response = await client.messages.create({
+      model,
+      messages,
+      tools: getAnthropicTools(),
+      max_tokens: 4096,
+    });
 
-    // Accumulate usage
-    if (usage) {
-      totalPromptTokens += usage.promptTokens;
-      totalCompletionTokens += usage.completionTokens;
+    if (response.usage) {
+      totalPromptTokens += response.usage.input_tokens || 0;
+      totalCompletionTokens += response.usage.output_tokens || 0;
     }
 
-    if (!choice?.message) {
-      break;
+    let textContent = "";
+    const toolUses: Anthropic.ToolUseBlock[] = [];
+
+    for (const block of response.content) {
+      if (block.type === "text") {
+        textContent += block.text;
+      } else if (block.type === "tool_use") {
+        toolUses.push(block);
+      }
     }
 
-    const { content, tool_calls } = choice.message;
-
-    // No tool calls - return content directly
-    if (!tool_calls || tool_calls.length === 0) {
-      // Add assistant response to messages for accumulation
-      messages.push({ role: "assistant", content: content || "" });
+    if (toolUses.length === 0) {
       return {
-        content: content || "",
+        content: textContent || "",
         iterations,
         completed: true,
         messages,
-        usage: usage ? {
-          ...usage,
-          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
-        } : undefined,
+        usage: {
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          totalTokens: totalPromptTokens + totalCompletionTokens,
+          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
+        },
       };
     }
 
-    // Execute tool calls
-    for (const toolCall of tool_calls) {
-      const { name, arguments: argsString } = toolCall.function;
-      const args = JSON.parse(argsString);
+    for (const toolUse of toolUses) {
+      const result = await executeTool(toolUse.name, toolUse.input, context);
 
-      const result = await executeTool(name, args, context);
-
-      // If dangerous operation was blocked, return the error
       if (result.error?.startsWith("[shell:BLOCKED]") || result.error?.includes(":BLOCKED]")) {
         return {
           content: result.error,
           iterations,
           completed: false,
           messages,
-          usage: usage ? {
-            ...usage,
-            estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
-          } : undefined,
+          usage: {
+            promptTokens: totalPromptTokens,
+            completionTokens: totalCompletionTokens,
+            totalTokens: totalPromptTokens + totalCompletionTokens,
+            estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
+          },
         };
       }
 
       messages.push({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: result.error || result.content,
+        role: "user",
+        content: [
+          {
+            type: "tool_result" as const,
+            tool_use_id: toolUse.id,
+            content: result.error || result.content,
+          },
+        ],
       });
     }
 
-    // Check for context compaction
-    const totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
-    if (totalTokens > maxTokens) {
-      const compacted = compactMessages(messages, maxTokens);
-      if (compacted.length < messages.length) {
-        messages = compacted;
-      }
+    const totalTokensCalc = messages.reduce((sum, m) => {
+      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+      return sum + estimateTokens(content);
+    }, 0);
+    if (totalTokensCalc > maxTokens) {
+      messages = compactMessages(messages, maxTokens);
     }
   }
 
@@ -412,12 +278,12 @@ export async function runLeanAgent(
     iterations,
     completed: false,
     messages,
-    usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
+    usage: {
       promptTokens: totalPromptTokens,
       completionTokens: totalCompletionTokens,
       totalTokens: totalPromptTokens + totalCompletionTokens,
-      estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
-    } : undefined,
+      estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
+    },
   };
 }
 
@@ -425,86 +291,12 @@ export async function runLeanAgent(
 // Streaming Agent Loop
 // ============================================================================
 
-/**
- * Streaming version of runLeanAgent.
- * Yields content tokens as they arrive from the API.
- */
-export async function runLeanAgentStream(
-  prompt: string,
-  options: LeanAgentOptions = {},
-  onToken?: TokenHandler
-): Promise<AsyncGenerator<StreamEvent>> {
-  const maxIterations = options.maxIterations || 10;
-  const dangerous = options.dangerous || false;
-  const abortSignal = options.abortSignal;
-  const maxTokens = options.maxTokens || 80000;
-
-  if (abortSignal?.aborted) {
-    return (async function* () {
-      yield { type: "error", error: "Interrupted" };
-    })();
-  }
-
-  const llm = createLLMClient(options);
-  const systemPrompt = options.systemPrompt || buildSystemPrompt();
-  let messages: any[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: prompt },
-  ];
-
-  const context = { dangerous, abortSignal, cwd: process.cwd() };
-  let iterations = 0;
-
-  async function* streamGenerator(): AsyncGenerator<StreamEvent> {
-    while (iterations < maxIterations) {
-      if (abortSignal?.aborted) {
-        yield { type: "error", error: "Interrupted" };
-        return;
-      }
-
-      iterations++;
-
-      let fullContent = "";
-      let toolCallToExecute: { id?: string; name?: string; arguments?: string } | null = null;
-
-      // Stream the response
-      for await (const event of llm.generateStream(messages, onToken)) {
-        if (event.type === "content" && event.content) {
-          fullContent += event.content;
-        }
-        if (event.type === "tool_start" && event.toolName) {
-          toolCallToExecute = { name: event.toolName };
-        }
-        if (event.type === "tool_end" && event.toolResult) {
-          if (toolCallToExecute) {
-            toolCallToExecute.arguments = toolCallToExecute.arguments || "";
-          }
-        }
-        yield event;
-      }
-
-      // If we have content, return it
-      if (fullContent) {
-        yield { type: "done", content: fullContent };
-        return;
-      }
-
-      // If no content but tool call detected, execute it
-      // Note: This simplified version doesn't fully handle tool execution in stream mode
-      yield { type: "done", content: "" };
-      return;
-    }
-
-    yield { type: "error", error: "Max iterations reached" };
-  }
-
-  return streamGenerator();
+interface CapturedTool {
+  id: string;
+  name: string;
+  input: string;
 }
 
-/**
- * Simple streaming version that returns combined content.
- * Handles tool calls properly by continuing the stream after tool execution.
- */
 export async function runLeanAgentSimpleStream(
   prompt: string,
   options: LeanAgentOptions = {},
@@ -518,24 +310,74 @@ export async function runLeanAgentSimpleStream(
     return { content: "Interrupted", iterations: 0, completed: false };
   }
 
-  const llm = createLLMClient(options);
+  const { model, client } = createAnthropicClient(options);
   const systemPrompt = options.systemPrompt || buildSystemPrompt();
-  const messages: any[] = [
-    { role: "system", content: systemPrompt },
+
+  const messages: Anthropic.MessageParam[] = [
+    { role: "user", content: systemPrompt },
     { role: "user", content: prompt },
   ];
 
   let fullContent = "";
   let iterations = 0;
-  let lastToolCallId: string | undefined;
-  let lastToolName: string | undefined;
-
-  // Accumulate usage across all streaming responses
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
+      return { content: "Interrupted", iterations, completed: false };
+    }
+
+    iterations++;
+    let streamFinished = false;
+    const capturedTools: CapturedTool[] = [];
+    let currentTool: CapturedTool | null = null;
+    let inputTokens = 0;
+
+    const stream = await client.messages.stream({
+      model,
+      messages,
+      tools: getAnthropicTools(),
+      max_tokens: 4096,
+    });
+
+    for await (const event of stream) {
+      if (event.type === "message_delta") {
+        if (event.usage) {
+          totalCompletionTokens += event.usage.output_tokens || 0;
+        }
+      }
+
+      if (event.type === "message_start") {
+        // Could capture usage here if needed
+      }
+
+      if (event.type === "content_block_start") {
+        const block = event.content_block;
+        if (block.type === "tool_use") {
+          currentTool = { id: block.id, name: block.name, input: "" };
+          capturedTools.push(currentTool);
+        }
+      }
+
+      if (event.type === "content_block_delta") {
+        if (event.delta.type === "text_delta") {
+          const text = event.delta.text;
+          fullContent += text;
+          onToken?.(text);
+        } else if (event.delta.type === "input_json_delta" && currentTool) {
+          currentTool.input += (event.delta as any).partial_json || "";
+        }
+      }
+
+      if (event.type === "message_stop") {
+        streamFinished = true;
+        break;
+      }
+    }
+
+    if (!streamFinished) {
+      stream.controller.abort();
       return {
         content: "Interrupted",
         iterations,
@@ -544,85 +386,68 @@ export async function runLeanAgentSimpleStream(
           promptTokens: totalPromptTokens,
           completionTokens: totalCompletionTokens,
           totalTokens: totalPromptTokens + totalCompletionTokens,
-          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
         } : undefined,
       };
     }
 
-    let needsContinuation = false;
-
-    for await (const event of llm.generateStream(messages, onToken)) {
-      if (event.type === "content" && event.content) {
-        fullContent += event.content;
-      }
-      if (event.type === "tool_start") {
-        lastToolCallId = event.toolId;
-        lastToolName = event.toolName;
-      }
-      if (event.type === "error") {
-        return {
-          content: event.error || "Stream error",
-          iterations,
-          completed: false,
-          usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
-            promptTokens: totalPromptTokens,
-            completionTokens: totalCompletionTokens,
-            totalTokens: totalPromptTokens + totalCompletionTokens,
-            estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
-          } : undefined,
-        };
-      }
-      if (event.type === "tool_end" && event.toolResult) {
-        // Add tool result to messages for continuation
-        messages.push({
-          role: "tool",
-          tool_call_id: lastToolCallId,
-          content: event.toolResult,
-        });
-      }
-      if (event.type === "done") {
-        if (event.usage) {
-          totalPromptTokens += event.usage.promptTokens;
-          totalCompletionTokens += event.usage.completionTokens;
-        }
-        if (event.needsContinuation) {
-          needsContinuation = true;
-        }
-        break;
-      }
+    // No tool calls - done
+    if (capturedTools.length === 0) {
+      return {
+        content: fullContent,
+        iterations,
+        completed: true,
+        messages,
+        usage: {
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          totalTokens: totalPromptTokens + totalCompletionTokens,
+          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
+        },
+      };
     }
 
-    iterations++;
+    // Execute tool calls and continue
+    for (const tool of capturedTools) {
+      let toolArgs: Record<string, unknown>;
+      try {
+        toolArgs = JSON.parse(tool.input);
+      } catch {
+        toolArgs = {};
+      }
 
-    if (needsContinuation) {
-      // Continue to next iteration to submit tool result to LLM
-      continue;
+      const result = await executeTool(tool.name, toolArgs, { dangerous, abortSignal, cwd: process.cwd() });
+
+      messages.push({
+        role: "user",
+        content: [
+          {
+            type: "tool_result" as const,
+            tool_use_id: tool.id,
+            content: result.error || result.content,
+          },
+        ],
+      });
     }
 
-    // No continuation needed, we're done
-    return {
-      content: fullContent,
-      iterations,
-      completed: true,
-      usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
-        promptTokens: totalPromptTokens,
-        completionTokens: totalCompletionTokens,
-        totalTokens: totalPromptTokens + totalCompletionTokens,
-        estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
-      } : undefined,
-    };
+    // First iteration prompt tokens
+    if (iterations === 1 && capturedTools.length > 0) {
+      // Estimate input tokens from message content
+      inputTokens = Math.ceil(JSON.stringify(messages).length / 4);
+      totalPromptTokens = inputTokens;
+    }
   }
 
   return {
     content: fullContent || "Max iterations reached",
     iterations,
     completed: false,
-    usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
+    usage: {
       promptTokens: totalPromptTokens,
       completionTokens: totalCompletionTokens,
       totalTokens: totalPromptTokens + totalCompletionTokens,
-      estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
-    } : undefined,
+      estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
+    },
   };
 }
 
@@ -631,7 +456,6 @@ export async function runLeanAgentSimpleStream(
 // ============================================================================
 
 if (import.meta.main) {
-  // Initialize tool registry first
   await initializeToolRegistry();
 
   const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -643,6 +467,9 @@ if (import.meta.main) {
   try {
     const result = await runLeanAgent(prompt);
     console.log(`\n✅ Completed in ${result.iterations} iteration(s)`);
+    if (result.usage) {
+      console.log(`[${result.usage.totalTokens} tokens · ~$${result.usage.estimatedCost.toFixed(2)}]`);
+    }
     console.log(`\n--- Output ---\n${result.content}`);
   } catch (e: any) {
     console.error(`❌ Error: ${e.message}`);
