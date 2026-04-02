@@ -332,19 +332,20 @@ export async function executeTool(
   }
 
   if (permission.action === "ask") {
-    const { promptPermission } = await import("./permissions.ts");
-    const { dangerous } = context;
-
     // If already in dangerous mode, auto-allow
-    if (dangerous) {
+    if (context.dangerous) {
       // Continue to execute
     } else {
-      // Check if we should prompt - this is a sync operation
-      // For now, auto-deny in non-dangerous ask mode
-      return {
-        content: "",
-        error: `[${toolName}:BLOCKED] Tool requires permission. Use --dangerous flag to run.`,
-      };
+      // Prompt for permission
+      const { promptPermission } = await import("./permissions.ts");
+      const allowed = await promptPermission(toolName, args);
+      if (!allowed) {
+        return {
+          content: "",
+          error: `[${toolName}:DENIED] Permission denied by user`,
+        };
+      }
+      // Permission granted - continue to execute
     }
   }
 

@@ -89,6 +89,12 @@ export interface AgentResult {
   iterations: number;
   completed: boolean;
   messages?: any[];  // Updated conversation for accumulation
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    estimatedCost: number;  // in cents (USD)
+  };
 }
 
 // ============================================================================
@@ -104,9 +110,36 @@ export interface StreamEvent {
   error?: string;
   // When true, caller should submit tool result back to LLM and continue
   needsContinuation?: boolean;
+  // Usage stats from the API response (available on final done event)
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 export type TokenHandler = (token: string) => void;
+
+// ============================================================================
+// Cost Estimation
+// ============================================================================
+
+// Approximate pricing per 1M tokens (USD cents)
+// MiniMax M2.7 pricing is not public, using conservative estimates
+const COST_PER_MILLION_TOKENS: Record<string, { input: number; output: number }> = {
+  "MiniMax-M2.7": { input: 0.5, output: 1.5 },  // Approximate
+  "gpt-4o": { input: 2.5, output: 10 },
+  "gpt-4o-mini": { input: 0.15, output: 0.6 },
+  "claude-3-5-sonnet": { input: 3, output: 15 },
+  "claude-3-5-haiku": { input: 0.8, output: 4 },
+};
+
+function estimateCost(promptTokens: number, completionTokens: number, model: string): number {
+  const pricing = COST_PER_MILLION_TOKENS[model] || COST_PER_MILLION_TOKENS["MiniMax-M2.7"];
+  const inputCost = (promptTokens / 1_000_000) * pricing.input;
+  const outputCost = (completionTokens / 1_000_000) * pricing.output;
+  return (inputCost + outputCost) * 100;  // Return in cents
+}
 
 // ============================================================================
 // LLM Client
@@ -139,7 +172,14 @@ function createLLMClient(options: LeanAgentOptions) {
           },
         })),
       });
-      return response;
+      return {
+        response,
+        usage: response.usage ? {
+          promptTokens: response.usage.prompt_tokens || 0,
+          completionTokens: response.usage.completion_tokens || 0,
+          totalTokens: response.usage.total_tokens || 0,
+        } : undefined,
+      };
     },
     generateStream: async function* (messages: any[], onToken?: TokenHandler): AsyncGenerator<StreamEvent> {
       const toolDefinitions = getToolDefinitions();
@@ -159,9 +199,19 @@ function createLLMClient(options: LeanAgentOptions) {
 
       let currentToolCall: { id?: string; name?: string; arguments?: string } | null = null;
       let contentBuffer = "";
+      let streamUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | null = null;
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
+
+        // Capture usage from final chunk
+        if (chunk.usage) {
+          streamUsage = {
+            promptTokens: chunk.usage.prompt_tokens || 0,
+            completionTokens: chunk.usage.completion_tokens || 0,
+            totalTokens: chunk.usage.total_tokens || 0,
+          };
+        }
 
         if (!delta) continue;
 
@@ -205,7 +255,8 @@ function createLLMClient(options: LeanAgentOptions) {
         }
       }
 
-      yield { type: "done" };
+      // Yield usage with done event if available
+      yield { type: "done", usage: streamUsage || undefined };
     },
   };
 }
@@ -275,6 +326,10 @@ export async function runLeanAgent(
   const context = { dangerous, abortSignal, cwd: process.cwd() };
   let iterations = 0;
 
+  // Accumulate usage across iterations
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+
   while (iterations < maxIterations) {
     // Check for abort before each iteration
     if (abortSignal?.aborted) {
@@ -283,8 +338,14 @@ export async function runLeanAgent(
 
     iterations++;
 
-    const response = await llm.generate(messages);
+    const { response, usage } = await llm.generate(messages);
     const choice = response.choices[0];
+
+    // Accumulate usage
+    if (usage) {
+      totalPromptTokens += usage.promptTokens;
+      totalCompletionTokens += usage.completionTokens;
+    }
 
     if (!choice?.message) {
       break;
@@ -296,7 +357,16 @@ export async function runLeanAgent(
     if (!tool_calls || tool_calls.length === 0) {
       // Add assistant response to messages for accumulation
       messages.push({ role: "assistant", content: content || "" });
-      return { content: content || "", iterations, completed: true, messages };
+      return {
+        content: content || "",
+        iterations,
+        completed: true,
+        messages,
+        usage: usage ? {
+          ...usage,
+          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+        } : undefined,
+      };
     }
 
     // Execute tool calls
@@ -313,6 +383,10 @@ export async function runLeanAgent(
           iterations,
           completed: false,
           messages,
+          usage: usage ? {
+            ...usage,
+            estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+          } : undefined,
         };
       }
 
@@ -333,7 +407,18 @@ export async function runLeanAgent(
     }
   }
 
-  return { content: "Max iterations reached", iterations, completed: false, messages };
+  return {
+    content: "Max iterations reached",
+    iterations,
+    completed: false,
+    messages,
+    usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
+      promptTokens: totalPromptTokens,
+      completionTokens: totalCompletionTokens,
+      totalTokens: totalPromptTokens + totalCompletionTokens,
+      estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+    } : undefined,
+  };
 }
 
 // ============================================================================
@@ -445,9 +530,23 @@ export async function runLeanAgentSimpleStream(
   let lastToolCallId: string | undefined;
   let lastToolName: string | undefined;
 
+  // Accumulate usage across all streaming responses
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
-      return { content: "Interrupted", iterations, completed: false };
+      return {
+        content: "Interrupted",
+        iterations,
+        completed: false,
+        usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          totalTokens: totalPromptTokens + totalCompletionTokens,
+          estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+        } : undefined,
+      };
     }
 
     let needsContinuation = false;
@@ -461,7 +560,17 @@ export async function runLeanAgentSimpleStream(
         lastToolName = event.toolName;
       }
       if (event.type === "error") {
-        return { content: event.error || "Stream error", iterations, completed: false };
+        return {
+          content: event.error || "Stream error",
+          iterations,
+          completed: false,
+          usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
+            promptTokens: totalPromptTokens,
+            completionTokens: totalCompletionTokens,
+            totalTokens: totalPromptTokens + totalCompletionTokens,
+            estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+          } : undefined,
+        };
       }
       if (event.type === "tool_end" && event.toolResult) {
         // Add tool result to messages for continuation
@@ -472,6 +581,10 @@ export async function runLeanAgentSimpleStream(
         });
       }
       if (event.type === "done") {
+        if (event.usage) {
+          totalPromptTokens += event.usage.promptTokens;
+          totalCompletionTokens += event.usage.completionTokens;
+        }
         if (event.needsContinuation) {
           needsContinuation = true;
         }
@@ -487,10 +600,30 @@ export async function runLeanAgentSimpleStream(
     }
 
     // No continuation needed, we're done
-    return { content: fullContent, iterations, completed: true };
+    return {
+      content: fullContent,
+      iterations,
+      completed: true,
+      usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
+        promptTokens: totalPromptTokens,
+        completionTokens: totalCompletionTokens,
+        totalTokens: totalPromptTokens + totalCompletionTokens,
+        estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+      } : undefined,
+    };
   }
 
-  return { content: fullContent || "Max iterations reached", iterations, completed: false };
+  return {
+    content: fullContent || "Max iterations reached",
+    iterations,
+    completed: false,
+    usage: totalPromptTokens > 0 || totalCompletionTokens > 0 ? {
+      promptTokens: totalPromptTokens,
+      completionTokens: totalCompletionTokens,
+      totalTokens: totalPromptTokens + totalCompletionTokens,
+      estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, llm.model),
+    } : undefined,
+  };
 }
 
 // ============================================================================

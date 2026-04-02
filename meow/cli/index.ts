@@ -12,7 +12,7 @@ import { stdin as input, stdout as output, abort } from "node:process";
 import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions, type StreamEvent } from "../src/core/lean-agent.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
-import { createSession, appendToSession, loadSession, listSessions, formatSessions } from "../src/core/session-store.ts";
+import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 
 const colors = {
@@ -54,6 +54,12 @@ function setCursorVisible(visible: boolean): void {
 
 function eraseLine(): void {
   process.stdout.write("\x1B[2K");
+}
+
+function formatUsage(usage: { promptTokens: number; completionTokens: number; totalTokens: number; estimatedCost: number } | undefined): string {
+  if (!usage || usage.totalTokens === 0) return "";
+  const cost = usage.estimatedCost < 1 ? `$${usage.estimatedCost.toFixed(3)}` : `$${usage.estimatedCost.toFixed(2)}`;
+  return `${colors.dim}[${usage.totalTokens} tokens · ~${cost}]${colors.reset}`;
 }
 
 async function withSpinner<T>(
@@ -183,16 +189,21 @@ async function main() {
 
   // Handle --resume flag
   if (resumeSession) {
-    const sessions = listSessions();
-    if (sessions.length === 0) {
+    const lastSessionId = getLastSessionId();
+    if (!lastSessionId) {
       console.log(`${colors.yellow}No sessions to resume.${colors.reset}`);
       process.exit(0);
     }
-    const lastSession = sessions[0];
-    currentSessionId = lastSession.id;
-    currentSessionMessages = loadSession(lastSession.id);
-    console.log(`${colors.dim}Resumed session: ${lastSession.id}${colors.reset}`);
-    console.log(`${colors.dim}Preview: ${lastSession.preview}...${colors.reset}\n`);
+    currentSessionId = lastSessionId;
+    currentSessionMessages = loadSession(lastSessionId);
+    console.log(`${colors.dim}Resumed session: ${lastSessionId}${colors.reset}`);
+    if (currentSessionMessages.length > 0) {
+      const lastUser = [...currentSessionMessages].reverse().find((m) => m.role === "user");
+      if (lastUser) {
+        console.log(`${colors.dim}Preview: ${lastUser.content?.slice(0, 60)}...${colors.reset}`);
+      }
+    }
+    console.log();
   }
 
   if (filteredArgs.length > 0) {
@@ -208,6 +219,7 @@ async function main() {
         "thinking..."
       );
       console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
+      console.log(formatUsage(result.usage));
       console.log(`\n--- Output ---\n${result.content}`);
     } catch (e: any) {
       if (e.message === "Interrupted") {
@@ -225,15 +237,65 @@ async function main() {
   console.log(`${colors.blue}${colors.bold}🐱 meow — lean sovereign agent${colors.reset}`);
   console.log(`${colors.dim}Type /help for commands. Type /exit to quit.${colors.reset}\n`);
 
-  // Initialize session
+  // Initialize session - auto-resume last session
   if (!currentSessionId) {
-    currentSessionId = createSession();
+    const lastSessionId = getLastSessionId();
+    if (lastSessionId) {
+      const messages = loadSession(lastSessionId);
+      if (messages.length > 0) {
+        currentSessionId = lastSessionId;
+        currentSessionMessages = messages;
+        // Rebuild conversation from session
+        messages.forEach((m) => {
+          if (m.role !== "tool") {
+            conversation.push({ role: m.role as "system" | "user" | "assistant", content: m.content });
+          }
+        });
+        console.log(`${colors.green}📜 Resumed last session${colors.reset}\n`);
+      } else {
+        currentSessionId = createSession();
+      }
+    } else {
+      currentSessionId = createSession();
+    }
   }
 
   const systemPrompt = buildSystemPrompt();
   conversation.push({ role: "system", content: systemPrompt });
 
-  const rl = readline.createInterface({ input, output });
+  const rl = readline.createInterface({
+    input,
+    output,
+    historySize: 100,  // Keep last 100 commands in history
+  });
+
+  // Command history navigation
+  let historyIndex = -1;
+  let currentInput = "";
+
+  const getHistoryCommand = (direction: "up" | "down"): string => {
+    const history = rl.history;
+    if (history.length === 0) return "";
+
+    if (direction === "up") {
+      if (historyIndex === -1) {
+        historyIndex = history.length - 1;
+        currentInput = "";
+      } else if (historyIndex > 0) {
+        historyIndex--;
+      }
+    } else {
+      if (historyIndex !== -1) {
+        historyIndex++;
+        if (historyIndex >= history.length) {
+          historyIndex = -1;
+          return "";
+        }
+      }
+    }
+
+    return historyIndex >= 0 ? history[historyIndex] : "";
+  };
 
   const printHelp = () => {
     console.log(`${colors.bold}Commands:${colors.reset}`);
@@ -278,6 +340,8 @@ async function main() {
       );
       console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
       console.log(`\n--- ---\n${result.content}\n`);
+      console.log(formatUsage(result.usage));
+      if (result.usage) console.log();
 
       // Update conversation for next turn
       conversation.push({ role: "user", content: prompt });
@@ -307,12 +371,10 @@ async function main() {
     // Streaming mode - shows tokens as they arrive
     process.stdout.write(`${colors.dim}`);
     let lastFrame = 0;
-    let totalTokens = 0;
     let aborted = false;
 
     const onToken = (token: string) => {
       process.stdout.write(token);
-      totalTokens++;
       lastFrame++;
       if (lastFrame % 10 === 0) {
         process.stdout.write(`${colors.reset}${colors.dim}`);
@@ -329,7 +391,10 @@ async function main() {
     try {
       const result = await runLeanAgentSimpleStream(prompt, { dangerous, ...options }, onToken);
       console.log(`${colors.reset}`);
-      console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s) (${totalTokens} tokens)${colors.reset}\n`);
+      const tokenCount = result.usage?.totalTokens || lastFrame;
+      console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset} ${colors.dim}(${tokenCount} tokens)${colors.reset}`);
+      console.log(formatUsage(result.usage));
+      console.log();
 
       currentSessionMessages.push(
         { role: "user", content: prompt, timestamp: new Date().toISOString() },
@@ -562,12 +627,131 @@ Respond with ONLY the plan.`;
   };
 
   const promptUser = () => {
-    rl.question(prefix, async (line) => {
-      await handleLine(line);
-      if (!rl.closed) {
-        promptUser();
+    let line = "";
+    let cursorPos = 0;
+
+    const redrawLine = () => {
+      eraseLine();
+      process.stdout.write(prefix + line);
+      // Move cursor back to correct position
+      const cursorBack = line.length - cursorPos;
+      if (cursorBack > 0) {
+        process.stdout.write(`\x1B[${cursorBack}D`);
       }
-    });
+    };
+
+    const handleKeypress = (char: string, key: { name?: string; sequence?: string }) => {
+      if (key?.name === "return") {
+        // Enter - submit command
+        process.stdout.write("\n");
+        rl.history.push(line);
+        historyIndex = -1;
+        const cmd = line;
+        line = "";
+        cursorPos = 0;
+        rl.off("keypress", handleKeypress);
+        handleLine(cmd).then(() => {
+          if (!rl.closed) {
+            promptUser();
+          }
+        });
+        return;
+      }
+
+      if (key?.name === "ctrl-c") {
+        process.stdout.write("^C\n");
+        line = "";
+        cursorPos = 0;
+        redrawLine();
+        return;
+      }
+
+      if (key?.name === "backspace") {
+        if (cursorPos > 0) {
+          line = line.slice(0, cursorPos - 1) + line.slice(cursorPos);
+          cursorPos--;
+          redrawLine();
+        }
+        return;
+      }
+
+      if (key?.name === "delete") {
+        if (cursorPos < line.length) {
+          line = line.slice(0, cursorPos) + line.slice(cursorPos + 1);
+          redrawLine();
+        }
+        return;
+      }
+
+      if (key?.name === "left") {
+        if (cursorPos > 0) {
+          cursorPos--;
+          process.stdout.write("\x1B[D");
+        }
+        return;
+      }
+
+      if (key?.name === "right") {
+        if (cursorPos < line.length) {
+          cursorPos++;
+          process.stdout.write("\x1B[C");
+        }
+        return;
+      }
+
+      if (key?.name === "up") {
+        const prevCmd = getHistoryCommand("up");
+        if (prevCmd !== "") {
+          // Erase current line
+          eraseLine();
+          process.stdout.write(prefix);
+          line = prevCmd;
+          cursorPos = line.length;
+          process.stdout.write(line);
+        }
+        return;
+      }
+
+      if (key?.name === "down") {
+        const nextCmd = getHistoryCommand("down");
+        eraseLine();
+        process.stdout.write(prefix);
+        line = nextCmd;
+        cursorPos = line.length;
+        process.stdout.write(line);
+        return;
+      }
+
+      if (key?.name === "home") {
+        cursorPos = 0;
+        process.stdout.write(`\x1B[${prefix.length}D`);
+        return;
+      }
+
+      if (key?.name === "end") {
+        if (cursorPos < line.length) {
+          process.stdout.write(`\x1B[${line.length - cursorPos}C`);
+          cursorPos = line.length;
+        }
+        return;
+      }
+
+      // Regular character
+      if (char && char.length === 1) {
+        line = line.slice(0, cursorPos) + char + line.slice(cursorPos);
+        cursorPos++;
+        // Write the new character and all characters after it
+        process.stdout.write(prefix + line);
+        // Move cursor back to correct position
+        const cursorBack = line.length - cursorPos;
+        if (cursorBack > 0) {
+          process.stdout.write(`\x1B[${cursorBack}D`);
+        }
+      }
+    };
+
+    rl.on("keypress", handleKeypress);
+    process.stdout.write(prefix);
   };
 
   rl.on("close", () => {

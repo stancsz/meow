@@ -48,16 +48,16 @@ const DEFAULT_RULES: PermissionRule[] = [
   { tool: "read", action: "allow" },                    // Reading is safe
   { tool: "glob", action: "allow" },                   // Finding files is safe
   { tool: "grep", action: "allow" },                    // Searching is safe
-  { tool: "git", pattern: "^git ", action: "allow" },   // Git is generally safe
-  { tool: "shell", pattern: "^git ", action: "allow" },  // Git commands safe
-  { tool: "shell", pattern: "^npm ", action: "allow" },  // npm is safe
-  { tool: "shell", pattern: "^bun ", action: "allow" },  // bun is safe
-  { tool: "shell", pattern: "^cd ", action: "allow" },   // cd is safe
-  { tool: "shell", pattern: "^ls", action: "allow" },   // ls is safe
-  { tool: "shell", pattern: "^pwd", action: "allow" },   // pwd is safe
-  { tool: "shell", pattern: "^cat ", action: "allow" },  // cat is safe
-  { tool: "shell", pattern: "^rm ", action: "deny" },    // rm is dangerous
-  { tool: "shell", pattern: "^sudo ", action: "deny" },  // sudo is dangerous
+  { tool: "git", action: "allow" },                     // Git is generally safe
+  { tool: "shell", pattern: "\"cmd\":\"git ", action: "allow" },  // Git commands safe
+  { tool: "shell", pattern: "\"cmd\":\"npm ", action: "allow" },   // npm is safe
+  { tool: "shell", pattern: "\"cmd\":\"bun ", action: "allow" },   // bun is safe
+  { tool: "shell", pattern: "\"cmd\":\"cd ", action: "allow" },    // cd is safe
+  { tool: "shell", pattern: "\"cmd\":\"ls", action: "allow" },     // ls is safe
+  { tool: "shell", pattern: "\"cmd\":\"pwd", action: "allow" },    // pwd is safe
+  { tool: "shell", pattern: "\"cmd\":\"cat ", action: "allow" },   // cat is safe
+  { tool: "shell", pattern: "\"cmd\":\"rm ", action: "deny" },     // rm is dangerous
+  { tool: "shell", pattern: "\"cmd\":\"sudo ", action: "deny" },   // sudo is dangerous
   { tool: "shell", action: "ask" },                     // Everything else asks
   { tool: "write", action: "ask" },                     // Writes ask
   { tool: "edit", action: "ask" },                      // Edits ask

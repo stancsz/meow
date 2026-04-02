@@ -1,10 +1,22 @@
 /**
  * skills/review.ts
  *
- * Code review skill - analyzes code and provides feedback.
+ * Code review skill - uses LLM to analyze code and provide feedback.
  */
 import { readFileSync } from "node:fs";
+import OpenAI from "openai";
 import type { Skill, SkillContext, SkillResult } from "./loader.ts";
+
+function createLLMClient() {
+  const apiKey = process.env.LLM_API_KEY;
+  const baseURL = process.env.LLM_BASE_URL || "https://api.minimax.io/v1";
+
+  if (!apiKey) {
+    throw new Error("LLM_API_KEY is required");
+  }
+
+  return new OpenAI({ apiKey, baseURL });
+}
 
 export const review: Skill = {
   name: "review",
@@ -22,47 +34,77 @@ export const review: Skill = {
       const content = readFileSync(path, "utf-8");
       const lines = content.split("\n");
 
-      // Simple review heuristics
-      const issues: string[] = [];
-      let todoCount = 0;
-      let fixmeCount = 0;
-      let longFunctions = 0;
+      // Detect language from file extension
+      const ext = path.split(".").pop()?.toLowerCase();
+      const langMap: Record<string, string> = {
+        ts: "TypeScript",
+        tsx: "TypeScript/React",
+        js: "JavaScript",
+        jsx: "JavaScript/React",
+        py: "Python",
+        rs: "Rust",
+        go: "Go",
+        java: "Java",
+        c: "C",
+        cpp: "C++",
+        cs: "C#",
+        rb: "Ruby",
+        php: "PHP",
+      };
+      const lang = langMap[ext || ""] || "code";
 
-      lines.forEach((line, i) => {
-        const trimmed = line.trim();
-        if (trimmed.includes("TODO")) todoCount++;
-        if (trimmed.includes("FIXME")) fixmeCount++;
+      const client = createLLMClient();
+      const model = process.env.LLM_MODEL || "MiniMax-M2.7";
+
+      const reviewPrompt = `You are an expert code reviewer. Analyze the following ${lang} code and provide constructive feedback.
+
+Focus on:
+1. **Correctness** - bugs, edge cases, error handling
+2. **Security** - vulnerabilities, injection risks, sensitive data
+3. **Performance** - algorithmic efficiency, memory usage, N+1 queries
+4. **Maintainability** - code clarity, naming, documentation
+5. **Best practices** - language idioms, design patterns, testing
+
+Format your response as:
+## Code Review: <filename>
+
+### Summary
+<2-3 sentence overview>
+
+### Issues Found
+< bulleted list of specific issues with line references if possible>
+
+### Suggestions
+< actionable improvements >
+
+### Praise (if deserved)
+< what's done well >
+
+\`\`\`${lang}
+${content}
+\`\`\``;
+
+      const response = await client.chat.completions.create({
+        model,
+        messages: [{ role: "user", content: reviewPrompt }],
+        temperature: 0.3,
       });
 
-      // Check for very long files
-      if (lines.length > 500) {
-        issues.push(`📄 File has ${lines.length} lines - consider splitting`);
+      const review = response.choices[0]?.message?.content?.trim();
+
+      if (!review) {
+        return { content: "", error: "LLM returned empty response" };
       }
 
-      // Check for TODO/FIXME
-      if (todoCount > 0) issues.push(`📝 ${todoCount} TODO(s) found`);
-      if (fixmeCount > 0) issues.push(`🔧 ${fixmeCount} FIXME(s) found`);
+      // Add quick stats header
+      const issueCount = (review.match(/Issues? Found/i) || []).length;
+      const hasIssues = review.toLowerCase().includes("issue") || review.toLowerCase().includes("problem");
 
-      // Generate review
-      let output = `## Code Review: ${path}\n\n`;
-      output += `**Lines:** ${lines.length}\n\n`;
-
-      if (issues.length > 0) {
-        output += `### Observations\n`;
-        issues.forEach((issue) => {
-          output += `- ${issue}\n`;
-        });
-        output += "\n";
-      }
-
-      output += `### Suggestions\n`;
-      output += `- Consider adding JSDoc comments for public functions\n`;
-      output += `- Check error handling patterns\n`;
-      output += `- Look for opportunities to extract reusable utilities\n`;
-
-      return { content: output };
+      return {
+        content: `## Code Review: ${path}\n**Lines:** ${lines.length} | **Language:** ${lang}\n\n${review}`,
+      };
     } catch (e: any) {
-      return { content: "", error: `Failed to read ${path}: ${e.message}` };
+      return { content: "", error: `Failed to review: ${e.message}` };
     }
   },
 };

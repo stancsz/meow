@@ -4,7 +4,7 @@
  * Simple JSONL-based session persistence.
  * Sessions stored in ~/.meow/sessions/<timestamp>.jsonl
  */
-import { readFileSync, appendFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { readFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -22,10 +22,31 @@ export interface SessionInfo {
 }
 
 const SESSION_DIR = join(homedir(), ".meow", "sessions");
+const LAST_SESSION_FILE = join(homedir(), ".meow", "last_session");
 
 function ensureDir(): void {
   if (!existsSync(SESSION_DIR)) {
     mkdirSync(SESSION_DIR, { recursive: true });
+  }
+}
+
+export function getLastSessionId(): string | null {
+  try {
+    if (existsSync(LAST_SESSION_FILE)) {
+      return readFileSync(LAST_SESSION_FILE, "utf-8").trim() || null;
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
+function setLastSessionId(id: string): void {
+  try {
+    ensureDir();
+    writeFileSync(LAST_SESSION_FILE, id, "utf-8");
+  } catch {
+    // Ignore write errors
   }
 }
 
@@ -36,6 +57,8 @@ export function createSession(forkedFrom?: string): string {
   // Mark the session with fork info in first line
   const forkInfo = forkedFrom ? JSON.stringify({ role: "system", content: `[Forked from session: ${forkedFrom}]`, timestamp: new Date().toISOString() }) + "\n" : "";
   appendFileSync(file, forkInfo, "utf-8");
+  // Track last session
+  setLastSessionId(id);
   return id;
 }
 
