@@ -59,3 +59,6 @@ docs/research/competitors/*/
 
 # Meow user data (session logs, tasks, memory)
 .meow/
+
+# Test output
+test-output/
