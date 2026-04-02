@@ -1,25 +1,26 @@
 # Meow Parity Plan — Path to Claude Code Equivalence
 
-> **Honest Assessment (2026-04-02): ~35-40% of Claude Code's capabilities**
-> Architecture: 70% | Core Functionality: 40% | UX: 20% | Security: 15%
+> **Honest Assessment (2026-04-02, post-dogfood): ~45-50% of Claude Code's capabilities**
+> Architecture: 75% | Core Functionality: 50% | UX: 25% | Security: 60%
 
-## Implementation Score (Updated: 2026-04-02)
+## Implementation Score (Updated: 2026-04-02 - Post Permissions Sidecar)
 
 | Category | Score | Status |
 |----------|-------|--------|
-| Core Loop | 50% | ✅ Streaming implemented, ✅ Message accumulation |
+| Core Loop | 75% | ✅ Streaming, ✅ Message accumulation, ✅ Context compaction |
 | File Tools | 80% | read, write, edit, git, glob, grep |
-| Shell Tool | 50% | Works but only --dangerous guard |
-| Task System | 20% | Store works, no kill/monitor/named |
-| Session System | 50% | ✅ Store + fork + message accumulation |
-| Skills System | 40% | 3 skills built, static loading |
+| Shell Tool | 70% | ✅ Pattern permissions, ✅ --dangerous guard, ✅ SIGINT abort |
+| Task System | 30% | ✅ Store + CLI commands, no kill/monitor/named tasks |
+| Session System | 60% | ✅ Store + fork + auto-resume + --resume flag |
+| Skills System | 50% | ✅ 3 skills (simplify, review, commit), dynamic loading from .meow/skills |
 | MCP Client | 30% | Client exists, not auto-loaded |
-| Abort Handling | 50% | ✅ Streaming abort, SIGINT handler |
-| Slash Commands | 80% | ✅ /help, /exit, /clear, /plan, /dangerous, /stream, /tasks, /sessions, /resume |
-| Permissions | 30% | ✅ Basic permissions.ts exists, pattern rules pending |
-| Rich TUI | 10% | Basic ANSI, /stream toggle, spinner |
+| Abort Handling | 75% | ✅ Streaming abort, ✅ SIGINT handler, ✅ AbortController propagation |
+| Slash Commands | 90% | ✅ /help, /exit, /clear, /plan, /dangerous, /stream, /tasks, /sessions, /resume, /skills, /add, /done |
+| Permissions | 75% | ✅ Pattern-matching rules, ✅ Default allow/deny/ask, ✅ ~/.meow/permissions.json |
+| Rich TUI | 15% | ✅ ANSI colors, ✅ /stream toggle, ✅ Spinner, no scrollback |
 | Budget/Cost | 0% | Not implemented |
 | Sub-agents | 0% | Not implemented |
+| Hooks System | 0% | Not implemented | |
 
 ---
 
@@ -44,36 +45,41 @@ Implemented commands:
 
 **Reference:** Claude Code `src/commands.ts` has ~80 slash commands
 
-#### P1.2: Permission Pattern Rules
-**Files to modify:** `meow/src/sidecars/tool-registry.ts`
+#### P1.2: Permission Pattern Rules ✅ DONE
+**Files modified:** `meow/src/sidecars/permissions.ts`, `meow/src/sidecars/tool-registry.ts`
 
-Implement pattern-based permissions instead of all-or-nothing:
+Implemented:
 ```typescript
 interface PermissionRule {
   tool: string;        // "shell", "git", etc.
-  pattern: RegExp;     // /^git (status|log|diff)$/
-  allow: boolean;
+  pattern?: string;    // regex pattern like "^git "
+  action: "allow" | "deny" | "ask";
 }
 ```
 
-Reference: Claude Code `src/utils/permissions/` directory
+✅ Default rules allow safe commands (git, npm, ls, cat), deny dangerous (rm, sudo), ask for others
+✅ Load from `~/.meow/permissions.json`
+✅ Pattern matching with regex
 
-#### P1.3: Streaming Responses
-**Files to modify:** `meow/src/core/lean-agent.ts`
+#### P1.3: Streaming Responses ✅ DONE
+**Files modified:** `meow/src/core/lean-agent.ts`
 
-Implement async generator streaming:
-```typescript
-async function* streamResponse(prompt: string, options: LeanAgentOptions): AsyncGenerator<string>
-```
+Implemented:
+- `runLeanAgentStream()` - async generator streaming
+- `runLeanAgentSimpleStream()` - simplified streaming with onToken callback
+- `/stream` CLI toggle for real-time token display
 
 Reference: Claude Code `src/query.ts` streaming implementation
 
-#### P1.4: Message Accumulation (Multi-turn)
-**Files to modify:** `meow/cli/index.ts`, `meow/src/core/lean-agent.ts`
+#### P1.4: Message Accumulation (Multi-turn) ✅ DONE
+**Files modified:** `meow/cli/index.ts`, `meow/src/core/session-store.ts`
 
-- Agent should accumulate messages across turns
-- Load previous session context on resume
-- Track conversation history
+- ✅ Agent accumulates messages across turns in conversation array
+- ✅ Session store with JSONL persistence at `~/.meow/sessions/`
+- ✅ Fork session support
+- ✅ `--resume` flag and `/resume` command
+
+Reference: Claude Code session management
 
 ---
 
@@ -236,13 +242,21 @@ meow/
 
 ## Quick Wins Order
 
-**Note:** CLI slash commands (`/help`, `/exit`, `/clear`, `/plan`, `/dangerous`, `/tasks`, `/sessions`, `/resume`) are **already implemented** in `meow/cli/index.ts`.
+**COMPLETED:**
+- ✅ Streaming mode (`runLeanAgentSimpleStream`)
+- ✅ Message accumulation (session context)
+- ✅ Permission patterns (permissions.ts sidecar)
+- ✅ Auto-resume session (`--resume` flag)
+- ✅ Context compaction (auto-summarize at token limit)
+- ✅ Slash commands (12 commands)
 
-1. **Add streaming** (4-6 hours) - HIGHEST IMPACT
-2. **Add message accumulation** (3-4 hours) - enables multi-turn
-3. **Add budget tracking** (2-3 hours) - cost control
-4. **Add permission patterns** (3-4 hours)
-5. **Auto-resume session** (2-3 hours)
+**Remaining:**
+1. **Budget tracking** (2-3 hours) - cost control, token usage display
+2. **Task enhancements** (3-4 hours) - named tasks, kill, dependencies
+3. **MCP auto-load** (3-4 hours) - load from `~/.meow/mcp.json`
+4. **Rich TUI** (6-8 hours) - scrollback, tab completion, syntax highlighting
+5. **Sub-agents** (8+ hours) - AgentTool equivalent
+6. **Hooks system** (4-5 hours) - pre/post tool hooks
 
 ---
 
@@ -257,4 +271,4 @@ meow/
 
 ---
 
-*Last updated: 2026-04-02*
+*Last updated: 2026-04-02 (post permissions sidecar)*
