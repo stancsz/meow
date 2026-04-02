@@ -11,7 +11,7 @@
  */
 import OpenAI from "openai";
 import { readFileSync, writeFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { exec, type ExecOptions } from "node:child_process";
 
 // ============================================================================
 // Types
@@ -32,6 +32,8 @@ export interface LeanAgentOptions {
   maxIterations?: number;
   apiKey?: string;
   baseURL?: string;
+  dangerous?: boolean;
+  systemPrompt?: string;
 }
 
 export interface AgentResult {
@@ -44,55 +46,104 @@ export interface AgentResult {
 // Tool Handlers
 // ============================================================================
 
-const tools = {
-  read: async (args: { path: string }): Promise<ToolResult> => {
-    try {
-      const content = readFileSync(args.path, "utf-8");
-      return { content: `[Read ${args.path}]\n${content}` };
-    } catch (e: any) {
-      return { content: "", error: `Failed to read ${args.path}: ${e.message}` };
-    }
-  },
+function createTools(dangerous: boolean = false) {
+  return {
+    read: async (args: { path: string }): Promise<ToolResult> => {
+      try {
+        const content = readFileSync(args.path, "utf-8");
+        return { content: `[Read ${args.path}]\n${content}` };
+      } catch (e: any) {
+        return { content: "", error: `Failed to read ${args.path}: ${e.message}` };
+      }
+    },
 
-  write: async (args: { path: string; content: string }): Promise<ToolResult> => {
-    try {
-      writeFileSync(args.path, args.content, "utf-8");
-      return { content: `[Wrote ${args.path}]` };
-    } catch (e: any) {
-      return { content: "", error: `Failed to write ${args.path}: ${e.message}` };
-    }
-  },
+    write: async (args: { path: string; content: string }): Promise<ToolResult> => {
+      try {
+        writeFileSync(args.path, args.content, "utf-8");
+        return { content: `[Wrote ${args.path}]` };
+      } catch (e: any) {
+        return { content: "", error: `Failed to write ${args.path}: ${e.message}` };
+      }
+    },
 
-  shell: async (args: { cmd: string }): Promise<ToolResult> => {
-    try {
-      const output = execSync(args.cmd, { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
-      return { content: `[Shell: ${args.cmd}]\n${output}` };
-    } catch (e: any) {
-      return { content: "", error: `Shell failed: ${e.message}` };
-    }
-  },
+    shell: async (args: { cmd: string }): Promise<ToolResult> => {
+      if (!dangerous) {
+        return {
+          content: "",
+          error: `[shell:BLOCKED] Dangerous operation requires --dangerous flag\nCommand: ${args.cmd}`,
+        };
+      }
 
-  git: async (args: { cmd: string }): Promise<ToolResult> => {
-    try {
-      const output = execSync(`git ${args.cmd}`, { encoding: "utf-8" });
-      return { content: `[Git: ${args.cmd}]\n${output}` };
-    } catch (e: any) {
-      return { content: "", error: `Git failed: ${e.message}` };
-    }
-  },
-};
+      return new Promise((resolve) => {
+        const output: string[] = [];
+        const errOutput: string[] = [];
+
+        const child = exec(args.cmd, { encoding: "utf-8" } as ExecOptions);
+
+        child.stdout?.on("data", (data) => {
+          process.stdout.write(data);
+          output.push(data);
+        });
+
+        child.stderr?.on("data", (data) => {
+          process.stderr.write(data);
+          errOutput.push(data);
+        });
+
+        child.on("close", (code) => {
+          const fullOutput = output.join("") + errOutput.join("");
+          resolve({
+            content: fullOutput || `[Shell exited with code ${code}]`,
+            error: code === 0 ? undefined : `Exit code: ${code}`,
+          });
+        });
+
+        child.on("error", (e) => {
+          resolve({ content: "", error: `Shell failed: ${e.message}` });
+        });
+      });
+    },
+
+    git: async (args: { cmd: string }): Promise<ToolResult> => {
+      return new Promise((resolve) => {
+        const output: string[] = [];
+        const child = exec(`git ${args.cmd}`, { encoding: "utf-8" });
+
+        child.stdout?.on("data", (data) => {
+          process.stdout.write(data);
+          output.push(data);
+        });
+
+        child.stderr?.on("data", (data) => {
+          process.stderr.write(data);
+        });
+
+        child.on("close", (code) => {
+          resolve({
+            content: output.join("") || `[Git command exited with code ${code}]`,
+            error: code === 0 ? undefined : `Exit code: ${code}`,
+          });
+        });
+
+        child.on("error", (e) => {
+          resolve({ content: "", error: `Git failed: ${e.message}` });
+        });
+      });
+    },
+  };
+}
 
 // ============================================================================
 // LLM Client
 // ============================================================================
 
 function createLLMClient(options: LeanAgentOptions) {
-  const apiKey = options.apiKey || process.env.MINIMAX_API_KEY;
-  const baseURL = options.baseURL || process.env.MINIMAX_BASE_URL || "https://api.minimax.io/v1";
-  const model = options.model || process.env.MINIMAX_MODEL || "MiniMax-M2.7";
+  const apiKey = options.apiKey || process.env.LLM_API_KEY;
+  const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.openai.com/v1";
+  const model = options.model || process.env.LLM_MODEL || "gpt-4o";
 
   if (!apiKey) {
-    throw new Error("MINIMAX_API_KEY is required");
+    throw new Error("LLM_API_KEY is required");
   }
 
   const client = new OpenAI({ apiKey, baseURL });
@@ -172,7 +223,7 @@ function buildSystemPrompt(): string {
 
 You have access to tools:
 - read(path) → read file contents
-- write(path, content) → write content to file
+- write(path, content) → write content to a file
 - shell(cmd) → execute shell command
 - git(cmd) → execute git command
 
@@ -194,13 +245,16 @@ export async function runLeanAgent(
   options: LeanAgentOptions = {}
 ): Promise<AgentResult> {
   const maxIterations = options.maxIterations || 10;
+  const dangerous = options.dangerous || false;
+  const systemPrompt = options.systemPrompt || buildSystemPrompt();
 
   const llm = createLLMClient(options);
   const messages: any[] = [
-    { role: "system", content: buildSystemPrompt() },
+    { role: "system", content: systemPrompt },
     { role: "user", content: prompt },
   ];
 
+  const tools = createTools(dangerous);
   let iterations = 0;
 
   while (iterations < maxIterations) {
@@ -236,6 +290,16 @@ export async function runLeanAgent(
       }
 
       const result = await handler(args as any);
+
+      // If dangerous operation was blocked, return the error
+      if (result.error?.startsWith("[shell:BLOCKED]")) {
+        return {
+          content: result.error,
+          iterations,
+          completed: false,
+        };
+      }
+
       messages.push({
         role: "tool",
         tool_call_id: toolCall.id,
@@ -252,7 +316,8 @@ export async function runLeanAgent(
 // ============================================================================
 
 if (import.meta.main) {
-  const prompt = process.argv.slice(2).join(" ") || "Hello world";
+  const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const prompt = args.join(" ") || "Hello world";
 
   console.log(`🐱 Meow lean agent`);
   console.log(`Prompt: ${prompt}\n`);
