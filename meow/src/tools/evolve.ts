@@ -426,9 +426,15 @@ Respond ONLY with a JSON object like this (no other text):
   const promptFile = join(tmpDir, `discover-prompt-${Date.now()}.txt`);
   writeFileSync(promptFile, prompt);
 
-  // Pipe prompt file to claude --print
-  const cmd = `cat "${promptFile}" | timeout 120 claude --dangerously-skip-permissions --bare --print 2>&1`;
-  const result = await runCmdAsync(cmd, ROOT);
+  // Use execSync for claude discovery (more reliable stdin handling)
+  let result = "";
+  try {
+    // Write prompt directly and use bash process substitution
+    const cmd = `cat "${promptFile}" | bash -c 'claude --dangerously-skip-permissions --bare --print'`;
+    result = execSync(cmd, { cwd: ROOT, encoding: "utf-8", timeout: 120000, maxBuffer: 10 * 1024 * 1024 });
+  } catch (e: any) {
+    result = e.stdout || e.message || "";
+  }
 
   // Try to parse JSON from response
   const jsonMatch = result.match(/\{[\s\S]*"id"[\s\S]*\}/);
