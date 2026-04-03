@@ -1,69 +1,55 @@
 #!/bin/bash
-# train.sh — Self-improving agent loop via Claude Code CLI
+# train.sh — Direct Gap-Closing Loop
 #
-# Legacy OODA loop that directly invokes Claude Code CLI for each step.
-# For the evolved version, use: ./cook.sh (which delegates to evolve.ts, see docs/evolve.md)
+# Directly implements gaps by modifying meow source code.
+# Unlike cook.sh (which delegates to evolve.ts for the OODA loop),
+# this script provides direct, iterative gap closing.
 #
 # Each iteration:
-#   1. Run gaps test
-#   2. Pick highest leverage gap
-#   3. Implement fix via Claude Code
-#   4. Verify dogfood
-#   5. Update docs
-#   6. Cleanup trash (move stray files to .trash/)
-#   7. Commit
-#   8. Repeat
+#   1. Run gaps.test.ts — find what's missing
+#   2. Claude Code implements the gap in meow/src/
+#   3. Run gap-impl.test.ts — verify the implementation
+#   4. Dogfood with meow CLI
+#   5. Update docs (CLAUDE.md, TODO.md)
+#   6. Commit meow/ changes
 #
 # Usage: ./train.sh
-#
-# Output goes to dogfood/logs/ and dogfood/tests/ (git-ignored)
+#        ./train.sh --once    # Single iteration
+#        ./train.sh --status  # Show gap status
 
 set -e
 
-ITERATION=1
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+ITERATION=1
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
 ensure_trash() {
   mkdir -p .trash
 }
 
-# Cleanup function: find and trash stray/untracked files that don't belong
 cleanup_trash() {
-  echo "[6.5] Checking for stray files to trash..."
   ensure_trash
-
-  # Get all untracked files and directories (excluding gitignored)
   while IFS= read -r file; do
-    # Skip gitignored files
     if git check-ignore -q "$file" 2>/dev/null; then
       continue
     fi
-
-    # Skip intentional root files
     case "$file" in
-      CLAUDE.md|TODO.md|README.md|package.json|tsconfig.json|cook.sh|train.sh| bun.lock|package-lock.json|.env|.env.example)
+      CLAUDE.md|TODO.md|README.md|package.json|tsconfig.json|cook.sh|train.sh|bun.lock|package-lock.json|.env|.env.example)
         continue
         ;;
     esac
-
-    # Skip intentional directories
     case "$file" in
-      meow|meowclaw|docs|dogfood|node_modules|packages|scripts|.github)
+      meow|meowclaw|docs|dogfood|node_modules|packages|scripts|.github|.claude|.meow)
         continue
         ;;
     esac
-
-    # Skip .trash itself
     [[ "$file" == .trash ]] && continue
-
-    echo "  🚮 Moving to .trash: $file"
-    mv "$file" ".trash/$(basename "$file")-$(date +%Y%m%d-%H%M%S)"
+    echo "  🚮 Trashing: $file"
+    mv "$file" ".trash/$(basename "$file")-${TIMESTAMP}"
   done < <(git status --porcelain | grep "^??" | awk '{print $2}')
 }
-
-# Create dogfood output directories
-mkdir -p dogfood/logs dogfood/tests
 
 # Ensure we're on evolve branch
 if ! git show-ref --verify --quiet refs/heads/evolve; then
@@ -74,85 +60,135 @@ else
 fi
 
 echo "=============================================="
-echo "MEOW GAP CLOSE LOOP (via Claude Code)"
+echo "MEOW GAP CLOSE LOOP"
 echo "=============================================="
-echo ""
 
-# Check API key exists
-if [[ -z "$ANTHROPIC_API_KEY" && ! -f ".env" ]]; then
-  echo "WARNING: No ANTHROPIC_API_KEY in environment"
-fi
+# Handle flags
+case "${1:-}" in
+  --status)
+    echo "Running gap status check..."
+    cd meow && bun test tests/gaps.test.ts 2>&1 | tail -30
+    exit 0
+    ;;
+  --once)
+    ONCE=true
+    ;;
+  *)
+    ONCE=false
+    ;;
+esac
 
 while true; do
-  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
   echo ""
   echo "=============================================="
-  echo "ITERATION $ITERATION"
+  echo "ITERATION $ITERATION ($TIMESTAMP)"
   echo "=============================================="
   echo ""
 
-  # Step 1: Run gaps test to see current state
-  echo "[1/7] Running gap analysis..."
+  # Step 1: Run gaps.test.ts to find what's missing
+  echo "[1/6] Running gap analysis..."
   GAP_OUTPUT=$(cd meow && bun test tests/gaps.test.ts 2>&1 || true)
-  echo "$GAP_OUTPUT" | tail -20
+  echo "$GAP_OUTPUT" | tail -30
+  mkdir -p dogfood/tests
   echo "$GAP_OUTPUT" > "dogfood/tests/gap-analysis-${ITERATION}-${TIMESTAMP}.txt"
   echo ""
 
-  # Step 2: Use Claude Code to pick highest leverage gap
-  echo "[2/7] Claude Code analyzing and deciding on highest leverage gap..."
-  GAP_ANALYSIS_FILE="dogfood/tests/gap-analysis-${ITERATION}-${TIMESTAMP}.txt"
-  claude --dangerously-skip-permissions "Analyze the test output in $GAP_ANALYSIS_FILE. Pick the ONE highest leverage gap to fix. Consider: impact (blocks user?), effort (complex?), dependencies. Reply with just GAP-ID and reason." 2>&1 | tee "dogfood/logs/gap-selection-${ITERATION}-${TIMESTAMP}.txt" | tail -5
-  echo ""
-
-  # Step 3: Claude Code implements the fix, writes tests, dogfoods
-  echo "[3/7] Claude Code implementing fix..."
-  claude --dangerously-skip-permissions "Implement the fix for the gap identified. Read the gap analysis at $GAP_ANALYSIS_FILE for context. Write a test in meow/tests/gap-impl.test.ts, implement the code, run the test, and dogfood with: bun run meow/cli/index.ts --dangerous \"test the feature you just implemented\". Report pass/fail." 2>&1 | tee "dogfood/logs/implementation-${ITERATION}-${TIMESTAMP}.txt" | tail -50
-  echo ""
-
-  # Step 4: Verify iteration works (live dogfood test)
-  echo "[4/7] Verifying iteration works (live dogfood)..."
-  DOGFOOD_RESULT=$(cd meow && bun run cli/index.ts --dangerous "run gap-impl.test.ts and report pass/fail" 2>&1 || true)
-  echo "$DOGFOOD_RESULT" | tee "dogfood/tests/dogfood-verification-${ITERATION}-${TIMESTAMP}.txt" | tail -20
-  if echo "$DOGFOOD_RESULT" | grep -qi "fail\|error\|✗"; then
-    echo "ERROR: Dogfood verification failed!"
-    echo "Reverting changes..."
-    git checkout -- meow/
-    echo "Changes reverted. Will retry next iteration."
-    ((ITERATION++))
-    sleep 1
+  # Extract gap IDs that are failing
+  FAILING_GAPS=$(echo "$GAP_OUTPUT" | grep -oE 'GAP-[A-Z]+-[0-9]+' | sort -u)
+  if [[ -z "$FAILING_GAPS" ]]; then
+    echo "No failing gaps found. All gaps may be closed!"
+    if [[ "$ONCE" == "true" ]]; then
+      exit 0
+    fi
+    echo "Waiting 60s before re-checking..."
+    sleep 60
     continue
   fi
-  echo "Dogfood verification passed."
+
+  # Pick the first failing gap
+  GAP_ID=$(echo "$FAILING_GAPS" | head -1)
+  echo "Selected gap: $GAP_ID"
   echo ""
 
-  # Step 5: Claude Code updates docs
-  echo "[5/7] Claude Code updating TODO.md and CLAUDE.md..."
-  claude --dangerously-skip-permissions "Edit meow/TODO.md and meow/CLAUDE.md to reflect the changes you just made. Mark completed items, add dogfood notes. Be brief - 2-3 lines per change." 2>&1 | tee "dogfood/logs/doc-update-${ITERATION}-${TIMESTAMP}.txt" | tail -20
+  # Step 2: Claude Code implements the gap in meow/src/ (NOT just gap-impl.test.ts)
+  echo "[2/6] Implementing $GAP_ID..."
+  IMPLEMENTATION_PROMPT="You are closing gap $GAP_ID in the meow CLI project.
+
+The gap test output shows $GAP_ID is failing.
+Read meow/tests/gaps.test.ts to understand what $GAP_ID requires.
+Read meow/tests/gap-impl.test.ts to understand the test format.
+
+IMPORTANT: Implement the ACTUAL FEATURE, not just a test.
+- If GAP requires a new skill: create meow/src/skills/<name>.ts
+- If GAP requires a new sidecar: create meow/src/sidecars/<name>.ts
+- If GAP requires modifying core: edit meow/src/core/<name>.ts
+- Write tests in meow/tests/gap-impl.test.ts
+
+Steps:
+1. Read meow/tests/gaps.test.ts to find $GAP_ID description
+2. Read relevant source files in meow/src/
+3. Implement the feature in the appropriate meow/src/ directory
+4. Add tests to meow/tests/gap-impl.test.ts
+5. Run: cd meow && bun test tests/gap-impl.test.ts
+6. Dogfood: cd meow && bun run cli/index.ts --dangerous 'help'
+7. Report what you implemented and the file paths"
+
+  claude --dangerously-skip-permissions "$IMPLEMENTATION_PROMPT" 2>&1 | tee "dogfood/logs/implementation-${GAP_ID}-${TIMESTAMP}.txt" | tail -60
   echo ""
 
-  # Step 6: Cleanup trash before commit
-  echo "[6/7] Cleaning up stray files..."
-  cleanup_trash
+  # Step 3: Verify the implementation
+  echo "[3/6] Verifying $GAP_ID implementation..."
+  cd meow && bun test tests/gap-impl.test.ts 2>&1 | tee "dogfood/tests/verification-${GAP_ID}-${TIMESTAMP}.txt" | tail -20
+  cd ..
   echo ""
 
-  # Step 7: Commit if there are changes
-  echo "[7/7] Committing changes to evolve branch..."
-  if [[ -n "$(git status --short meow/)" ]]; then
-    git add meow/
-    git commit -m "fix: $(date +%Y-%m-%d) - iteration $ITERATION
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
-    echo "Committed to 'evolve' branch."
-  else
-    echo "No changes to commit."
+  # Step 4: Dogfood with meow CLI
+  echo "[4/6] Dogfooding with meow CLI..."
+  DOGFOOD_RESULT=$(cd meow && bun run cli/index.ts --dangerous "help" 2>&1 || true)
+  echo "$DOGFOOD_RESULT" | tail -20
+  echo "$DOGFOOD_RESULT" > "dogfood/tests/dogfood-${GAP_ID}-${TIMESTAMP}.txt"
+  if echo "$DOGFOOD_RESULT" | grep -qi "error\|could not"; then
+    echo "WARNING: Dogfood may have issues, but continuing..."
   fi
   echo ""
 
-  echo "Iteration $ITERATION complete!"
-  echo "Logs: dogfood/logs/implementation-${ITERATION}-${TIMESTAMP}.txt"
-  echo "Tests: dogfood/tests/dogfood-verification-${ITERATION}-${TIMESTAMP}.txt"
+  # Step 5: Update docs
+  echo "[5/6] Updating docs..."
+  DOC_PROMPT="Update meow/TODO.md and meow/CLAUDE.md to reflect the $GAP_ID implementation:
+- Mark $GAP_ID as implemented in TODO.md
+- Add a brief dogfood note in CLAUDE.md under RECENT CHANGES
+Be concise - 2-3 lines."
+  claude --dangerously-skip-permissions "$DOC_PROMPT" 2>&1 | tee "dogfood/logs/docs-${GAP_ID}-${TIMESTAMP}.txt" | tail -10
+  echo ""
+
+  # Step 6: Cleanup and commit
+  echo "[6/6] Cleanup and commit..."
+  cleanup_trash
+
+  if [[ -n "$(git status --short meow/)" ]]; then
+    git add meow/
+    git commit -m "fix($GAP_ID): implement $GAP_ID
+
+Iteration: $ITERATION
+Dogfood: verified via meow CLI
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+    echo "✅ Committed $GAP_ID to 'evolve' branch."
+  else
+    echo "No changes to commit in meow/."
+  fi
+  echo ""
+
+  echo "Iteration $ITERATION complete for $GAP_ID!"
+  echo "Logs: dogfood/logs/implementation-${GAP_ID}-${TIMESTAMP}.txt"
+  echo ""
+
   ((ITERATION++))
 
-  # Brief pause
-  sleep 1
+  if [[ "$ONCE" == "true" ]]; then
+    exit 0
+  fi
+
+  # Brief pause between iterations
+  sleep 2
 done
