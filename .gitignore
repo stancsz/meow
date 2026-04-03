@@ -60,6 +60,15 @@ docs/research/competitors/*/
 # Meow user data (session logs, tasks, memory)
 .meow/
 
+# Claude Code data
+.claude/
+
+# Harvest temporary clones
+tmp/
+
+# Accidentally cloned repos at root level
+gemini-cli/
+
 # Test output
 test-*/
 test-output*/
