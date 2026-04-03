@@ -26,6 +26,7 @@ export interface LeanAgentOptions {
   maxTokens?: number;
   messages?: any[];
   timeoutMs?: number;
+  maxBudgetUSD?: number;  // Maximum budget in USD cents (e.g., 0.50 = 50 cents)
 }
 
 export interface AgentResult {
@@ -215,6 +216,7 @@ export async function runLeanAgent(
   const abortSignal = options.abortSignal;
   const maxTokens = options.maxTokens || 80000;
   const timeoutMs = options.timeoutMs;
+  const maxBudgetUSD = options.maxBudgetUSD;
 
   if (abortSignal?.aborted) {
     return { content: "Interrupted", iterations: 0, completed: false };
@@ -241,6 +243,7 @@ export async function runLeanAgent(
   let iterations = 0;
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
+  let totalCostUSD = 0;
   let lastContent = "";
 
   while (iterations < maxIterations) {
@@ -282,6 +285,23 @@ export async function runLeanAgent(
       if (response.usage) {
         totalPromptTokens += response.usage.prompt_tokens || 0;
         totalCompletionTokens += response.usage.completion_tokens || 0;
+        totalCostUSD = estimateCost(totalPromptTokens, totalCompletionTokens, model);
+      }
+
+      // Check budget
+      if (maxBudgetUSD !== undefined && totalCostUSD > maxBudgetUSD) {
+        return {
+          content: lastContent || "Budget exceeded",
+          iterations,
+          completed: false,
+          messages,
+          usage: {
+            promptTokens: totalPromptTokens,
+            completionTokens: totalCompletionTokens,
+            totalTokens: totalPromptTokens + totalCompletionTokens,
+            estimatedCost: totalCostUSD,
+          },
+        };
       }
 
       // No tool calls - return content directly
@@ -295,7 +315,7 @@ export async function runLeanAgent(
             promptTokens: totalPromptTokens,
             completionTokens: totalCompletionTokens,
             totalTokens: totalPromptTokens + totalCompletionTokens,
-            estimatedCost: estimateCost(totalPromptTokens, totalCompletionTokens, model),
+            estimatedCost: totalCostUSD,
           },
         };
       }
@@ -354,6 +374,12 @@ export async function runLeanAgent(
     iterations,
     completed: false,
     messages,
+    usage: {
+      promptTokens: totalPromptTokens,
+      completionTokens: totalCompletionTokens,
+      totalTokens: totalPromptTokens + totalCompletionTokens,
+      estimatedCost: totalCostUSD,
+    },
   };
 }
 

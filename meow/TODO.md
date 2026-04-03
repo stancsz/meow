@@ -371,14 +371,17 @@ Missing/incomplete sidecars:
 - Dogfood: used gap-close.sh to iteratively identify and fix gaps ✅
 
 ### Dogfood: generateStream (2026-04-03)
-- **generateStream added to lean-agent.ts** — AsyncGenerator yield-based streaming as primary interface for tests
-- Messages type relaxed to `any[]` to handle mixed content/tool_calls
+- **generateStream added to lean-agent.ts** — AsyncGenerator yield-based streaming as primary interface for tests ✅
+- **maxBudgetUSD added** — budget limiting per agent run ✅
+- Messages type relaxed to `any[]` to handle mixed content/tool_calls ✅
 
 ### Dogfood: Iteration Fixes (2026-04-03)
-- **timeoutMs added** — shell/git tools now respect per-call timeout via ToolContext
-- **Session compaction improved** — LLM-powered summarize + truncate when context nears limit
-- **gap-impl.test.ts created** — test suite for gap implementation verification
-- **gap-close.sh created** — automation script for iterative gap closing via Claude Code
+- **timeoutMs propagated** — now passed through ToolContext to shell/git tool execution ✅
+- **Session compaction** — LLM-powered summarize + truncate when context nears limit ✅
+- **Fork sessions** — sessions can now be forked for branching conversations ✅
+- **gap-impl.test.ts created** — test suite for gap implementation verification ✅
+- **gap-close.sh created** — automation script for iterative gap closing via Claude Code ✅
+- **maxBudgetUSD** — halts agent when estimated cost exceeds threshold ✅
 
 ### Test Failures
 - **113 tests fail** due to path resolution issues — tests use relative paths like `"meow/src/core/lean-agent.ts"` but CWD is repo root

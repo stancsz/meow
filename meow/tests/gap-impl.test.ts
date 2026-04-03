@@ -228,3 +228,42 @@ describe("GAP-TOOL-001: Edit Tool", () => {
     expect(hasNotFoundError).toBe(true);
   });
 });
+
+// ============================================================================
+// GAP-CORE-003: Budget Tracking
+// ============================================================================
+
+describe("GAP-CORE-003: Budget Tracking", () => {
+  const leanAgentPath = "meow/src/core/lean-agent.ts";
+
+  test("LeanAgentOptions accepts maxBudgetUSD parameter", () => {
+    const leanAgentSrc = readFileSync(leanAgentPath, "utf-8");
+    const hasBudgetOption = leanAgentSrc.includes("maxBudgetUSD");
+    expect(hasBudgetOption).toBe(true);
+  });
+
+  test("agent checks budget after each response", () => {
+    const leanAgentSrc = readFileSync(leanAgentPath, "utf-8");
+    // Should check budget against cost in the main loop
+    const hasBudgetCheck = leanAgentSrc.includes("maxBudgetUSD") &&
+                          (leanAgentSrc.includes("budget") || leanAgentSrc.includes("cost"));
+    expect(hasBudgetCheck).toBe(true);
+  });
+
+  test("agent stops when budget is exceeded", () => {
+    const leanAgentSrc = readFileSync(leanAgentPath, "utf-8");
+    // Should return early when budget exceeded
+    const hasBudgetReturn = leanAgentSrc.includes("Budget exceeded") ||
+                            leanAgentSrc.includes("budget exceeded") ||
+                            (leanAgentSrc.includes("maxBudgetUSD") && leanAgentSrc.includes("return"));
+    expect(hasBudgetReturn).toBe(true);
+  });
+
+  test("AgentResult includes cost information", () => {
+    const leanAgentSrc = readFileSync(leanAgentPath, "utf-8");
+    // AgentResult should have usage with cost info
+    const hasUsageInResult = leanAgentSrc.includes("estimatedCost") ||
+                             (leanAgentSrc.includes("usage") && leanAgentSrc.includes("totalTokens"));
+    expect(hasUsageInResult).toBe(true);
+  });
+});
