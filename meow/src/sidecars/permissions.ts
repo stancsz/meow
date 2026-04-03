@@ -190,6 +190,80 @@ export function getRules(): PermissionRule[] {
   return rules;
 }
 
+// ============================================================================
+// Formatting
+// ============================================================================
+
+/**
+ * Format rules as a human-readable string table.
+ */
+export function formatRules(): string {
+  const lines: string[] = [];
+  for (const rule of rules) {
+    const pat = rule.pattern ?? "(any)";
+    const action = rule.action.padEnd(4);
+    const desc = rule.description ?? "";
+    lines.push(`[${action}] ${rule.tool}: ${pat} — ${desc}`);
+  }
+  return lines.join("\n") || "(no rules)";
+}
+
+// ============================================================================
+// Pattern Testing
+// ============================================================================
+
+export interface PatternTestResult {
+  matches: boolean;
+  wouldAction: PermissionAction;
+  patternType: string;
+  reason: string;
+}
+
+/**
+ * Test a raw pattern against an input string and report what action it would trigger.
+ * Does NOT mutate the rule set.
+ */
+export function testPattern(toolName: string, pattern: string, inputStr: string): PatternTestResult {
+  const inputJson = JSON.stringify({ cmd: inputStr });
+  const matched = patternMatches(pattern, inputJson);
+
+  // Find what action the first matching rule would trigger
+  for (const rule of rules) {
+    if (rule.tool !== toolName) continue;
+    if (!rule.pattern) {
+      return {
+        matches: true,
+        wouldAction: rule.action,
+        patternType: "tool-level",
+        reason: rule.description ?? `tool-level rule for ${toolName}`,
+      };
+    }
+    if (patternMatches(rule.pattern, inputJson)) {
+      return {
+        matches: true,
+        wouldAction: rule.action,
+        patternType: detectPatternType(rule.pattern),
+        reason: rule.description ?? `matched pattern: ${rule.pattern}`,
+      };
+    }
+  }
+
+  return {
+    matches,
+    wouldAction: "ask",
+    patternType: detectPatternType(pattern),
+    reason: "no matching rule — defaults to ask",
+  };
+}
+
+function detectPatternType(pattern: string): string {
+  if (pattern.startsWith("!")) return "negated";
+  if (pattern.startsWith("^")) return "regex (anchored)";
+  if (pattern.includes(":")) return "field:value";
+  if (pattern.includes("**") || (pattern.includes("*") && !pattern.includes("**"))) return "glob";
+  return "plain prefix";
+}
+
 /**
  * Check if a tool+input passes the permission system.
  * Rules are evaluated in order; first match wins.

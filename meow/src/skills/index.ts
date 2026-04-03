@@ -10,6 +10,8 @@ import { commit } from "./commit.ts";
 import { learn } from "./learn.ts";
 import { mcp } from "./mcp.ts";
 import { perms } from "./perms.ts";
+import { permissions } from "./permissions.ts";
+import { help } from "./help.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -19,6 +21,8 @@ const allSkills: Skill[] = [
   learn,
   mcp,
   perms,
+  permissions,
+  help,
 ];
 
 // Auto-register on import
