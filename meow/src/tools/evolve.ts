@@ -14,7 +14,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 // ============================================================================
@@ -84,12 +84,11 @@ function runCmd(cmd: string, cwd: string = ROOT): { stdout: string; stderr: stri
   }
 }
 
-import { spawn } from "node:child_process";
-
 async function runCmdAsync(cmd: string, cwd: string = ROOT): Promise<string> {
   return new Promise((resolve) => {
     const timeoutMs = 300000;
-    const child = spawn("bash", ["-c", cmd], { cwd, encoding: "utf-8" });
+    // Use spawn in a child process to avoid stdin/stdout piping issues with claude --print
+    const child = spawn("bash", ["-c", cmd], { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let resolved = false;
@@ -98,24 +97,24 @@ async function runCmdAsync(cmd: string, cwd: string = ROOT): Promise<string> {
       if (!resolved) {
         resolved = true;
         child.kill("SIGKILL");
-        resolve(stdout + stderr);
+        resolve(stdout + stderr + "\n[TIMEOUT after " + timeoutMs + "ms]");
       }
     }, timeoutMs);
 
-    child.stdout?.on("data", (data) => { stdout += data; });
-    child.stderr?.on("data", (data) => { stderr += data; });
-    child.on("close", (code) => {
+    child.stdout?.on("data", (data: string) => { stdout += data; process.stdout.write(data); });
+    child.stderr?.on("data", (data: string) => { stderr += data; process.stderr.write(data); });
+    child.on("close", (code: number | null) => {
       if (!resolved) {
         resolved = true;
         clearTimeout(timer);
         resolve(stdout + stderr);
       }
     });
-    child.on("error", () => {
+    child.on("error", (err: Error) => {
       if (!resolved) {
         resolved = true;
         clearTimeout(timer);
-        resolve(stdout + stderr);
+        resolve(stdout + stderr + "\n[ERROR: " + err.message + "]");
       }
     });
   });
@@ -212,14 +211,14 @@ Respond with:
 `;
 
   console.log(`  🤖 Calling Claude Code...`);
-  // Write prompt to temp file
+  // Write prompt to temp file and pass as argument to avoid stdin-pipe hanging issues
   const tmpDir = join(ROOT, "tmp");
   ensureDir(tmpDir);
   const promptFile = join(tmpDir, `evolve-prompt-${Date.now()}.txt`);
   writeFileSync(promptFile, prompt);
-  // Use cat | bash to pipe prompt via stdin (works with Node exec)
-  const cmd = `cat "${promptFile}" | bash -c 'claude --dangerously-skip-permissions --bare --print'`;
-  console.log(`  [DEBUG] Cmd: ${cmd.slice(0, 100)}...`);
+  // Pass prompt as --extra-context-file argument so stdin is free for claude's own interaction
+  const cmd = `claude --dangerously-skip-permissions --bare --print --extra-context-file "${promptFile}"`;
+  console.log(`  [DEBUG] Cmd: ${cmd.slice(0, 120)}...`);
   const result = await runCmdAsync(cmd, ROOT);
   console.log(`  [DEBUG] Raw result: "${result.slice(0, 100)}"`);
   console.log(`  📝 Response received (${result.length} chars)`);

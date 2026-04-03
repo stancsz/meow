@@ -14,7 +14,6 @@ import { stdin as input, stdout as output } from "node:process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions } from "../src/core/lean-agent.ts";
-import { runAutoAgent, formatAutoResults } from "../src/core/auto-agent.ts";
 import { registerSignalHandlers, getInterruptController } from "../src/sidecars/auto-mode.ts";
 import { runAutoLoop, formatAutoLoopSummary, formatTickStatus } from "../src/sidecars/auto-loop.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
