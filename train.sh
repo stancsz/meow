@@ -30,15 +30,15 @@ if [[ "$*" == "" ]]; then
       continue
     fi
 
-    # Count open gaps
-    OPEN_GAPS=$(bun run meow/src/tools/evolve.ts --status 2>&1 | grep -c "📋" || echo "0")
+    # Count open gaps (look for the 📋 icon on a gap line, not the header)
+    OPEN_GAPS=$(bun run meow/src/tools/evolve.ts --status 2>&1 | grep -c "^  📋" || echo "0")
     echo "📊 Open gaps: $OPEN_GAPS"
 
     if [[ "$OPEN_GAPS" == "0" ]]; then
       echo "💤 All gaps solved! Waiting 60s before rechecking..."
       sleep 60
     else
-      echo "⏳ Gaps remaining, continuing..."
+      echo "⏳ Gaps remaining ($OPEN_GAPS open), continuing..."
       echo "🔄 Sleeping 5s before next iteration..."
       sleep 5
     fi
