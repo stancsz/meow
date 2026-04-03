@@ -29,7 +29,7 @@ const builtInCommands: Record<string, Command> = {
     name: "help",
     description: "Show available commands",
     execute: async (_, __) => ({
-      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume",
+      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /lang",
     }),
   },
   exit: {
@@ -54,6 +54,14 @@ const builtInCommands: Record<string, Command> = {
       content: "",
       handled: true,
     }),
+  },
+  lang: {
+    name: "lang",
+    description: "Switch language: /lang en|zh|zt",
+    execute: async (args) => {
+      const { langCommand } = await import("./i18n/index.ts");
+      return langCommand(args);
+    },
   },
 };
 

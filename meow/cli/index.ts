@@ -19,6 +19,10 @@ import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-regist
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
 import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
+import { initI18n, t } from "../src/sidecars/i18n/index.ts";
+
+// Initialize i18n
+initI18n();
 
 // Load .env file if present
 function loadEnv() {
@@ -49,7 +53,7 @@ const colors = {
   cyan: "\x1b[36m",
 };
 
-const prefix = `${colors.cyan}${colors.bold}🐱 meow > ${colors.reset}`;
+const prefix = `${colors.cyan}${colors.bold}${t("prompt")}${colors.reset}`;
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 // ============================================================================
@@ -63,7 +67,7 @@ let isStreaming = false;  // Toggle for streaming mode
 function interrupt(): void {
   if (abortController) {
     abortController.abort();
-    console.log(`\n${colors.yellow}⏹️ Interrupted${colors.reset}`);
+    console.log(`\n${colors.yellow}${t("interrupted")}${colors.reset}`);
   }
 }
 
@@ -95,7 +99,7 @@ async function withSpinner<T>(
 
   const spin = async () => {
     while (!interrupted && isThinking) {
-      process.stdout.write(`${colors.dim}${spinnerFrames[frame % spinnerFrames.length]} ${message}${colors.reset}\r`);
+      process.stdout.write(`${colors.dim}${spinnerFrames[frame % spinnerFrames.length]} ${t("thinking")}${colors.reset}\r`);
       frame++;
       await new Promise((r) => setTimeout(r, 80));
     }
@@ -168,7 +172,7 @@ async function checkAndCompact(): Promise<void> {
 
   if (totalTokens < MAX_SESSION_TOKENS) return;
 
-  console.log(`\n${colors.dim}📦 Session getting long (${totalTokens} tokens) - compacting...${colors.reset}`);
+  console.log(`\n${colors.dim}📦 ${t("compacting")}${colors.reset}`);
 
   try {
     const result = await compactSession(currentSessionId, {
@@ -191,7 +195,7 @@ async function checkAndCompact(): Promise<void> {
     });
 
     if (result.summary) {
-      console.log(`${colors.green}✓ Compacted ${result.originalCount} messages → ${result.compactedCount}${colors.reset}`);
+      console.log(`${colors.green}✓ ${t("compacted", { old: result.originalCount, new: result.compactedCount })}${colors.reset}`);
 
       // Update local session messages with the compacted version
       currentSessionMessages = result.messages.map((m) => ({
@@ -290,7 +294,7 @@ async function main() {
   await initializeCheckpointing();
 
   const tools = getAllTools();
-  console.log(`${colors.dim}Loaded ${tools.length} tools and ${skills.length} skills${colors.reset}`);
+  console.log(`${colors.dim}${t("tools_loaded", { n: tools.length, m: skills.length })}${colors.reset}`);
 
   // Handle --resume flag
   if (resumeSession) {
@@ -635,7 +639,7 @@ Respond with ONLY the plan.`;
     // Built-in commands
     if (trimmed === "/exit") {
       saveSession();
-      console.log(`${colors.yellow}Goodbye!${colors.reset}`);
+      console.log(`${colors.yellow}${t("goodbye")}${colors.reset}`);
       rl.close();
       return;
     }
