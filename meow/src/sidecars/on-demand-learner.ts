@@ -28,10 +28,9 @@ import { fileURLToPath } from "node:url";
 // Paths
 // ============================================================================
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-// meow/src/sidecars -> meow -> project root (parent of meow)
-// So from sidecars: ../../.. = project root
-const ROOT = join(__dirname, "../../..");
+// Use process.cwd() for reliable path resolution — it's always the project
+// root (meow/) when the CLI runs, regardless of how this module is imported.
+const ROOT = process.cwd();
 const DOGFOOD = join(ROOT, "dogfood");
 const LEARN_DIR = join(DOGFOOD, "learned");
 const HARVEST_DOCS = join(ROOT, "docs/harvest");

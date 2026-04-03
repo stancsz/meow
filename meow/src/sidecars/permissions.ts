@@ -1,19 +1,16 @@
-/**
- * permissions.ts
- *
- * Permission sidecar with pattern-matching rules.
- * Allows/denies/asks before tool execution based on rules.
- *
- * Rules are loaded from .meow/permissions.json:
- * {
- *   "rules": [
- *     { "tool": "shell", "pattern": "^git ", "action": "allow" },
- *     { "tool": "shell", "pattern": "^rm ", "action": "deny" },
- *     { "tool": "shell", "action": "ask" },
- *     { "tool": "write", "action": "ask" }
- *   ]
- * }
- */
+// permissions.ts
+//
+// Permission sidecar with pattern-matching rules.
+// Allows/denies/asks before tool execution based on rules.
+//
+// Pattern types supported:
+//   regex:  /^git /       - anchored regex
+//   glob:   glob patterns with * and ** wildcards
+//   prefix: plain prefix match (no special chars)
+//   negate: patterns starting with ! are negated
+//   field:  field:value matches JSON field values
+//
+// Rules are loaded from ~/.meow/permissions.json
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -27,17 +24,92 @@ export type PermissionAction = "allow" | "deny" | "ask";
 
 export interface PermissionRule {
   tool: string;
-  pattern?: string;  // Optional regex pattern
+  pattern?: string;       // Optional pattern (regex, glob, prefix, field, or negate)
   action: PermissionAction;
+  description?: string;  // Human-readable description for the rule
 }
 
 export interface PermissionContext {
-  input?: unknown;  // Tool input args
+  input?: unknown;        // Tool input args
 }
 
 export interface PermissionResult {
   action: PermissionAction;
   reason?: string;
+  rule?: PermissionRule;  // The rule that matched
+}
+
+// ============================================================================
+// Pattern Matching Engine
+// ============================================================================
+
+/**
+ * Check if a pattern matches the input string.
+ * Supports multiple pattern syntaxes:
+ *   ^regex$       — anchored regex (detected when starts with ^)
+ *   glob:*        — glob with * and ** wildcards
+ *   field:value   — match specific field in JSON: "cmd:git add"
+ *   !pattern      — negated (returns true when pattern does NOT match)
+ *   plain prefix  — substring match (no special chars)
+ */
+function patternMatches(pattern: string, inputStr: string): boolean {
+  // Handle negated patterns
+  if (pattern.startsWith("!")) {
+    return !patternMatches(pattern.slice(1), inputStr);
+  }
+
+  // Field-based matching: "field:value" matches JSON field values
+  if (pattern.includes(":")) {
+    const colonIdx = pattern.indexOf(":");
+    const field = pattern.slice(0, colonIdx);
+    const value = pattern.slice(colonIdx + 1);
+    try {
+      const parsed = JSON.parse(inputStr);
+      if (typeof parsed === "object" && parsed !== null) {
+        const fieldValue = (parsed as Record<string, unknown>)[field];
+        return String(fieldValue ?? "").startsWith(value);
+      }
+    } catch {
+      // Not JSON — do plain prefix match on the field:value syntax
+    }
+    // Fallback: look for "field":"value" or "field":"value" in stringified JSON
+    const quotedField = `"${field}":"`;
+    const fieldIdx = inputStr.indexOf(quotedField);
+    if (fieldIdx >= 0) {
+      const afterField = inputStr.slice(fieldIdx + quotedField.length);
+      return afterField.startsWith(value);
+    }
+    return false;
+  }
+
+  // Regex matching: anchored patterns (start with ^) or contain regex metacharacters
+  if (pattern.startsWith("^") || /[.+*?\[\]{}]/.test(pattern)) {
+    try {
+      const regex = new RegExp(pattern);
+      return regex.test(inputStr);
+    } catch {
+      // Invalid regex — fall through to prefix matching
+    }
+  }
+
+  // Glob matching: patterns with * or **
+  if (pattern.includes("*")) {
+    const regexStr = pattern
+      .replace(/\./g, "\\.")
+      .replace(/\*\*/g, "\0GLOBSTAR\0")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\0GLOBSTAR\0/g, ".*")
+      .replace(/\[(\^?)\.\*/g, (_, neg) => (neg ? "[^" : "["));
+    try {
+      const regex = new RegExp(`^${regexStr}$`);
+      return regex.test(inputStr);
+    } catch {
+      // Fall through to prefix
+    }
+  }
+
+  // Plain prefix match
+  return inputStr.includes(pattern);
 }
 
 // ============================================================================
@@ -45,22 +117,44 @@ export interface PermissionResult {
 // ============================================================================
 
 const DEFAULT_RULES: PermissionRule[] = [
-  { tool: "read", action: "allow" },                    // Reading is safe
-  { tool: "glob", action: "allow" },                   // Finding files is safe
-  { tool: "grep", action: "allow" },                    // Searching is safe
-  { tool: "git", action: "allow" },                     // Git is generally safe
-  { tool: "shell", pattern: "\"cmd\":\"git ", action: "allow" },  // Git commands safe
-  { tool: "shell", pattern: "\"cmd\":\"npm ", action: "allow" },   // npm is safe
-  { tool: "shell", pattern: "\"cmd\":\"bun ", action: "allow" },   // bun is safe
-  { tool: "shell", pattern: "\"cmd\":\"cd ", action: "allow" },    // cd is safe
-  { tool: "shell", pattern: "\"cmd\":\"ls", action: "allow" },     // ls is safe
-  { tool: "shell", pattern: "\"cmd\":\"pwd", action: "allow" },    // pwd is safe
-  { tool: "shell", pattern: "\"cmd\":\"cat ", action: "allow" },   // cat is safe
-  { tool: "shell", pattern: "\"cmd\":\"rm ", action: "deny" },     // rm is dangerous
-  { tool: "shell", pattern: "\"cmd\":\"sudo ", action: "deny" },   // sudo is dangerous
-  { tool: "shell", action: "ask" },                     // Everything else asks
-  { tool: "write", action: "ask" },                     // Writes ask
-  { tool: "edit", action: "ask" },                      // Edits ask
+  // Safe read-only operations — always allowed
+  { tool: "read", action: "allow", description: "Reading files is safe" },
+  { tool: "glob", action: "allow", description: "Finding files is safe" },
+  { tool: "grep", action: "allow", description: "Searching files is safe" },
+  { tool: "git", action: "allow", description: "Git is generally safe" },
+
+  // Shell commands — pattern-based allow/deny using field:value syntax
+  // (shell tool inputs are JSON: {"cmd": "git status"})
+  { tool: "shell", pattern: "cmd:git ", action: "allow", description: "Git commands" },
+  { tool: "shell", pattern: "cmd:npm ", action: "allow", description: "npm commands" },
+  { tool: "shell", pattern: "cmd:bun ", action: "allow", description: "bun commands" },
+  { tool: "shell", pattern: "cmd:cd ", action: "allow", description: "cd is safe" },
+  { tool: "shell", pattern: "cmd:ls", action: "allow", description: "ls is safe" },
+  { tool: "shell", pattern: "cmd:pwd", action: "allow", description: "pwd is safe" },
+  { tool: "shell", pattern: "cmd:cat ", action: "allow", description: "cat is safe" },
+  { tool: "shell", pattern: "cmd:mkdir ", action: "allow", description: "mkdir is safe" },
+  { tool: "shell", pattern: "cmd:node ", action: "allow", description: "node is safe" },
+  { tool: "shell", pattern: "cmd:npx ", action: "allow", description: "npx is safe" },
+  { tool: "shell", pattern: "cmd:echo ", action: "allow", description: "echo is safe" },
+  { tool: "shell", pattern: "cmd:head ", action: "allow", description: "head is safe" },
+  { tool: "shell", pattern: "cmd:tail ", action: "allow", description: "tail is safe" },
+  { tool: "shell", pattern: "cmd:wc ", action: "allow", description: "wc is safe" },
+  { tool: "shell", pattern: "cmd:grep ", action: "allow", description: "grep is safe" },
+  { tool: "shell", pattern: "cmd:find ", action: "allow", description: "find is safe" },
+  { tool: "shell", pattern: "cmd:sed ", action: "allow", description: "sed is safe" },
+  { tool: "shell", pattern: "cmd:awk ", action: "allow", description: "awk is safe" },
+
+  // Dangerous shell commands — always denied
+  { tool: "shell", pattern: "cmd:rm ", action: "deny", description: "rm is dangerous" },
+  { tool: "shell", pattern: "cmd:rm -rf /", action: "deny", description: "rm -rf / is catastrophic" },
+  { tool: "shell", pattern: "cmd:sudo ", action: "deny", description: "sudo is dangerous" },
+  { tool: "shell", pattern: "cmd:dd ", action: "deny", description: "dd is dangerous" },
+  { tool: "shell", pattern: "cmd:mkfs ", action: "deny", description: "mkfs is destructive" },
+  { tool: "shell", pattern: "cmd:> /dev/", action: "deny", description: "redirect to /dev is suspicious" },
+
+  // Write operations — ask by default
+  { tool: "write", action: "ask", description: "Writing files requires confirmation" },
+  { tool: "edit", action: "ask", description: "Editing files requires confirmation" },
 ];
 
 // ============================================================================
@@ -77,7 +171,14 @@ export function loadPermissions(): void {
       const content = readFileSync(configPath, "utf-8");
       const config = JSON.parse(content);
       if (config.rules && Array.isArray(config.rules)) {
-        rules = [...config.rules, ...DEFAULT_RULES];  // User rules take precedence
+        // User rules take precedence — they are checked first
+        const userRules: PermissionRule[] = config.rules.map((r: Partial<PermissionRule>) => ({
+          tool: r.tool ?? "shell",
+          pattern: r.pattern,
+          action: r.action ?? "ask",
+          description: r.description,
+        }));
+        rules = [...userRules, ...DEFAULT_RULES];
       }
     }
   } catch {
@@ -89,23 +190,51 @@ export function getRules(): PermissionRule[] {
   return rules;
 }
 
+/**
+ * Check if a tool+input passes the permission system.
+ * Rules are evaluated in order; first match wins.
+ *
+ * @param toolName  The name of the tool (e.g., "shell", "write")
+ * @param input     The tool input (will be stringified for pattern matching)
+ * @returns PermissionResult with the action and which rule matched
+ */
 export function checkPermission(toolName: string, input?: unknown): PermissionResult {
-  // Find matching rule
+  const inputStr = input !== undefined ? (typeof input === "string" ? input : JSON.stringify(input)) : "";
+
   for (const rule of rules) {
     if (rule.tool !== toolName) continue;
 
-    // Check pattern if specified
-    if (rule.pattern && input) {
-      const inputStr = JSON.stringify(input);
-      const regex = new RegExp(rule.pattern);
-      if (!regex.test(inputStr)) continue;
+    // No pattern — tool-level match
+    if (!rule.pattern) {
+      return {
+        action: rule.action,
+        reason: rule.description ?? `rule for ${toolName}`,
+        rule,
+      };
     }
 
-    return { action: rule.action, reason: rule.pattern ? `matched pattern: ${rule.pattern}` : `rule for ${toolName}` };
+    // Check pattern
+    if (patternMatches(rule.pattern, inputStr)) {
+      return {
+        action: rule.action,
+        reason: rule.description ?? `matched pattern: ${rule.pattern}`,
+        rule,
+      };
+    }
   }
 
-  // No matching rule - default to ask
+  // No matching rule — default to ask
   return { action: "ask" };
+}
+
+/**
+ * Convenience: check permission by tool name and a simple command string.
+ * Useful for testing: checkPermissionSimple("shell", "git status")
+ */
+export function checkPermissionSimple(toolName: string, command: string): PermissionResult {
+  // Wrap command in the JSON format used by the shell tool: {cmd: "..."}
+  // checkPermission will then stringify this to {"cmd":"..."} for pattern matching
+  return checkPermission(toolName, { cmd: command });
 }
 
 export async function promptPermission(toolName: string, input?: unknown): Promise<boolean> {

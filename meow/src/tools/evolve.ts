@@ -14,7 +14,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { execSync, exec } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 // ============================================================================
@@ -84,10 +84,20 @@ function runCmd(cmd: string, cwd: string = ROOT): { stdout: string; stderr: stri
   }
 }
 
+import { spawn } from "node:child_process";
+
 async function runCmdAsync(cmd: string, cwd: string = ROOT): Promise<string> {
   return new Promise((resolve) => {
-    exec(cmd, { cwd, encoding: "utf-8", timeout: 300000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
-      resolve((stdout || "") + (stderr || ""));
+    const child = spawn("bash", ["-c", cmd], { cwd, encoding: "utf-8", timeout: 300000 });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (data) => { stdout += data; });
+    child.stderr?.on("data", (data) => { stderr += data; });
+    child.on("close", () => {
+      resolve(stdout + stderr);
+    });
+    child.on("error", () => {
+      resolve(stdout + stderr);
     });
   });
 }
@@ -183,21 +193,38 @@ Respond with:
 `;
 
   console.log(`  🤖 Calling Claude Code...`);
-  const result = await runCmdAsync(`claude --dangerously-skip-permissions "${prompt.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`, ROOT);
+  // Write prompt to temp file
+  const tmpDir = join(ROOT, "tmp");
+  ensureDir(tmpDir);
+  const promptFile = join(tmpDir, `evolve-prompt-${Date.now()}.txt`);
+  writeFileSync(promptFile, prompt);
+  // Use cat | bash to pipe prompt via stdin (works with Node exec)
+  const cmd = `cat "${promptFile}" | bash -c 'claude --dangerously-skip-permissions --bare --print'`;
+  console.log(`  [DEBUG] Cmd: ${cmd.slice(0, 100)}...`);
+  const result = await runCmdAsync(cmd, ROOT);
+  console.log(`  [DEBUG] Raw result: "${result.slice(0, 100)}"`);
   console.log(`  📝 Response received (${result.length} chars)`);
 
-  // Check if implementation worked
-  if (result.includes("SUCCESS:")) {
+  // Check if implementation worked (look for SUCCESS or FAILED markers)
+  const hasSuccess = result.includes("SUCCESS") || result.includes("success");
+  const hasFailure = result.includes("FAILED:") || result.includes("FAILED");
+  console.log(`  [DEBUG] hasSuccess=${hasSuccess}, hasFailure=${hasFailure}, result.length=${result.length}`);
+
+  if (hasSuccess || hasFailure) {
     // Check if files were actually modified
     console.log(`  📁 Checking for file changes...`);
-    const gitStatus = runCmd(`git status --short meow/`, ROOT);
+    const gitStatus = runCmd(`git status --short .`, ROOT);
+    console.log(`  [DEBUG] gitStatus.stdout="${gitStatus.stdout}"`);
+    console.log(`  [DEBUG] gitStatus.stderr="${gitStatus.stderr}"`);
     const hasChanges = gitStatus.stdout.trim().length > 0;
 
-    if (!hasChanges) {
+    if (hasSuccess && !hasChanges) {
       console.log(`  ❌ LLM said SUCCESS but no files changed!`);
       return { success: false, reason: "No files modified" };
     }
-    console.log(`  📁 Changes detected:\n${gitStatus.stdout}`);
+    if (hasChanges) {
+      console.log(`  📁 Changes detected:\n${gitStatus.stdout}`);
+    }
 
     // Dogfood test
     console.log(`  🧪 Dogfooding...`);
@@ -206,19 +233,21 @@ Respond with:
 
     if (works) {
       console.log(`  ✅ Dogfood passed`);
-      return { success: true };
     } else {
       console.log(`  ⚠️  Dogfood had issues but continuing`);
-      return { success: true };
     }
-  } else if (result.includes("FAILED:")) {
-    const reason = result.match(/FAILED:\s*(.+)/)?.[1] || "Unknown";
-    console.log(`  ❌ Failed: ${reason}`);
-    return { success: false, reason };
+
+    if (hasSuccess) {
+      return { success: true };
+    } else {
+      const reason = result.match(/FAILED:\s*(.+)/)?.[1] || "Unknown";
+      console.log(`  ❌ Failed: ${reason}`);
+      return { success: false, reason };
+    }
   } else {
     // No clear SUCCESS or FAILED - check if files actually changed anyway
     console.log(`  📁 Checking for file changes...`);
-    const gitStatus = runCmd(`git status --short meow/`, ROOT);
+    const gitStatus = runCmd(`git status --short .`, ROOT);
     const hasChanges = gitStatus.stdout.trim().length > 0;
 
     if (hasChanges) {
@@ -244,9 +273,9 @@ function markSolved(gapId: string): void {
 
   // Commit the changes
   console.log(`  📝 Committing changes...`);
-  const gitStatus = runCmd(`git status --short meow/`, ROOT);
+  const gitStatus = runCmd(`git status --short .`, ROOT);
   if (gitStatus.stdout.trim()) {
-    runCmd(`git add meow/ && git commit -m "fix(${gapId}): ${gap?.description}
+    runCmd(`git add . && git commit -m "fix(${gapId}): ${gap?.description}
 
 Evolve loop - gap closed via Claude Code.
 

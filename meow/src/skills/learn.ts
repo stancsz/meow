@@ -61,19 +61,12 @@ export const learn: Skill = {
       return { content: output };
     }
 
-    // Check for capability gaps in user intent
-    const gaps = detectCapabilityGap(arg);
-    if (gaps.length > 0) {
-      return {
-        content: `🎯 Detected capability gaps: ${gaps.join(", ")}
-
-Meow is learning! Run /learn <gap> to learn each capability.
-
-Alternatively, run /learn --list to see all available harvest candidates.`,
-      };
-    }
-
     if (!arg) {
+      // Auto-detect capability gaps when no specific request is made
+      const gaps = detectCapabilityGap("") || [];
+      const candidates = getHarvestCandidates();
+      const knownGaps = gaps.filter(g => candidates.some(c => c.name === g));
+
       return {
         content: `🐣 MEOW ON-DEMAND LEARN
 
@@ -88,7 +81,7 @@ Examples:
   /learn deploy         Learn GCP deployment skill
   /learn kafka          Learn Kafka streaming
 
-Available to learn: ${getHarvestCandidates().map(c => c.name).join(", ")}`,
+Available to learn: ${candidates.map(c => c.name).join(", ")}${knownGaps.length > 0 ? `\n\nDetected gaps: ${knownGaps.map(g => "/learn " + g).join(", ")}` : ""}`,
       };
     }
 

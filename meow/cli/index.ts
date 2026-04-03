@@ -318,6 +318,48 @@ async function main() {
   if (filteredArgs.length > 0) {
     // Single task mode
     const prompt = filteredArgs.join(" ");
+
+    // Check if it's a skill command (starts with /)
+    // On Windows, /learn becomes C:/Program Files/Git/learn (shell mangles / paths)
+    // We detect this: path with : after first char = Windows mangle of a / command
+    const isWindowsMangled = prompt.length > 1 && prompt[1] === ":" && /[A-Za-z]/.test(prompt[0]) && prompt.includes("Program Files");
+    if (prompt.startsWith("/") && !isWindowsMangled) {
+      const parts = prompt.slice(1).split(/\s+/);
+      const skillName = parts[0];
+      const skillArgs = parts.slice(1).join(" ");
+
+      const skill = findSkill(skillName);
+      if (skill) {
+        console.log(`${colors.dim}Running skill: /${skill.name}${colors.reset}`);
+        const result = await skill.execute(skillArgs, { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    } else if (isWindowsMangled) {
+      // Windows mangled the skill command — extract skill name from last path segment
+      const lastSlash = prompt.lastIndexOf("/");
+      const lastSegment = lastSlash >= 0 ? prompt.slice(lastSlash + 1) : prompt;
+      // May include args after skill name (e.g., "learn --status")
+      const spaceIdx = lastSegment.indexOf(" ");
+      const skillName = spaceIdx >= 0 ? lastSegment.slice(0, spaceIdx) : lastSegment;
+      const skillArgs = spaceIdx >= 0 ? lastSegment.slice(spaceIdx + 1) : "";
+      const skill = findSkill(skillName);
+      if (skill) {
+        console.log(`${colors.dim}Running skill: /${skill.name} (via Windows path mangle)${colors.reset}`);
+        const result = await skill.execute(skillArgs, { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    }
+
     console.log(`${colors.dim}🐱 meow${colors.reset}\n`);
     console.log(`${colors.dim}Prompt: ${prompt}${colors.reset}\n`);
 
