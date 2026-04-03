@@ -348,8 +348,24 @@ ${"🐱".repeat(30)}
     const gap = getNextOpenGap();
 
     if (!gap) {
-      console.log(`\n✅ All gaps solved!`);
-      break;
+      // No open gaps - run autonomous discovery
+      console.log(`\n🔍 No open gaps - running autonomous discovery...`);
+      const discovered = await discoverAndCreateGap();
+
+      if (!discovered) {
+        // Nothing to do - dogfood test the system
+        console.log(`\n🧪 No new gaps found - running dogfood test...`);
+        await dogfoodTest();
+      }
+
+      if (options.once) {
+        console.log(`\nSingle iteration complete.`);
+        break;
+      }
+
+      // Brief pause before next check
+      await new Promise((r) => setTimeout(r, 30000));
+      continue;
     }
 
     const remaining = loadGaps().filter((g) => g.status === "open").length;
@@ -376,6 +392,92 @@ ${"🐱".repeat(30)}
 
     // Brief pause between gaps
     await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
+async function discoverAndCreateGap(): Promise<boolean> {
+  console.log(`\n🔍 Discovering new gaps...`);
+
+  const prompt = `You are analyzing the meow CLI project at /c/Users/stanc/github/meow to identify new gaps.
+
+Look at:
+1. meow/src/ - what capabilities are missing?
+2. docs/harvest/ - what harvest candidates exist?
+3. docs/ - any TODOs or FIXME comments?
+4. meow/tests/ - what tests are missing?
+5. Check git log for recent issues
+
+Identify the most important gap to fill next. Focus on:
+- Missing skills that users would want
+- Broken or incomplete features
+- Missing test coverage
+- P0-PN capabilities that need implementation
+
+Respond ONLY with a JSON object like this (no other text):
+{
+  "id": "GAP-NEW-01",
+  "description": "Brief description of the gap",
+  "priority": "P1",
+  "whatToImplement": "What specifically should be implemented"
+}`;
+
+  const tmpDir = join(ROOT, "tmp");
+  ensureDir(tmpDir);
+  const promptFile = join(tmpDir, `discover-prompt-${Date.now()}.txt`);
+  writeFileSync(promptFile, prompt);
+
+  const cmd = `echo "test" | timeout 120 claude --dangerously-skip-permissions --bare --print 2>&1 || echo "FAILED"`;
+  // Use simpler approach - just run claude directly
+  const result = await runCmdAsync(cmd, ROOT);
+
+  // Try to parse JSON from response
+  const jsonMatch = result.match(/\{[\s\S]*"id"[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const newGap = JSON.parse(jsonMatch[0]);
+      console.log(`\n📝 Discovered new gap: ${newGap.id} — ${newGap.description}`);
+
+      const gaps = loadGaps();
+      // Check if this gap already exists
+      if (!gaps.find(g => g.id === newGap.id)) {
+        newGap.status = "open";
+        gaps.push(newGap);
+        saveGaps(gaps);
+        console.log(`✅ Added ${newGap.id} to gap list`);
+        return true;
+      } else {
+        console.log(`  Gap ${newGap.id} already exists`);
+      }
+    } catch (e) {
+      console.log(`  Failed to parse gap JSON: ${e}`);
+    }
+  } else {
+    console.log(`  No valid gap JSON found in response`);
+  }
+  return false;
+}
+
+async function dogfoodTest(): Promise<void> {
+  console.log(`\n🧪 Running dogfood test...`);
+
+  const result = runCmd(`cd meow && bun run cli/index.ts --dangerous "help" 2>&1`, ROOT);
+
+  if (result.code === 0 && result.stdout.includes("help")) {
+    console.log(`  ✅ CLI help works`);
+  } else {
+    console.log(`  ❌ CLI help failed - may need fixing`);
+    // Create a gap for this issue
+    const gaps = loadGaps();
+    const cliGap = {
+      id: `GAP-CLI-${Date.now()}`,
+      description: "CLI help command not working",
+      priority: "P0",
+      status: "open",
+      whatToImplement: "Fix the CLI help command. Run 'bun run cli/index.ts --dangerous help' and ensure it outputs help text."
+    };
+    gaps.push(cliGap);
+    saveGaps(gaps);
+    console.log(`  📝 Created gap: ${cliGap.id}`);
   }
 }
 
