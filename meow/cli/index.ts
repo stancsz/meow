@@ -325,15 +325,17 @@ async function main() {
     // Single task mode
     const prompt = filteredArgs.join(" ");
 
-    // Check if it's a skill command (starts with /)
-    // On Windows Git Bash, /learn becomes C:/Program Files/Git/learn (shell mangles / paths).
-    // We detect mangling by:
-    //   1. prompt[1] === ":" && prompt[0] is a letter && includes "Program Files" (e.g. C:/.../learn)
-    //   2. starts with C:/Program Files/Git/ (Git Bash expands /X to C:/Program Files/Git/X)
-    const isWindowsMangled =
-      (prompt.length > 1 && prompt[1] === ":" && /[A-Za-z]/.test(prompt[0]) && prompt.includes("Program Files")) ||
-      (prompt.startsWith("C:/Program Files/Git/") || prompt.startsWith("C:\\Program Files\\Git\\"));
-    if (prompt.startsWith("/") && !isWindowsMangled) {
+    // On Windows Git Bash, /mcp connect args → "C:/Program Files/Git/mcp" + "connect" + "args..."
+    // Since the shell splits the mangled path at spaces, "C:/Program Files/Git/mcp" becomes
+    // separate args. Check if the FIRST filteredArg itself starts with the mangled path pattern.
+    const firstArg = filteredArgs[0] || "";
+    const startsWithMangledPrefix =
+      firstArg.startsWith("C:/Program Files/Git/") ||
+      firstArg.startsWith("C:\\Program Files\\Git\\") ||
+      (firstArg.length > 1 && firstArg[1] === ":" && /[A-Za-z]/.test(firstArg[0]) && firstArg.includes("Program Files") && firstArg.includes("Git"));
+
+    if (prompt.startsWith("/") && !startsWithMangledPrefix) {
+      // Normal slash command: /mcp help → prompt="/mcp help"
       const parts = prompt.slice(1).split(/\s+/);
       const skillName = parts[0];
       const skillArgs = parts.slice(1).join(" ");
@@ -351,27 +353,36 @@ async function main() {
       }
     }
 
-    // Windows Git Bash mangling: /mcp → C:/Program Files/Git/mcp [args...].
-    // This path is taken when the prompt starts with a drive letter (e.g. C:).
-    // We detect it by checking if it starts with a drive letter AND includes "Program Files".
-    if (isWindowsMangled) {
-      // Strip leading drive/prefix pattern (e.g. "C:/Program Files/Git/")
-      let skillPath = prompt;
-      const driveSlashMatch = prompt.match(/^[A-Za-z]:[/\\]*/);
-      if (driveSlashMatch) {
-        skillPath = prompt.slice(driveSlashMatch[0].length);
+    if (startsWithMangledPrefix) {
+      // Windows Git Bash mangled the skill command.
+      // The first arg contains the full "C:/Program Files/Git/<skill> [args...]".
+      // " /" (space + slash) marks the boundary between skill name and args.
+      // If there's no space after the skill name (just "/mcp"), use last "/" as separator.
+      const spaceSlashIdx = firstArg.indexOf(" /");
+      let skillName: string;
+      let remainingFirstArg: string;
+      if (spaceSlashIdx >= 0) {
+        // Has args: "C:/Program Files/Git/mcp connect..." → skillName="mcp", remaining="connect..."
+        remainingFirstArg = firstArg.slice(spaceSlashIdx + 2); // skip " /"
+        const spaceIdx2 = remainingFirstArg.indexOf(" ");
+        skillName = spaceIdx2 >= 0 ? remainingFirstArg.slice(0, spaceIdx2) : remainingFirstArg;
+      } else {
+        // No args: "C:/Program Files/Git/mcp" → skillName="mcp"
+        const lastSlash = firstArg.lastIndexOf("/");
+        skillName = lastSlash >= 0 ? firstArg.slice(lastSlash + 1) : firstArg;
+        remainingFirstArg = "";
       }
-      // Find the LAST "/" — that separates the skill name from its args
-      const lastSlash = skillPath.lastIndexOf("/");
-      const afterSlash = lastSlash >= 0 ? skillPath.slice(lastSlash + 1) : skillPath;
-      // afterSlash is like "mcp connect test bun run meow/scripts/mock-mcp-server.ts"
-      const spaceIdx = afterSlash.indexOf(" ");
-      const skillName = spaceIdx >= 0 ? afterSlash.slice(0, spaceIdx) : afterSlash;
-      const skillArgs = spaceIdx >= 0 ? afterSlash.slice(spaceIdx + 1) : "";
+      // Remaining args from firstArg after the skill name, plus extra filteredArgs
+      const afterSkillName = spaceSlashIdx >= 0
+        ? (remainingFirstArg.indexOf(" ") >= 0 ? remainingFirstArg.slice(remainingFirstArg.indexOf(" ") + 1) : "")
+        : "";
+      const extraArgs = filteredArgs.slice(1).join(" ");
+      const fullArgs = [afterSkillName, extraArgs].filter(Boolean).join(" ");
+
       const skill = findSkill(skillName);
       if (skill) {
         console.log(`${colors.dim}Running skill: /${skill.name} (via Windows path mangle)${colors.reset}`);
-        const result = await skill.execute(skillArgs, { cwd: process.cwd(), dangerous });
+        const result = await skill.execute(fullArgs, { cwd: process.cwd(), dangerous });
         if (result.error) {
           console.error(`${colors.red}${result.error}${colors.reset}`);
         } else {
