@@ -211,15 +211,20 @@ Respond with:
 `;
 
   console.log(`  🤖 Calling Claude Code...`);
-  // Write prompt to temp file and pass as argument to avoid stdin-pipe hanging issues
+  // Write prompt to temp file and pipe to claude --print
   const tmpDir = join(ROOT, "tmp");
   ensureDir(tmpDir);
   const promptFile = join(tmpDir, `evolve-prompt-${Date.now()}.txt`);
   writeFileSync(promptFile, prompt);
-  // Pass prompt as --extra-context-file argument so stdin is free for claude's own interaction
-  const cmd = `claude --dangerously-skip-permissions --bare --print --extra-context-file "${promptFile}"`;
-  console.log(`  [DEBUG] Cmd: ${cmd.slice(0, 120)}...`);
-  const result = await runCmdAsync(cmd, ROOT);
+
+  // Use execSync for reliable stdin piping to claude --print
+  let result = "";
+  try {
+    const cmd = `cat "${promptFile}" | bash -c 'claude --dangerously-skip-permissions --bare --print'`;
+    result = execSync(cmd, { cwd: ROOT, encoding: "utf-8", timeout: 300000, maxBuffer: 50 * 1024 * 1024 });
+  } catch (e: any) {
+    result = e.stdout || e.message || "";
+  }
   console.log(`  [DEBUG] Raw result: "${result.slice(0, 100)}"`);
   console.log(`  📝 Response received (${result.length} chars)`);
 
