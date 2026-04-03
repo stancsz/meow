@@ -383,6 +383,8 @@ Missing/incomplete sidecars:
 - **gap-close.sh created** — automation script for iterative gap closing via Claude Code ✅
 - **maxBudgetUSD** — halts agent when estimated cost exceeds threshold ✅
 - **Test path fix** — gap-impl.test.ts uses relative paths, runs from meow/ directory ✅
+- **capability-matrix.test.ts** — capability coverage matrix test suite ✅
+- **gaps.test.ts** — gap identification and tracking tests updated ✅
 
 ### Test Path Fixes (2026-04-03)
 - **gap-impl.test.ts paths fixed** — tests now use relative paths (`"src/core/lean-agent.ts"`) instead of `"meow/src/..."` prefix, allowing tests to run from meow/ directory ✅
