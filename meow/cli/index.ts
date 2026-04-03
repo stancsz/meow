@@ -326,6 +326,20 @@ async function main() {
     // Single task mode
     const prompt = filteredArgs.join(" ");
 
+    // Handle bare "help" command (no leading slash, e.g. --dangerous "help")
+    if (filteredArgs[0].toLowerCase() === "help") {
+      const skill = findSkill("help");
+      if (skill) {
+        const result = await skill.execute(filteredArgs.slice(1).join(" "), { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    }
+
     // On Windows Git Bash, /mcp connect args → "C:/Program Files/Git/mcp" + "connect" + "args..."
     // Since the shell splits the mangled path at spaces, "C:/Program Files/Git/mcp" becomes
     // separate args. Check if the FIRST filteredArg itself starts with the mangled path pattern.
