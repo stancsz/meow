@@ -77,6 +77,7 @@ meowclaw/                     # Desktop App
 - **maxBudgetUSD** — budget limiting per agent run
 - **Fork sessions** — session-store supports forking for branching conversations
 - **GAP-SLASH-001** — /help and /plan now work (dogfooded via cook)
+- **GAP-ABORT-002** — SIGINT handler enables Ctrl+C to abort operations
 
 ## DOGFOOD NOTES
 

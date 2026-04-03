@@ -66,8 +66,8 @@ docs/research/competitors/*/
 # Harvest temporary clones
 tmp/
 
-# Accidentally cloned repos at root level
-gemini-cli/
+# Trash (removed items)
+.trash/
 
 # Test output
 test-*/
