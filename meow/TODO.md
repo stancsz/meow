@@ -403,9 +403,9 @@ Missing/incomplete sidecars:
 ### Top Gap Priorities
 1. GAP-CORE-002: Session message accumulation (enables multi-turn)
 2. GAP-SESS-001: Auto session resume (improves UX immediately)
-3. GAP-SLASH-001: Slash command infrastructure (enables /help, /plan)
+3. GAP-SLASH-001: Slash command infrastructure (enables /help, /plan) ✓ DONE
 4. GAP-PERM-001: Permission rules (enables safe git without dangerous)
-5. GAP-ABORT-002: SIGINT handler (enables Ctrl+C)
+5. GAP-ABORT-002: SIGINT handler (enables Ctrl+C) ✅ DONE
 
 ---
 

@@ -60,6 +60,15 @@ docs/research/competitors/*/
 # Meow user data (session logs, tasks, memory)
 .meow/
 
+# Claude Code data
+.claude/
+
+# Harvest temporary clones
+tmp/
+
+# Trash (removed items)
+.trash/
+
 # Test output
 test-*/
 test-output*/

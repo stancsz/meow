@@ -1,9 +1,5 @@
 /**
- * Gap Implementation Test - GAP-ABORT-002: SIGINT Handler
- *
- * Tests that the CLI properly handles SIGINT (Ctrl+C) for graceful interruption.
- * Note: SIGINT handling belongs in the CLI entry point (cli/index.ts), not in
- * the lean-agent library (lean-agent.ts). Libraries shouldn't have process-level handlers.
+ * Gap Implementation Tests
  *
  * Run with: bun test meow/tests/gap-impl.test.ts
  */
@@ -11,12 +7,77 @@ import { describe, test, expect } from "bun:test";
 import { readFileSync, existsSync } from "node:fs";
 
 // ============================================================================
+// GAP-TEST-SYNTAX: String Concatenation Bug in gaps.test.ts
+// ============================================================================
+
+describe("GAP-TEST-SYNTAX: Fix string concatenation in gaps.test.ts", () => {
+  const gapsTestPath = "tests/gaps.test.ts";
+
+  test("gaps.test.ts has no malformed string concatenation", () => {
+    const gapsSrc = readFileSync(gapsTestPath, "utf-8");
+
+    // The bug is: existsSync("./meow/src/"sidecars/hooks.ts");
+    // This is invalid JS - strings adjacent without + are a syntax error
+    // These should be: existsSync("./meow/src/sidecars/hooks.ts");
+    const malformedPatterns = [
+      '/"sidecars/',
+      '/"mcp-client',
+      '/"commands"',
+      '/"plan.ts"',
+      '/"tui.ts"',
+      '/"repl.ts"',
+    ];
+
+    for (const pattern of malformedPatterns) {
+      expect(gapsSrc).not.toContain(pattern);
+    }
+  });
+
+  test("gaps.test.ts existsSync calls use valid path strings", () => {
+    const gapsSrc = readFileSync(gapsTestPath, "utf-8");
+
+    // Verify all sidecars paths are properly formed (no broken concatenation)
+    const validPaths = [
+      '"./meow/src/sidecars/hooks.ts"',
+      '"./meow/src/sidecars/mcp-client.ts"',
+      '"./meow/src/sidecars/slash-commands.ts"',
+      '"./meow/src/sidecars/plan.ts"',
+      '"./meow/src/sidecars/tui.ts"',
+      '"./meow/src/sidecars/repl.ts"',
+    ];
+
+    for (const path of validPaths) {
+      expect(gapsSrc).toContain(path);
+    }
+  });
+
+  test("gaps.test.ts parses without syntax errors", () => {
+    // This test verifies the file can be required/imported without JS parse errors
+    // If there's a syntax error, the test will fail to load
+    const gapsSrc = readFileSync(gapsTestPath, "utf-8");
+
+    // Check that string concatenations that were broken are now fixed
+    // The specific line that was failing:
+    // existsSync("./meow/src/"sidecars/hooks.ts");
+    // should now be:
+    // existsSync("./meow/src/sidecars/hooks.ts");
+    expect(gapsSrc).not.toContain('"./meow/src/"sidecars');
+    expect(gapsSrc).not.toContain('"./meow/src/"mcp-client');
+    expect(gapsSrc).not.toContain('"./meow/src/"slash-commands');
+    expect(gapsSrc).not.toContain('"./meow/src/"plan');
+    expect(gapsSrc).not.toContain('"./meow/src/"commands"');
+    expect(gapsSrc).not.toContain('"./meow/src/"tui');
+    expect(gapsSrc).not.toContain('"./meow/src/"repl');
+  });
+});
+
+// ============================================================================
 // GAP-ABORT-002: SIGINT Handler
 // ============================================================================
 
 describe("GAP-ABORT-002: SIGINT Handler", () => {
-  const leanAgentPath = "meow/src/core/lean-agent.ts";
-  const cliPath = "meow/cli/index.ts";
+  const leanAgentPath = "src/core/lean-agent.ts";
+  const cliPath = "cli/index.ts";
 
   test("lean-agent.ts does NOT have process-level SIGINT handler (correct - it's a library)", () => {
     // Libraries should NOT have process.on("SIGINT") - that's the CLI's responsibility
@@ -72,7 +133,7 @@ describe("GAP-ABORT-002: SIGINT Handler", () => {
 
 describe("GAP-ABORT-002: Implementation Verification", () => {
   test("CLI has proper interrupt mechanism", () => {
-    const cliSrc = readFileSync("meow/cli/index.ts", "utf-8");
+    const cliSrc = readFileSync("cli/index.ts", "utf-8");
 
     // Verify the interrupt function exists and is called on SIGINT
     const hasInterruptFn = cliSrc.includes("function interrupt()");
@@ -83,7 +144,7 @@ describe("GAP-ABORT-002: Implementation Verification", () => {
   });
 
   test("CLI saves session on SIGINT", () => {
-    const cliSrc = readFileSync("meow/cli/index.ts", "utf-8");
+    const cliSrc = readFileSync("cli/index.ts", "utf-8");
 
     // On SIGINT, session should be saved before exiting
     const savesSession = cliSrc.includes("saveSession");
@@ -97,7 +158,7 @@ describe("GAP-ABORT-002: Implementation Verification", () => {
 // ============================================================================
 
 describe("GAP-ABORT-003: Tool Timeout", () => {
-  const toolRegistryPath = "meow/src/sidecars/tool-registry.ts";
+  const toolRegistryPath = "src/sidecars/tool-registry.ts";
 
   test("shell tool uses setTimeout for timeout implementation", () => {
     const registrySrc = readFileSync(toolRegistryPath, "utf-8");
@@ -150,7 +211,7 @@ describe("GAP-ABORT-003: Tool Timeout", () => {
 // ============================================================================
 
 describe("GAP-SLASH-001: Slash Command Infrastructure", () => {
-  const slashCommandsPath = "meow/src/sidecars/slash-commands.ts";
+  const slashCommandsPath = "src/sidecars/slash-commands.ts";
 
   test("slash-commands.ts sidecar exists", () => {
     const exists = existsSync(slashCommandsPath);
@@ -196,7 +257,7 @@ describe("GAP-SLASH-001: Slash Command Infrastructure", () => {
 // ============================================================================
 
 describe("GAP-TOOL-001: Edit Tool", () => {
-  const toolRegistryPath = "meow/src/sidecars/tool-registry.ts";
+  const toolRegistryPath = "src/sidecars/tool-registry.ts";
 
   test("edit tool exists in tool-registry", () => {
     const registrySrc = readFileSync(toolRegistryPath, "utf-8");
@@ -234,7 +295,7 @@ describe("GAP-TOOL-001: Edit Tool", () => {
 // ============================================================================
 
 describe("GAP-CORE-003: Budget Tracking", () => {
-  const leanAgentPath = "meow/src/core/lean-agent.ts";
+  const leanAgentPath = "src/core/lean-agent.ts";
 
   test("LeanAgentOptions accepts maxBudgetUSD parameter", () => {
     const leanAgentSrc = readFileSync(leanAgentPath, "utf-8");

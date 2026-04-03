@@ -284,6 +284,11 @@ async function main() {
 
   // Initialize tools and skills
   await initializeToolRegistry();
+
+  // Initialize checkpointing sidecar (wraps write/edit tools with auto-checkpoint)
+  const { initializeCheckpointing } = await import("../src/sidecars/checkpointing.ts");
+  await initializeCheckpointing();
+
   const tools = getAllTools();
   console.log(`${colors.dim}Loaded ${tools.length} tools and ${skills.length} skills${colors.reset}`);
 
