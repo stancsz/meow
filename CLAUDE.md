@@ -49,15 +49,21 @@ meow/
     ├── sidecars/
     │   ├── tool-registry.ts # Tool registry with read/write/edit/shell/git
     │   ├── mcp-client.ts    # MCP protocol client
-    │   └── permissions.ts   # Pattern-matching permissions
+    │   ├── permissions.ts   # Pattern-matching permissions
+    │   ├── on-demand-learner.ts  # On-demand capability acquisition
+    │   ├── checkpointing.ts  # Git stash checkpoints before writes
+    │   └── slash-commands.ts # Slash command infrastructure
     ├── skills/
     │   ├── index.ts         # Skill exports
     │   ├── loader.ts        # Skill loader
     │   ├── simplify.ts      # Refactoring skill
     │   ├── review.ts        # Code review skill
-    │   └── commit.ts        # Conventional commit skill
+    │   ├── commit.ts        # Conventional commit skill
+    │   └── learn.ts         # On-demand learning skill
     └── tools/
-        └── search.ts        # Search tools (glob, grep)
+        ├── search.ts        # Search tools (glob, grep)
+        ├── harvest.ts       # Learn from competitor repos
+        └── evolve.ts        # Antifragile OODA gap-closing loop
 
 meowclaw/                     # Desktop App
 ├── electron/                 # Electron main/preload
@@ -78,6 +84,9 @@ meowclaw/                     # Desktop App
 - **Fork sessions** — session-store supports forking for branching conversations
 - **GAP-SLASH-001** — /help and /plan now work (dogfooded via cook)
 - **GAP-ABORT-002** — SIGINT handler enables Ctrl+C to abort operations
+- **On-demand learning** — /learn <capability> dynamically acquires skills from harvest list
+- **P0-PN capability system** — graduated lifecycle: harvest → trick → skill → sidecar → core
+- **11 harvest candidates** — ex-skill, context7, autoresearch, gstack, mirofish, and more
 
 ## DOGFOOD NOTES
 
@@ -94,7 +103,7 @@ meowclaw/                     # Desktop App
 
 **Search Tools:** `glob` (find files), `grep` (search contents)
 
-**Skills:** `simplify`, `review`, `commit`
+**Skills:** `simplify`, `review`, `commit`, `learn`
 
 ## CLI COMMANDS
 
@@ -124,6 +133,7 @@ bun run start --resume
 /simplify <file>   # Refactor code
 /review <file>     # Review code
 /commit            # Git commit helper
+/learn <capability>  # Learn a new capability on-demand
 /exit              # Exit (saves session)
 ```
 
@@ -151,3 +161,4 @@ bun run start --resume
 4. **Personality** - sassy when tired, playful when energetic
 5. **Memory** - continuity across sessions
 6. **Core never grows** - capabilities via sidecar skills
+7. **P0-PN lifecycle** - see `docs/capability-system.md`
