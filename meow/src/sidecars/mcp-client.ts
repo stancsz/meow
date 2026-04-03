@@ -334,3 +334,40 @@ export function formatMCPToolsForPrompt(): string {
   }
   return output;
 }
+
+// ============================================================================
+// Tool Registry Integration
+// ============================================================================
+
+type ToolRegistrar = (name: string, fn: (...args: unknown[]) => Promise<unknown>, desc: string) => void;
+let toolRegistrar: ToolRegistrar | null = null;
+
+/**
+ * Set the tool registrar function (called by the CLI on init).
+ * When set, MCP tools will be registered with the tool registry.
+ */
+export function setMCPToolRegistrar(registrar: ToolRegistrar): void {
+  toolRegistrar = registrar;
+}
+
+/**
+ * Register all currently connected MCP server tools with the tool registry.
+ */
+export function registerMCPTools(): void {
+  if (!toolRegistrar) return;
+  for (const { server, tool } of getAllMCPTools()) {
+    const fullName = `mcp__${server}__${tool.name}`;
+    toolRegistrar(fullName, async (...args: unknown[]) => {
+      const result = await callMCPTool(server, tool.name, args[0] as Record<string, unknown> || {});
+      if (result.error) throw new Error(result.error);
+      return result.content;
+    }, tool.description || `MCP tool from ${server}`);
+  }
+}
+
+/**
+ * Refresh tool registry with current MCP tools.
+ */
+export function refreshMCPToolRegistry(): void {
+  registerMCPTools();
+}

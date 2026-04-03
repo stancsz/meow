@@ -20,6 +20,7 @@ import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-
 import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 import { initI18n, t } from "../src/sidecars/i18n/index.ts";
+import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.ts";
 
 // Initialize i18n
 initI18n();
@@ -293,6 +294,11 @@ async function main() {
   const { initializeCheckpointing } = await import("../src/sidecars/checkpointing.ts");
   await initializeCheckpointing();
 
+  // Initialize MCP client sidecar — wire its tools into the tool registry
+  const { registerTool } = await import("../src/sidecars/tool-registry.ts");
+  setMCPToolRegistrar(registerTool);
+  await loadMCPConfig();
+
   const tools = getAllTools();
   console.log(`${colors.dim}${t("tools_loaded", { n: tools.length, m: skills.length })}${colors.reset}`);
 
@@ -343,23 +349,25 @@ async function main() {
         }
         return;
       }
-    } else if (isWindowsMangled) {
-      // Windows mangled the skill command (e.g., /mcp → C:/Program Files/Git/mcp).
-      // Extract the skill name from the last path segment before args.
-      // Example: "C:/Program Files/Git/mcp connect ..." → skillName="mcp", args="connect ..."
+    }
+
+    // Windows Git Bash mangling: /mcp → C:/Program Files/Git/mcp [args...].
+    // This path is taken when the prompt starts with a drive letter (e.g. C:).
+    // We detect it by checking if it starts with a drive letter AND includes "Program Files".
+    if (isWindowsMangled) {
+      // Strip leading drive/prefix pattern (e.g. "C:/Program Files/Git/")
       let skillPath = prompt;
-      // Strip leading drive/prefix pattern (e.g., "C:/Program Files/Git/")
       const driveSlashMatch = prompt.match(/^[A-Za-z]:[/\\]*/);
       if (driveSlashMatch) {
         skillPath = prompt.slice(driveSlashMatch[0].length);
       }
-      // Find the LAST "/" — that's the separator between skill name and args
+      // Find the LAST "/" — that separates the skill name from its args
       const lastSlash = skillPath.lastIndexOf("/");
-      const skillCmd = lastSlash >= 0 ? skillPath.slice(lastSlash + 1) : skillPath;
-      // skillCmd is now like "mcp connect testserver bun run ..." or just "mcp"
-      const spaceIdx = skillCmd.indexOf(" ");
-      const skillName = spaceIdx >= 0 ? skillCmd.slice(0, spaceIdx) : skillCmd;
-      const skillArgs = spaceIdx >= 0 ? skillCmd.slice(spaceIdx + 1) : "";
+      const afterSlash = lastSlash >= 0 ? skillPath.slice(lastSlash + 1) : skillPath;
+      // afterSlash is like "mcp connect test bun run meow/scripts/mock-mcp-server.ts"
+      const spaceIdx = afterSlash.indexOf(" ");
+      const skillName = spaceIdx >= 0 ? afterSlash.slice(0, spaceIdx) : afterSlash;
+      const skillArgs = spaceIdx >= 0 ? afterSlash.slice(spaceIdx + 1) : "";
       const skill = findSkill(skillName);
       if (skill) {
         console.log(`${colors.dim}Running skill: /${skill.name} (via Windows path mangle)${colors.reset}`);

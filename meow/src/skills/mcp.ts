@@ -2,10 +2,17 @@
  * mcp.ts
  *
  * MCP (Model Context Protocol) skill for Meow.
- * Connects to MCP servers and exposes their tools.
+ * Delegates to the mcp-client sidecar for connection management.
  */
-import { spawn } from "node:child_process";
 import type { Skill, SkillContext, SkillResult } from "./loader.ts";
+import {
+  connectMCPServer,
+  disconnectMCPServer,
+  getAllMCPTools,
+  callMCPTool,
+  loadMCPConfig,
+  type MCPServerConfig,
+} from "../sidecars/mcp-client.ts";
 
 export const mcp: Skill = {
   name: "mcp",
@@ -17,13 +24,26 @@ export const mcp: Skill = {
     const sub = parts[0]?.toLowerCase();
 
     if (!sub || sub === "help" || sub === "--help") {
-      return { content: "MCP commands:\n  /mcp connect <name> <cmd> [args]\n  /mcp disconnect <name>\n  /mcp list\n  /mcp call <server> <tool> [k=v]\n  /mcp servers" };
+      return {
+        content: `MCP commands:
+  /mcp connect <name> <cmd> [args...]  Connect to an MCP server
+  /mcp disconnect <name>               Disconnect from an MCP server
+  /mcp list                            List connected servers and their tools
+  /mcp call <server> <tool> [k=v...]   Call an MCP tool
+  /mcp servers                         List connected servers
+  /mcp load                            Load servers from ~/.meow/mcp.json
+
+Examples:
+  /mcp connect test bun run scripts/mock-mcp-server.ts
+  /mcp call test echo text="Hello, MCP!"
+  /mcp list`,
+      };
     }
 
     switch (sub) {
       case "connect": {
         const name = parts[1], cmd = parts[2], args2 = parts.slice(3);
-        if (!name || !cmd) return { content: "", error: "Usage: /mcp connect <name> <cmd> [args]" };
+        if (!name || !cmd) return { content: "", error: "Usage: /mcp connect <name> <cmd> [args...]" };
         return handleConnect(name, cmd, args2);
       }
       case "disconnect": {
@@ -38,23 +58,11 @@ export const mcp: Skill = {
         return handleCall(server, tool, rawArgs);
       }
       case "servers": return handleServers();
+      case "load": return handleLoad();
       default: return { content: "", error: "Unknown command. Run /mcp help." };
     }
   },
 };
-
-interface MCPToolInfo { description?: string; inputSchema: Record<string, unknown>; }
-
-interface MCPConn {
-  name: string;
-  proc: ReturnType<typeof spawn>;
-  tools: Map<string, MCPToolInfo>;
-  msgId: number;
-  pending: Map<number, { res: (v: unknown) => void; rej: (e: Error) => void }>;
-  init: boolean;
-}
-
-const conns = new Map<string, MCPConn>();
 
 function parseArgs(args: string[]): Record<string, unknown> {
   const r: Record<string, unknown> = {};
@@ -65,89 +73,91 @@ function parseArgs(args: string[]): Record<string, unknown> {
   return r;
 }
 
-function parseLines(buf: string): { msg: unknown; rest: string } | null {
-  const ls = buf.split("\n");
-  for (let i = 0; i < ls.length; i++) {
-    const l = ls[i].trim();
-    if (!l) continue;
-    try { return { msg: JSON.parse(l), rest: ls.slice(i + 1).join("\n") }; } catch {}
-  }
-  return null;
-}
-
-async function sendReq(conn: MCPConn, method: string, params?: Record<string, unknown>): Promise<unknown> {
-  return new Promise((res, rej) => {
-    const id = ++conn.msgId;
-    conn.pending.set(id, { res, rej });
-    conn.proc.stdin?.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-    setTimeout(() => { if (conn.pending.has(id)) { conn.pending.delete(id); rej(new Error("Request timeout")); } }, 10000);
-  });
-}
-
 async function handleConnect(name: string, cmd: string, cmdArgs: string[]): Promise<SkillResult> {
-  if (conns.has(name)) return { content: "", error: "Server already connected." };
-  return new Promise((resolve) => {
-    let buf = "";
-    const proc = spawn(cmd, cmdArgs, { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env } });
-    const conn: MCPConn = { name, proc, tools: new Map(), msgId: 0, pending: new Map(), init: false };
-    conns.set(name, conn);
-    proc.stdout?.on("data", (d: Buffer) => {
-      buf += d.toString();
-      while (true) { const p = parseLines(buf); if (!p) break; buf = p.rest; const m = p.msg as { id?: number; result?: unknown; error?: { message: string } }; if (m.id !== undefined) { const pen = conn.pending.get(m.id); if (pen) { if (m.error) pen.rej(new Error(m.error.message)); else pen.res(m.result); conn.pending.delete(m.id); } } }
-    });
-    proc.stderr?.on("data", (d: Buffer) => console.error("[MCP " + name + " stderr]:", d.toString()));
-    proc.on("error", (e) => { conns.delete(name); resolve({ content: "", error: "Failed: " + e.message }); });
-    proc.on("close", () => conns.delete(name));
-    (async () => {
-      try {
-        await sendReq(conn, "initialize", { protocolVersion: "2024-11-05", capabilities: { tools: {} }, clientInfo: { name: "meow", version: "0.1.0" } });
-        proc.stdin?.write(JSON.stringify({ jsonrpc: "2.0", method: "initialized", params: {} }) + "\n");
-        conn.init = true;
-        try { const tr = await sendReq(conn, "tools/list") as { tools?: Array<{ name: string; description?: string; inputSchema: Record<string, unknown> }> }; if (tr?.tools) for (const t of tr.tools) conn.tools.set(t.name, { description: t.description, inputSchema: t.inputSchema || {} }); } catch {}
-        resolve({ content: "Connected to \"" + name + "\". " + conn.tools.size + " tools. Run /mcp list." });
-      } catch (err: any) { conns.delete(name); proc.kill(); resolve({ content: "", error: "Init failed: " + err.message }); }
-    })();
-  });
+  try {
+    const config: MCPServerConfig = { name, command: cmd, args: cmdArgs };
+    await connectMCPServer(config);
+    const tools = getAllMCPTools().filter(t => t.server === name);
+    return { content: `Connected to "${name}". ${tools.length} tools available.\n\nTools:\n${tools.map(t => `  - mcp__${name}__${t.tool.name}`).join("\n")}\n\nUse /mcp list to see all tools.` };
+  } catch (err: any) {
+    return { content: "", error: `Connection failed: ${err.message}` };
+  }
 }
 
 function handleDisconnect(name: string): SkillResult {
-  const c = conns.get(name);
-  if (!c) return { content: "", error: "Server not connected." };
-  c.proc.kill(); conns.delete(name);
-  return { content: "Disconnected from \"" + name + "\"." };
+  try {
+    disconnectMCPServer(name);
+    return { content: `Disconnected from "${name}".` };
+  } catch (err: any) {
+    return { content: "", error: err.message };
+  }
 }
 
 function handleList(): SkillResult {
-  if (conns.size === 0) return { content: "No MCP servers connected. Run /mcp connect." };
+  const allTools = getAllMCPTools();
+  if (allTools.length === 0) {
+    return { content: "No MCP servers connected.\n\nLoad servers from ~/.meow/mcp.json with /mcp load,\nor connect manually with /mcp connect <name> <cmd> [args]." };
+  }
+
+  // Group tools by server
+  const byServer = new Map<string, typeof allTools>();
+  for (const entry of allTools) {
+    if (!byServer.has(entry.server)) byServer.set(entry.server, []);
+    byServer.get(entry.server)!.push(entry);
+  }
+
   let out = "## Connected MCP Servers\n\n";
-  for (const [n, c] of conns) {
-    out += "### " + n + (c.init ? "" : " (init...)") + "\n";
-    if (c.tools.size === 0) out += "  No tools.\n";
-    else for (const [tn, ti] of c.tools) out += "  - " + tn + (ti.description ? " -- " + ti.description : "") + "\n";
+  for (const [server, tools] of byServer) {
+    out += `### ${server}\n`;
+    if (tools.length === 0) {
+      out += "  No tools.\n";
+    } else {
+      for (const { tool } of tools) {
+        out += `  - mcp__${server}__${tool.name}`;
+        if (tool.description) out += ` — ${tool.description}`;
+        out += "\n";
+      }
+    }
     out += "\n";
   }
   return { content: out };
 }
 
-function handleCall(server: string, tool: string, rawArgs: string[]): SkillResult {
-  const c = conns.get(server);
-  if (!c) return { content: "", error: "Server not connected." };
-  if (!c.init) return { content: "", error: "Server still initializing." };
+async function handleCall(server: string, tool: string, rawArgs: string[]): Promise<SkillResult> {
   const args = parseArgs(rawArgs);
-  return new Promise((resolve) => {
-    const id = ++c.msgId;
-    c.pending.set(id, {
-      res: (r: unknown) => { c.pending.delete(id); const res2 = r as { content?: Array<{ text?: string }> }; resolve({ content: res2?.content ? res2.content.map((x) => x.text || JSON.stringify(x)).join("\n") : JSON.stringify(r, null, 2) }); },
-      rej: (e: Error) => { c.pending.delete(id); resolve({ content: "", error: e.message }); },
-    });
-    c.proc.stdin?.write(JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name: tool, arguments: args } }) + "\n");
-    setTimeout(() => { if (c.pending.get(id)) { c.pending.delete(id); resolve({ content: "", error: "Call timed out." }); } }, 30000);
-  }) as SkillResult;
+  const result = await callMCPTool(server, tool, args);
+  if (result.error) {
+    return { content: "", error: result.error };
+  }
+  return { content: result.content };
 }
 
 function handleServers(): SkillResult {
-  if (conns.size === 0) return { content: "No MCP servers connected." };
+  const allTools = getAllMCPTools();
+  if (allTools.length === 0) {
+    return { content: "No MCP servers connected." };
+  }
+
+  const servers = [...new Set(allTools.map(t => t.server))];
   let out = "## MCP Servers\n\n";
-  for (const [n, c] of conns) out += "- " + n + ": " + c.tools.size + " tools (" + (c.init ? "connected" : "init") + ")\n";
+  for (const s of servers) {
+    const count = allTools.filter(t => t.server === s).length;
+    out += `- ${s}: ${count} tool(s)\n`;
+  }
+  return { content: out };
+}
+
+async function handleLoad(): Promise<SkillResult> {
+  const result = await loadMCPConfig();
+  if (result.servers.length === 0 && result.failed.length === 0) {
+    return { content: "No ~/.meow/mcp.json found. Create one with:\n  {\"servers\": [{\"name\": \"...\", \"command\": \"...\", \"args\": [...]}]}" };
+  }
+  let out = "";
+  if (result.servers.length > 0) {
+    out += `Connected: ${result.servers.join(", ")}\n`;
+  }
+  if (result.failed.length > 0) {
+    out += `Failed: ${result.failed.join(", ")}\n`;
+  }
   return { content: out };
 }
