@@ -1,24 +1,66 @@
 #!/bin/bash
-# cook.sh - Use Claude Code to close gaps between Meow and Claude Code
+# train.sh — Self-improving agent loop via Claude Code CLI
+#
+# Legacy OODA loop that directly invokes Claude Code CLI for each step.
+# For the evolved version, use: ./cook.sh (which delegates to evolve.ts)
 #
 # Each iteration:
-#   1. Check current gap using tests
-#   2. Use CLAUDE CODE (not meow) to pick highest leverage gap
-#   3. Claude Code writes test + implements + dogfoods
-#   4. Verify iteration works (live dogfood test)
-#   5. Claude Code updates TODO.md and CLAUDE.md
-#   6. Commit to cook branch (no push)
-#   7. Repeat
+#   1. Run gaps test
+#   2. Pick highest leverage gap
+#   3. Implement fix via Claude Code
+#   4. Verify dogfood
+#   5. Update docs
+#   6. Cleanup trash (move stray files to .trash/)
+#   7. Commit
+#   8. Repeat
+#
+# Usage: ./train.sh
 #
 # Output goes to dogfood/logs/ and dogfood/tests/ (git-ignored)
-#
-# Usage: ./cook.sh
 
 set -e
 
 ITERATION=1
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+ensure_trash() {
+  mkdir -p .trash
+}
+
+# Cleanup function: find and trash stray/untracked files that don't belong
+cleanup_trash() {
+  echo "[6.5] Checking for stray files to trash..."
+  ensure_trash
+
+  # Get all untracked files and directories (excluding gitignored)
+  while IFS= read -r file; do
+    # Skip gitignored files
+    if git check-ignore -q "$file" 2>/dev/null; then
+      continue
+    fi
+
+    # Skip intentional root files
+    case "$file" in
+      CLAUDE.md|TODO.md|README.md|package.json|tsconfig.json|cook.sh|train.sh| bun.lock|package-lock.json|.env|.env.example)
+        continue
+        ;;
+    esac
+
+    # Skip intentional directories
+    case "$file" in
+      meow|meowclaw|docs|dogfood|node_modules|packages|scripts|.github)
+        continue
+        ;;
+    esac
+
+    # Skip .trash itself
+    [[ "$file" == .trash ]] && continue
+
+    echo "  🚮 Moving to .trash: $file"
+    mv "$file" ".trash/$(basename "$file")-$(date +%Y%m%d-%H%M%S)"
+  done < <(git status --porcelain | grep "^??" | awk '{print $2}')
+}
 
 # Create dogfood output directories
 mkdir -p dogfood/logs dogfood/tests
@@ -88,8 +130,13 @@ while true; do
   claude --dangerously-skip-permissions "Edit meow/TODO.md and meow/CLAUDE.md to reflect the changes you just made. Mark completed items, add dogfood notes. Be brief - 2-3 lines per change." 2>&1 | tee "dogfood/logs/doc-update-${ITERATION}-${TIMESTAMP}.txt" | tail -20
   echo ""
 
-  # Step 6: Commit if there are changes
-  echo "[6/7] Committing changes to cook branch..."
+  # Step 6: Cleanup trash before commit
+  echo "[6/7] Cleaning up stray files..."
+  cleanup_trash
+  echo ""
+
+  # Step 7: Commit if there are changes
+  echo "[7/7] Committing changes to cook branch..."
   if [[ -n "$(git status --short meow/)" ]]; then
     git add meow/
     git commit -m "fix: $(date +%Y-%m-%d) - iteration $ITERATION
@@ -101,7 +148,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   fi
   echo ""
 
-  echo "[7/7] Iteration $ITERATION complete!"
+  echo "Iteration $ITERATION complete!"
   echo "Logs: dogfood/logs/implementation-${ITERATION}-${TIMESTAMP}.txt"
   echo "Tests: dogfood/tests/dogfood-verification-${ITERATION}-${TIMESTAMP}.txt"
   ((ITERATION++))
