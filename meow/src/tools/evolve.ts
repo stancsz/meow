@@ -426,8 +426,8 @@ Respond ONLY with a JSON object like this (no other text):
   const promptFile = join(tmpDir, `discover-prompt-${Date.now()}.txt`);
   writeFileSync(promptFile, prompt);
 
-  const cmd = `echo "test" | timeout 120 claude --dangerously-skip-permissions --bare --print 2>&1 || echo "FAILED"`;
-  // Use simpler approach - just run claude directly
+  // Pipe prompt file to claude --print
+  const cmd = `cat "${promptFile}" | timeout 120 claude --dangerously-skip-permissions --bare --print 2>&1`;
   const result = await runCmdAsync(cmd, ROOT);
 
   // Try to parse JSON from response
