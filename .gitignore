@@ -72,3 +72,6 @@ test-results/
 # Editor swap files
 *.swp
 *.swo
+
+# Dogfood test outputs
+dogfood/
