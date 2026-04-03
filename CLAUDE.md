@@ -76,13 +76,12 @@ meowclaw/                     # Desktop App
 - **Auto/Tick modes** — autonomous OODA loop in auto-agent.ts
 - **Env loading** — automatic `.env` file on startup
 - **gap-impl.test.ts** — test suite for gap implementation
-- **cook.sh** — script to validate and close gaps (research/docs in `docs/`)
 - **slash-commands.ts** — slash command infrastructure sidecar
 - **timeoutMs** — shell/git tools respect per-call timeout via ToolContext
 - **generateStream** — AsyncGenerator yield-based streaming as primary test interface
 - **maxBudgetUSD** — budget limiting per agent run
 - **Fork sessions** — session-store supports forking for branching conversations
-- **GAP-SLASH-001** — /help and /plan now work (dogfooded via cook)
+- **GAP-SLASH-001** — /help and /plan now work (dogfooded via evolve)
 - **GAP-ABORT-002** — SIGINT handler enables Ctrl+C to abort operations
 - **On-demand learning** — /learn <capability> dynamically acquires skills from harvest list
 - **P0-PN capability system** — graduated lifecycle: harvest → trick → skill → sidecar → core
@@ -90,8 +89,8 @@ meowclaw/                     # Desktop App
 
 ## DOGFOOD NOTES
 
-- **cook.sh** iterates via evolve.ts OODA loop: observe → orient → decide → act
-- **train.sh** directly closes gaps: run gaps.test.ts → implement in meow/src/ → dogfood → commit
+- **train.sh** delegates to evolve.ts OODA loop: observe → orient → decide → act
+- Heavy logic lives in `meow/src/tools/evolve.ts`, train.sh is just a thin wrapper
 - **timeoutMs** prevents hung shell/git commands; propagated via ToolContext
 - **LLM compaction** keeps sessions under token limit by summarizing old messages
 - **maxBudgetUSD** halts agent when estimated cost exceeds threshold
@@ -110,11 +109,11 @@ meowclaw/                     # Desktop App
 ## CLI COMMANDS
 
 ```bash
-# Training loops (gap closing)
-./train.sh               # Direct gap-closing loop
+# Training loop (gap closing via evolve.ts OODA loop)
+./train.sh               # Run the evolve loop
 ./train.sh --once        # Single iteration
-./cook.sh                # OODA loop via evolve.ts
-./cook.sh --once         # Single OODA iteration
+./train.sh --status      # Show gap status
+./train.sh --report      # Full wisdom report
 
 # Interactive mode
 
