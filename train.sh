@@ -2,7 +2,7 @@
 # train.sh — Self-improving agent loop via Claude Code CLI
 #
 # Legacy OODA loop that directly invokes Claude Code CLI for each step.
-# For the evolved version, use: ./cook.sh (which delegates to evolve.ts)
+# For the evolved version, use: ./cook.sh (which delegates to evolve.ts, see docs/evolve.md)
 #
 # Each iteration:
 #   1. Run gaps test
@@ -65,12 +65,12 @@ cleanup_trash() {
 # Create dogfood output directories
 mkdir -p dogfood/logs dogfood/tests
 
-# Ensure we're on cook branch
-if ! git show-ref --verify --quiet refs/heads/cook; then
-  echo "Creating 'cook' branch..."
-  git checkout -b cook
+# Ensure we're on evolve branch
+if ! git show-ref --verify --quiet refs/heads/evolve; then
+  echo "Creating 'evolve' branch..."
+  git checkout -b evolve
 else
-  git checkout cook
+  git checkout evolve
 fi
 
 echo "=============================================="
@@ -136,13 +136,13 @@ while true; do
   echo ""
 
   # Step 7: Commit if there are changes
-  echo "[7/7] Committing changes to cook branch..."
+  echo "[7/7] Committing changes to evolve branch..."
   if [[ -n "$(git status --short meow/)" ]]; then
     git add meow/
     git commit -m "fix: $(date +%Y-%m-%d) - iteration $ITERATION
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
-    echo "Committed to 'cook' branch."
+    echo "Committed to 'evolve' branch."
   else
     echo "No changes to commit."
   fi
