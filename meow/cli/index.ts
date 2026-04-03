@@ -20,6 +20,7 @@ import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-
 import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 import { initI18n, t } from "../src/sidecars/i18n/index.ts";
+import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.ts";
 
 // Initialize i18n
 initI18n();
@@ -293,6 +294,11 @@ async function main() {
   const { initializeCheckpointing } = await import("../src/sidecars/checkpointing.ts");
   await initializeCheckpointing();
 
+  // Initialize MCP client sidecar — wire its tools into the tool registry
+  const { registerTool } = await import("../src/sidecars/tool-registry.ts");
+  setMCPToolRegistrar(registerTool);
+  await loadMCPConfig();
+
   const tools = getAllTools();
   console.log(`${colors.dim}${t("tools_loaded", { n: tools.length, m: skills.length })}${colors.reset}`);
 
@@ -318,6 +324,74 @@ async function main() {
   if (filteredArgs.length > 0) {
     // Single task mode
     const prompt = filteredArgs.join(" ");
+
+    // On Windows Git Bash, /mcp connect args → "C:/Program Files/Git/mcp" + "connect" + "args..."
+    // Since the shell splits the mangled path at spaces, "C:/Program Files/Git/mcp" becomes
+    // separate args. Check if the FIRST filteredArg itself starts with the mangled path pattern.
+    const firstArg = filteredArgs[0] || "";
+    const startsWithMangledPrefix =
+      firstArg.startsWith("C:/Program Files/Git/") ||
+      firstArg.startsWith("C:\\Program Files\\Git\\") ||
+      (firstArg.length > 1 && firstArg[1] === ":" && /[A-Za-z]/.test(firstArg[0]) && firstArg.includes("Program Files") && firstArg.includes("Git"));
+
+    if (prompt.startsWith("/") && !startsWithMangledPrefix) {
+      // Normal slash command: /mcp help → prompt="/mcp help"
+      const parts = prompt.slice(1).split(/\s+/);
+      const skillName = parts[0];
+      const skillArgs = parts.slice(1).join(" ");
+
+      const skill = findSkill(skillName);
+      if (skill) {
+        console.log(`${colors.dim}Running skill: /${skill.name}${colors.reset}`);
+        const result = await skill.execute(skillArgs, { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    }
+
+    if (startsWithMangledPrefix) {
+      // Windows Git Bash mangled the skill command.
+      // The first arg contains the full "C:/Program Files/Git/<skill> [args...]".
+      // " /" (space + slash) marks the boundary between skill name and args.
+      // If there's no space after the skill name (just "/mcp"), use last "/" as separator.
+      const spaceSlashIdx = firstArg.indexOf(" /");
+      let skillName: string;
+      let remainingFirstArg: string;
+      if (spaceSlashIdx >= 0) {
+        // Has args: "C:/Program Files/Git/mcp connect..." → skillName="mcp", remaining="connect..."
+        remainingFirstArg = firstArg.slice(spaceSlashIdx + 2); // skip " /"
+        const spaceIdx2 = remainingFirstArg.indexOf(" ");
+        skillName = spaceIdx2 >= 0 ? remainingFirstArg.slice(0, spaceIdx2) : remainingFirstArg;
+      } else {
+        // No args: "C:/Program Files/Git/mcp" → skillName="mcp"
+        const lastSlash = firstArg.lastIndexOf("/");
+        skillName = lastSlash >= 0 ? firstArg.slice(lastSlash + 1) : firstArg;
+        remainingFirstArg = "";
+      }
+      // Remaining args from firstArg after the skill name, plus extra filteredArgs
+      const afterSkillName = spaceSlashIdx >= 0
+        ? (remainingFirstArg.indexOf(" ") >= 0 ? remainingFirstArg.slice(remainingFirstArg.indexOf(" ") + 1) : "")
+        : "";
+      const extraArgs = filteredArgs.slice(1).join(" ");
+      const fullArgs = [afterSkillName, extraArgs].filter(Boolean).join(" ");
+
+      const skill = findSkill(skillName);
+      if (skill) {
+        console.log(`${colors.dim}Running skill: /${skill.name} (via Windows path mangle)${colors.reset}`);
+        const result = await skill.execute(fullArgs, { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    }
+
     console.log(`${colors.dim}🐱 meow${colors.reset}\n`);
     console.log(`${colors.dim}Prompt: ${prompt}${colors.reset}\n`);
 

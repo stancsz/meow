@@ -7,7 +7,7 @@
  * Supports stdio transport for local MCP servers.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface MCPTool {
@@ -21,6 +21,7 @@ export interface MCPServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  cwd?: string;
 }
 
 export interface MCPToolResult {
@@ -39,6 +40,19 @@ interface MCPMessage {
 
 // Global registry of connected MCP servers
 const connectedServers: Map<string, MCPConnection> = new Map();
+
+// Called once at startup
+export type MCPToolRegistrar = (tool: {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  execute: (args: unknown, context: { cwd: string; dangerous: boolean; abortSignal?: AbortSignal }) => Promise<{ content: string; error?: string }>;
+}) => void;
+let registrar: MCPToolRegistrar | null = null;
+
+export function setMCPToolRegistrar(fn: MCPToolRegistrar): void {
+  registrar = fn;
+}
 
 class MCPConnection {
   private process: ChildProcess | null = null;
@@ -208,12 +222,27 @@ class MCPConnection {
 // ============================================================================
 
 /**
- * Connect to an MCP server
+ * Connect to an MCP server and register its tools with the tool registry.
  */
 export async function connectMCPServer(config: MCPServerConfig): Promise<void> {
   const connection = new MCPConnection(config.name);
   await connection.connect(config);
   connectedServers.set(config.name, connection);
+
+  // Register tools with the tool registry (if a registrar was set)
+  const tools = await connection.listTools();
+  if (registrar && tools.length > 0) {
+    for (const tool of tools) {
+      registrar({
+        name: `mcp__${config.name}__${tool.name}`,
+        description: tool.description || `MCP tool ${tool.name} from ${config.name}`,
+        parameters: tool.inputSchema || { type: "object", properties: {}, required: [] },
+        execute: async (args, ctx) => {
+          return connection.callTool(tool.name, args as Record<string, unknown>);
+        },
+      });
+    }
+  }
 }
 
 /**
@@ -259,11 +288,17 @@ export async function callMCPTool(serverName: string, toolName: string, args: Re
 }
 
 /**
- * Load MCP servers from configuration file (~/.meow/mcp.json)
+ * Load and connect to MCP servers from configuration file (~/.meow/mcp.json).
+ * Also initializes MCP connection from the skill-level connection pool.
+ * Returns a summary of connected servers.
  */
-export async function loadMCPConfig(): Promise<void> {
+export async function loadMCPConfig(): Promise<{ servers: string[]; failed: string[] }> {
+  const result = { servers: [] as string[], failed: [] as string[] };
   try {
     const configPath = join(process.env.HOME || process.env.USERPROFILE || "", ".meow", "mcp.json");
+    if (!existsSync(configPath)) {
+      return result;
+    }
     const content = readFileSync(configPath, "utf-8");
     const config = JSON.parse(content) as { servers?: MCPServerConfig[] };
 
@@ -271,15 +306,19 @@ export async function loadMCPConfig(): Promise<void> {
       for (const server of config.servers) {
         try {
           await connectMCPServer(server);
-          console.log(`[MCP] Connected to ${server.name}`);
-        } catch (err) {
-          console.error(`[MCP] Failed to connect to ${server.name}:`, err);
+          const tools = connectedServers.get(server.name)?.getAllTools() || [];
+          console.log(`[MCP] Connected to ${server.name} (${tools.length} tools)`);
+          result.servers.push(server.name);
+        } catch (err: any) {
+          console.error(`[MCP] Failed to connect to ${server.name}: ${err.message}`);
+          result.failed.push(server.name);
         }
       }
     }
   } catch {
-    // Config file doesn't exist - that's fine
+    // Config file doesn't exist or is invalid - that's fine
   }
+  return result;
 }
 
 /**
@@ -294,4 +333,41 @@ export function formatMCPToolsForPrompt(): string {
     output += `- mcp__${server}__${tool.name} - ${tool.description || "MCP tool from " + server}\n`;
   }
   return output;
+}
+
+// ============================================================================
+// Tool Registry Integration
+// ============================================================================
+
+type ToolRegistrar = (name: string, fn: (...args: unknown[]) => Promise<unknown>, desc: string) => void;
+let toolRegistrar: ToolRegistrar | null = null;
+
+/**
+ * Set the tool registrar function (called by the CLI on init).
+ * When set, MCP tools will be registered with the tool registry.
+ */
+export function setMCPToolRegistrar(registrar: ToolRegistrar): void {
+  toolRegistrar = registrar;
+}
+
+/**
+ * Register all currently connected MCP server tools with the tool registry.
+ */
+export function registerMCPTools(): void {
+  if (!toolRegistrar) return;
+  for (const { server, tool } of getAllMCPTools()) {
+    const fullName = `mcp__${server}__${tool.name}`;
+    toolRegistrar(fullName, async (...args: unknown[]) => {
+      const result = await callMCPTool(server, tool.name, args[0] as Record<string, unknown> || {});
+      if (result.error) throw new Error(result.error);
+      return result.content;
+    }, tool.description || `MCP tool from ${server}`);
+  }
+}
+
+/**
+ * Refresh tool registry with current MCP tools.
+ */
+export function refreshMCPToolRegistry(): void {
+  registerMCPTools();
 }

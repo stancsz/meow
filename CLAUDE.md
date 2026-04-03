@@ -49,15 +49,21 @@ meow/
     ├── sidecars/
     │   ├── tool-registry.ts # Tool registry with read/write/edit/shell/git
     │   ├── mcp-client.ts    # MCP protocol client
-    │   └── permissions.ts   # Pattern-matching permissions
+    │   ├── permissions.ts   # Pattern-matching permissions
+    │   ├── on-demand-learner.ts  # On-demand capability acquisition
+    │   ├── checkpointing.ts  # Git stash checkpoints before writes
+    │   └── slash-commands.ts # Slash command infrastructure
     ├── skills/
     │   ├── index.ts         # Skill exports
     │   ├── loader.ts        # Skill loader
     │   ├── simplify.ts      # Refactoring skill
     │   ├── review.ts        # Code review skill
-    │   └── commit.ts        # Conventional commit skill
+    │   ├── commit.ts        # Conventional commit skill
+    │   └── learn.ts         # On-demand learning skill
     └── tools/
-        └── search.ts        # Search tools (glob, grep)
+        ├── search.ts        # Search tools (glob, grep)
+        ├── harvest.ts       # Learn from competitor repos
+        └── evolve.ts        # Antifragile OODA gap-closing loop
 
 meowclaw/                     # Desktop App
 ├── electron/                 # Electron main/preload
@@ -70,23 +76,27 @@ meowclaw/                     # Desktop App
 - **Auto/Tick modes** — autonomous OODA loop in auto-agent.ts
 - **Env loading** — automatic `.env` file on startup
 - **gap-impl.test.ts** — test suite for gap implementation
-- **cook.sh** — script to validate and close gaps (research/docs in `docs/`)
 - **slash-commands.ts** — slash command infrastructure sidecar
 - **timeoutMs** — shell/git tools respect per-call timeout via ToolContext
 - **generateStream** — AsyncGenerator yield-based streaming as primary test interface
 - **maxBudgetUSD** — budget limiting per agent run
 - **Fork sessions** — session-store supports forking for branching conversations
-- **GAP-SLASH-001** — /help and /plan now work (dogfooded via cook)
+- **GAP-SLASH-001** — /help and /plan now work (dogfooded via evolve)
 - **GAP-ABORT-002** — SIGINT handler enables Ctrl+C to abort operations
+- **On-demand learning** — /learn <capability> dynamically acquires skills from harvest list
+- **P0-PN capability system** — graduated lifecycle: harvest → trick → skill → sidecar → core
+- **11 harvest candidates** — ex-skill, context7, autoresearch, gstack, mirofish, and more
 
 ## DOGFOOD NOTES
 
-- **cook.sh** iterates: run tests → pick top gap → implement → update docs → commit
+- **train.sh** delegates to evolve.ts OODA loop: observe → orient → decide → act
+- Heavy logic lives in `meow/src/tools/evolve.ts`, train.sh is just a thin wrapper
 - **timeoutMs** prevents hung shell/git commands; propagated via ToolContext
 - **LLM compaction** keeps sessions under token limit by summarizing old messages
 - **maxBudgetUSD** halts agent when estimated cost exceeds threshold
 - **capability-matrix.test.ts** — capability coverage matrix tests
 - **gaps.test.ts** — gap identification and tracking tests
+- **/learn <capability>** — on-demand learning from harvest list (P0 capabilities)
 
 ## TOOLS
 
@@ -94,13 +104,18 @@ meowclaw/                     # Desktop App
 
 **Search Tools:** `glob` (find files), `grep` (search contents)
 
-**Skills:** `simplify`, `review`, `commit`
+**Skills:** `simplify`, `review`, `commit`, `learn`
 
 ## CLI COMMANDS
 
 ```bash
+# Training loop (gap closing via evolve.ts OODA loop)
+./train.sh               # Run the evolve loop
+./train.sh --once        # Single iteration
+./train.sh --status      # Show gap status
+./train.sh --report      # Full wisdom report
+
 # Interactive mode
-bun run start
 
 # Single task
 bun run start "your prompt"
@@ -124,6 +139,7 @@ bun run start --resume
 /simplify <file>   # Refactor code
 /review <file>     # Review code
 /commit            # Git commit helper
+/learn <capability>  # Learn a new capability on-demand
 /exit              # Exit (saves session)
 ```
 
@@ -151,3 +167,4 @@ bun run start --resume
 4. **Personality** - sassy when tired, playful when energetic
 5. **Memory** - continuity across sessions
 6. **Core never grows** - capabilities via sidecar skills
+7. **P0-PN lifecycle** - see `docs/capability-system.md`
