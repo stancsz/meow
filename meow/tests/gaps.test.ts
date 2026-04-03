@@ -33,7 +33,7 @@ describe("GAP-TRACKING: Core Engine", () => {
    * Impact: Real-time token display, user sees content as it arrives
    */
   test("GAP-CORE-001: Streaming implemented", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasStreaming = leanAgentSrc.includes("runLeanAgentStream") &&
                          leanAgentSrc.includes("generateStream") &&
                          leanAgentSrc.includes("stream: true");
@@ -49,7 +49,7 @@ describe("GAP-TRACKING: Core Engine", () => {
    * Impact: Conversation history persists across multiple prompts
    */
   test("GAP-CORE-002: Message accumulation implemented", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     // Check if messages option is accepted and returned
     const hasMessageAccumulation = leanAgentSrc.includes("messages?: any[]") &&
                                      leanAgentSrc.includes("options.messages") &&
@@ -66,7 +66,7 @@ describe("GAP-TRACKING: Core Engine", () => {
    * Impact: No cost control, unlimited API usage
    */
   test("GAP-CORE-003: No budget/turn tracking", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasBudget = leanAgentSrc.includes("budget") ||
                       leanAgentSrc.includes("maxTurns") ||
                       leanAgentSrc.includes("totalCost");
@@ -87,7 +87,7 @@ describe("GAP-TRACKING: Tools", () => {
    * Impact: Can't make targeted changes without rewriting entire file
    */
   test("GAP-TOOL-001: No Edit tool for in-place modifications", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasEditTool = leanAgentSrc.includes('name: "edit"') ||
                          leanAgentSrc.includes("edit:");
     expect(hasEditTool).toBe(false);
@@ -101,7 +101,7 @@ describe("GAP-TRACKING: Tools", () => {
    * Impact: No protection against invalid inputs
    */
   test("GAP-TOOL-002: No tool input validation", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasValidation = leanAgentSrc.includes("validateInput") ||
                           leanAgentSrc.includes("Zod") ||
                           leanAgentSrc.includes("schema");
@@ -116,7 +116,7 @@ describe("GAP-TRACKING: Tools", () => {
    * Impact: Memory issues with large file reads
    */
   test("GAP-TOOL-003: No tool result size limit handling", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasSizeLimit = leanAgentSrc.includes("maxResultSize") ||
                          leanAgentSrc.includes("resultSize") ||
                          leanAgentSrc.includes("truncate");
@@ -131,7 +131,7 @@ describe("GAP-TRACKING: Tools", () => {
    * Impact: Can crash on multi-GB files
    */
   test("GAP-TOOL-004: No file read size limit", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasReadLimit = leanAgentSrc.includes("maxFileSize") ||
                          leanAgentSrc.includes("readLimit") ||
                          leanAgentSrc.includes("createReadStream");
@@ -146,7 +146,7 @@ describe("GAP-TRACKING: Tools", () => {
    * Impact: Potential data loss
    */
   test("GAP-TOOL-005: No overwrite confirmation", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     // Check for actual confirmation prompt, not just keyword in error message
     const hasConfirm = leanAgentSrc.includes("readline") &&
                        (leanAgentSrc.includes("confirm") || leanAgentSrc.includes("Overwrite"));
@@ -168,7 +168,7 @@ describe("GAP-TRACKING: Permissions", () => {
    * Impact: Can't allow safe git commands without allowing ALL shell
    */
   test("GAP-PERM-001: No pattern-matching permission rules", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     // Check for actual permission rules engine with regex matching
     // "permissionRules" or actual pattern matching for shell commands
     const hasPermissionRules = leanAgentSrc.includes("permissionRules") ||
@@ -184,7 +184,7 @@ describe("GAP-TRACKING: Permissions", () => {
    * Impact: Can't get user approval mid-session
    */
   test("GAP-PERM-002: No interactive permission prompts", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     // Check for actual readline-based confirmation prompt
     const hasPrompt = leanAgentSrc.includes("readline.createInterface") ||
                       (leanAgentSrc.includes("rl.question") && leanAgentSrc.includes("prompt"));
@@ -199,7 +199,7 @@ describe("GAP-TRACKING: Permissions", () => {
    * Impact: Dangerous commands slip through with --dangerous
    */
   test("GAP-PERM-003: No dangerous command heuristic detection", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasHeuristics = leanAgentSrc.includes("dangerousPatterns") ||
                           leanAgentSrc.includes("riskDetection");
     expect(hasHeuristics).toBe(false);
@@ -219,7 +219,7 @@ describe("GAP-TRACKING: Task System", () => {
    * Impact: Can't cancel long-running operations
    */
   test("GAP-TASK-001: No task kill/lifecycle support", () => {
-    const taskStoreSrc = readFileSync("src/core/task-store.ts", "utf-8");
+    const taskStoreSrc = readFileSync("meow/src/core/task-store.ts", "utf-8");
     const hasKill = taskStoreSrc.includes("kill") ||
                     taskStoreSrc.includes("abort") ||
                     taskStoreSrc.includes("stop");
@@ -234,7 +234,7 @@ describe("GAP-TRACKING: Task System", () => {
    * Impact: Can't distinguish between different execution models
    */
   test("GAP-TASK-002: No typed task system", () => {
-    const taskStoreSrc = readFileSync("src/core/task-store.ts", "utf-8");
+    const taskStoreSrc = readFileSync("meow/src/core/task-store.ts", "utf-8");
     const hasTypes = taskStoreSrc.includes("local_bash") ||
                     taskStoreSrc.includes("TaskType") ||
                     taskStoreSrc.includes("taskType");
@@ -249,7 +249,7 @@ describe("GAP-TRACKING: Task System", () => {
    * Impact: Memory issues with long output
    */
   test("GAP-TASK-003: No file-based task output", () => {
-    const taskStoreSrc = readFileSync("src/core/task-store.ts", "utf-8");
+    const taskStoreSrc = readFileSync("meow/src/core/task-store.ts", "utf-8");
     // Task store uses writeFileSync for persistence, but not for task stdout output
     // Check for actual task output to file (not task persistence)
     const hasFileOutput = taskStoreSrc.includes("outputFile") ||
@@ -265,7 +265,7 @@ describe("GAP-TRACKING: Task System", () => {
    * Impact: Can't track long-running tasks
    */
   test("GAP-TASK-004: No background task monitoring", () => {
-    const taskStoreSrc = readFileSync("src/core/task-store.ts", "utf-8");
+    const taskStoreSrc = readFileSync("meow/src/core/task-store.ts", "utf-8");
     // status field exists for task status, but no monitoring/progress tracking
     const hasMonitor = taskStoreSrc.includes("monitor") ||
                        (taskStoreSrc.includes("progress") && taskStoreSrc.includes("task"));
@@ -286,7 +286,7 @@ describe("GAP-TRACKING: Session Management", () => {
    * Impact: Poor UX - can't continue work without explicit resume
    */
   test("GAP-SESS-001: No auto session resume", () => {
-    const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
+    const sessionStoreSrc = readFileSync("meow/src/core/session-store.ts", "utf-8");
     const hasResume = sessionStoreSrc.includes("resume") ||
                       sessionStoreSrc.includes("lastSession") ||
                       sessionStoreSrc.includes("autoResume");
@@ -301,7 +301,7 @@ describe("GAP-TRACKING: Session Management", () => {
    * Impact: Context window exhaustion, performance degradation
    */
   test("GAP-SESS-002: No session compaction/truncation", () => {
-    const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
+    const sessionStoreSrc = readFileSync("meow/src/core/session-store.ts", "utf-8");
     const hasCompact = sessionStoreSrc.includes("compact") ||
                        sessionStoreSrc.includes("summarize") ||
                        sessionStoreSrc.includes("truncate");
@@ -316,7 +316,7 @@ describe("GAP-TRACKING: Session Management", () => {
    * Impact: Can't work on multiple things in parallel
    */
   test("GAP-SESS-003: No multi-session support", () => {
-    const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
+    const sessionStoreSrc = readFileSync("meow/src/core/session-store.ts", "utf-8");
     const hasMultiSession = sessionStoreSrc.includes("sessions") &&
                             sessionStoreSrc.includes("activeSessions");
     expect(hasMultiSession).toBe(false);
@@ -330,7 +330,7 @@ describe("GAP-TRACKING: Session Management", () => {
    * Impact: No usage analytics
    */
   test("GAP-SESS-004: Incomplete session metadata", () => {
-    const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
+    const sessionStoreSrc = readFileSync("meow/src/core/session-store.ts", "utf-8");
     const hasFullMeta = sessionStoreSrc.includes("totalCost") &&
                          sessionStoreSrc.includes("model") &&
                          sessionStoreSrc.includes("token");
@@ -345,7 +345,7 @@ describe("GAP-TRACKING: Session Management", () => {
    * Impact: Can't track plan/implement relationship
    */
   test("GAP-SESS-005: No parent session tracking", () => {
-    const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
+    const sessionStoreSrc = readFileSync("meow/src/core/session-store.ts", "utf-8");
     const hasParent = sessionStoreSrc.includes("parent") ||
                       sessionStoreSrc.includes("parentSessionId");
     expect(hasParent).toBe(false);
@@ -365,7 +365,7 @@ describe("GAP-TRACKING: Skills System", () => {
    * Impact: Users can't add custom skills
    */
   test("GAP-SKILL-001: No dynamic skill loading", () => {
-    const skillsLoaderSrc = readFileSync("src/skills/loader.ts", "utf-8");
+    const skillsLoaderSrc = readFileSync("meow/src/skills/loader.ts", "utf-8");
     const hasDynamic = skillsLoaderSrc.includes("dynamicImport") ||
                       skillsLoaderSrc.includes("loadSkillsFromDir") ||
                       skillsLoaderSrc.includes(".skills/");
@@ -380,7 +380,7 @@ describe("GAP-TRACKING: Skills System", () => {
    * Impact: No type safety for skill parameters
    */
   test("GAP-SKILL-002: No skill input schema", () => {
-    const skillsLoaderSrc = readFileSync("src/skills/loader.ts", "utf-8");
+    const skillsLoaderSrc = readFileSync("meow/src/skills/loader.ts", "utf-8");
     const hasSchema = skillsLoaderSrc.includes("inputSchema") ||
                       skillsLoaderSrc.includes("parameters");
     expect(hasSchema).toBe(false);
@@ -394,7 +394,7 @@ describe("GAP-TRACKING: Skills System", () => {
    * Impact: Extensibility limited
    */
   test("GAP-SKILL-003: No user-defined skills", () => {
-    const skillsLoaderSrc = readFileSync("src/skills/loader.ts", "utf-8");
+    const skillsLoaderSrc = readFileSync("meow/src/skills/loader.ts", "utf-8");
     const hasCustom = skillsLoaderSrc.includes("customSkills") ||
                      skillsLoaderSrc.includes("userSkills");
     expect(hasCustom).toBe(false);
@@ -408,7 +408,7 @@ describe("GAP-TRACKING: Skills System", () => {
    * Impact: No skill analytics
    */
   test("GAP-SKILL-004: No skill usage tracking", () => {
-    const skillsLoaderSrc = readFileSync("src/skills/loader.ts", "utf-8");
+    const skillsLoaderSrc = readFileSync("meow/src/skills/loader.ts", "utf-8");
     const hasTracking = skillsLoaderSrc.includes("invokedSkills") ||
                        skillsLoaderSrc.includes("trackUsage");
     expect(hasTracking).toBe(false);
@@ -428,8 +428,8 @@ describe("GAP-TRACKING: Hooks System", () => {
    * Impact: No extensibility via hooks
    */
   test("GAP-HOOK-001: No hooks implementation", () => {
-    const hasHooksFile = existsSync("./src/sidecars/hooks.ts") ||
-                          existsSync("./src/hooks.ts");
+    const hasHooksFile = existsSync("./meow/src/"sidecars/hooks.ts") ||
+                          existsSync("./meow/src/"hooks.ts");
     expect(hasHooksFile).toBe(false);
   });
 
@@ -442,7 +442,7 @@ describe("GAP-TRACKING: Hooks System", () => {
    */
   test("GAP-HOOK-002: No hooks config file", () => {
     const hasConfig = existsSync(".meow/hooks.json") ||
-                     existsSync("./src/sidecars/hooks.ts");
+                     existsSync("./meow/src/"sidecars/hooks.ts");
     expect(hasConfig).toBe(false);
   });
 });
@@ -460,8 +460,8 @@ describe("GAP-TRACKING: MCP", () => {
    * Impact: Can't use MCP servers (filesystem, git, etc.)
    */
   test("GAP-MCP-001: MCP client implementation", () => {
-    const hasMCP = existsSync("./src/mcp-client.ts") ||
-                   existsSync("./src/sidecars/mcp-client.ts");
+    const hasMCP = existsSync("./meow/src/"mcp-client.ts") ||
+                   existsSync("./meow/src/"sidecars/mcp-client.ts");
     console.log(`  [GAP-MCP-001] MCP client: ${hasMCP ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
@@ -493,7 +493,7 @@ describe("GAP-TRACKING: Agent Spawning", () => {
    * Impact: Can't delegate to sub-agents
    */
   test("GAP-AGENT-001: No sub-agent spawning", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasSpawn = leanAgentSrc.includes("spawn") ||
                      leanAgentSrc.includes("AgentTool") ||
                      leanAgentSrc.includes("runAgent");
@@ -508,7 +508,7 @@ describe("GAP-TRACKING: Agent Spawning", () => {
    * Impact: Can't coordinate multiple agents
    */
   test("GAP-AGENT-002: No multi-agent support", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasTeams = leanAgentSrc.includes("team") ||
                      leanAgentSrc.includes("agents");
     expect(hasTeams).toBe(false);
@@ -522,7 +522,7 @@ describe("GAP-TRACKING: Agent Spawning", () => {
    * Impact: Can't run remote agents
    */
   test("GAP-AGENT-003: No remote agent support", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasRemote = leanAgentSrc.includes("remote") ||
                       leanAgentSrc.includes("RemoteAgent");
     expect(hasRemote).toBe(false);
@@ -542,8 +542,8 @@ describe("GAP-TRACKING: Slash Commands", () => {
    * Impact: No in-session commands
    */
   test("GAP-SLASH-001: No slash command parser", () => {
-    const hasSlash = existsSync("./src/sidecars/slash-commands.ts") ||
-                     existsSync("./src/slash-commands.ts");
+    const hasSlash = existsSync("./meow/src/"sidecars/slash-commands.ts") ||
+                     existsSync("./meow/src/"slash-commands.ts");
     expect(hasSlash).toBe(false);
   });
 
@@ -555,8 +555,8 @@ describe("GAP-TRACKING: Slash Commands", () => {
    * Impact: No approval workflow
    */
   test("GAP-SLASH-002: No plan mode", () => {
-    const hasPlan = existsSync("./src/sidecars/plan.ts") ||
-                    existsSync("./src/plan.ts");
+    const hasPlan = existsSync("./meow/src/"sidecars/plan.ts") ||
+                    existsSync("./meow/src/"plan.ts");
     expect(hasPlan).toBe(false);
   });
 
@@ -568,7 +568,7 @@ describe("GAP-TRACKING: Slash Commands", () => {
    * Impact: Can't enable dangerous mid-session
    */
   test("GAP-SLASH-003: No runtime dangerous toggle", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasToggle = leanAgentSrc.includes("toggleDangerous") ||
                       leanAgentSrc.includes("setDangerous");
     expect(hasToggle).toBe(false);
@@ -582,7 +582,7 @@ describe("GAP-TRACKING: Slash Commands", () => {
    * Impact: Can't easily resume sessions
    */
   test("GAP-SLASH-004: No /resume command", () => {
-    const hasResume = existsSync("./src/sidecars/slash-commands.ts");
+    const hasResume = existsSync("./meow/src/"sidecars/slash-commands.ts");
     expect(hasResume).toBe(false);
   });
 
@@ -594,7 +594,7 @@ describe("GAP-TRACKING: Slash Commands", () => {
    * Impact: No graceful exit
    */
   test("GAP-SLASH-005: No /exit command", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasExit = leanAgentSrc.includes("exit") &&
                     leanAgentSrc.includes("save");
     expect(hasExit).toBe(false);
@@ -609,7 +609,7 @@ describe("GAP-TRACKING: Slash Commands", () => {
    */
   test("GAP-SLASH-006: No custom slash commands", () => {
     const hasCustom = existsSync(".meow/commands") ||
-                      existsSync("./src/commands");
+                      existsSync("./meow/src/"commands");
     expect(hasCustom).toBe(false);
   });
 });
@@ -627,7 +627,7 @@ describe("GAP-TRACKING: Interrupt/Abort", () => {
    * Impact: Can interrupt mid-stream via AbortController
    */
   test("GAP-ABORT-001: Mid-stream abort implemented", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     // Check for streaming abort
     const hasStreamingAbort = leanAgentSrc.includes("generateStream") &&
                               leanAgentSrc.includes("abort");
@@ -642,7 +642,7 @@ describe("GAP-TRACKING: Interrupt/Abort", () => {
    * Impact: Ctrl+C doesn't work gracefully
    */
   test("GAP-ABORT-002: No SIGINT handler", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasSigint = leanAgentSrc.includes("SIGINT") ||
                        leanAgentSrc.includes("process.on");
     expect(hasSigint).toBe(false);
@@ -656,7 +656,7 @@ describe("GAP-TRACKING: Interrupt/Abort", () => {
    * Impact: Tools can hang indefinitely
    */
   test("GAP-ABORT-003: No tool timeout", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasTimeout = leanAgentSrc.includes("timeout") ||
                        leanAgentSrc.includes("setTimeout");
     expect(hasTimeout).toBe(false);
@@ -670,7 +670,7 @@ describe("GAP-TRACKING: Interrupt/Abort", () => {
    * Impact: Can't force kill hung processes
    */
   test("GAP-ABORT-004: No force kill", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasForce = leanAgentSrc.includes("SIGKILL") ||
                      leanAgentSrc.includes("forceKill");
     expect(hasForce).toBe(false);
@@ -690,8 +690,8 @@ describe("GAP-TRACKING: UI/TUI", () => {
    * Impact: Poor UX
    */
   test("GAP-UI-001: No rich terminal rendering", () => {
-    const hasTUI = existsSync("./src/sidecars/tui.ts") ||
-                   existsSync("./src/tui.ts");
+    const hasTUI = existsSync("./meow/src/"sidecars/tui.ts") ||
+                   existsSync("./meow/src/"tui.ts");
     expect(hasTUI).toBe(false);
   });
 
@@ -703,8 +703,8 @@ describe("GAP-TRACKING: UI/TUI", () => {
    * Impact: No interactive mode
    */
   test("GAP-UI-002: No REPL mode", () => {
-    const hasREPL = existsSync("./src/sidecars/repl.ts") ||
-                    existsSync("./src/repl.ts");
+    const hasREPL = existsSync("./meow/src/"sidecars/repl.ts") ||
+                    existsSync("./meow/src/"repl.ts");
     expect(hasREPL).toBe(false);
   });
 
@@ -716,7 +716,7 @@ describe("GAP-TRACKING: UI/TUI", () => {
    * Impact: No feedback during long operations
    */
   test("GAP-UI-003: No progress indicators", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasProgress = leanAgentSrc.includes("spinner") ||
                         leanAgentSrc.includes("progress") ||
                         leanAgentSrc.includes("loading");
@@ -731,7 +731,7 @@ describe("GAP-TRACKING: UI/TUI", () => {
    * Impact: No at-a-glance info
    */
   test("GAP-UI-004: No status bar", () => {
-    const hasStatus = existsSync("./src/sidecars/tui.ts");
+    const hasStatus = existsSync("./meow/src/"sidecars/tui.ts");
     expect(hasStatus).toBe(false);
   });
 
@@ -743,7 +743,7 @@ describe("GAP-TRACKING: UI/TUI", () => {
    * Impact: Can't confirm dangerous actions
    */
   test("GAP-UI-005: No interactive confirmation", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasConfirm = leanAgentSrc.includes("readline") &&
                        leanAgentSrc.includes("confirm");
     expect(hasConfirm).toBe(false);
@@ -763,7 +763,7 @@ describe("GAP-TRACKING: LLM Provider", () => {
    * Impact: Can't use Claude API directly
    */
   test("GAP-LLM-001: No Anthropic-specific API support", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasAnthropic = leanAgentSrc.includes("anthropic-version") ||
                          leanAgentSrc.includes("anthropic");
     expect(hasAnthropic).toBe(false);
@@ -777,7 +777,7 @@ describe("GAP-TRACKING: LLM Provider", () => {
    * Impact: Real-time token display in CLI via /stream command
    */
   test("GAP-LLM-002: LLM response streaming implemented", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasStream = leanAgentSrc.includes("stream: true") &&
                       leanAgentSrc.includes("generateStream");
     expect(hasStream).toBe(true);
@@ -791,7 +791,7 @@ describe("GAP-TRACKING: LLM Provider", () => {
    * Impact: Suboptimal for Claude models
    */
   test("GAP-LLM-003: No model-specific parameter mapping", () => {
-    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
     const hasMapping = leanAgentSrc.includes("modelParams") ||
                        leanAgentSrc.includes("modelMapping");
     expect(hasMapping).toBe(false);

@@ -15,8 +15,8 @@ import { readFileSync, existsSync } from "node:fs";
 // ============================================================================
 
 describe("GAP-ABORT-002: SIGINT Handler", () => {
-  const leanAgentPath = "src/core/lean-agent.ts";
-  const cliPath = "cli/index.ts";
+  const leanAgentPath = "meow/src/core/lean-agent.ts";
+  const cliPath = "meow/cli/index.ts";
 
   test("lean-agent.ts does NOT have process-level SIGINT handler (correct - it's a library)", () => {
     // Libraries should NOT have process.on("SIGINT") - that's the CLI's responsibility
@@ -72,7 +72,7 @@ describe("GAP-ABORT-002: SIGINT Handler", () => {
 
 describe("GAP-ABORT-002: Implementation Verification", () => {
   test("CLI has proper interrupt mechanism", () => {
-    const cliSrc = readFileSync("cli/index.ts", "utf-8");
+    const cliSrc = readFileSync("meow/cli/index.ts", "utf-8");
 
     // Verify the interrupt function exists and is called on SIGINT
     const hasInterruptFn = cliSrc.includes("function interrupt()");
@@ -83,7 +83,7 @@ describe("GAP-ABORT-002: Implementation Verification", () => {
   });
 
   test("CLI saves session on SIGINT", () => {
-    const cliSrc = readFileSync("cli/index.ts", "utf-8");
+    const cliSrc = readFileSync("meow/cli/index.ts", "utf-8");
 
     // On SIGINT, session should be saved before exiting
     const savesSession = cliSrc.includes("saveSession");
@@ -97,7 +97,7 @@ describe("GAP-ABORT-002: Implementation Verification", () => {
 // ============================================================================
 
 describe("GAP-ABORT-003: Tool Timeout", () => {
-  const toolRegistryPath = "src/sidecars/tool-registry.ts";
+  const toolRegistryPath = "meow/src/sidecars/tool-registry.ts";
 
   test("shell tool uses setTimeout for timeout implementation", () => {
     const registrySrc = readFileSync(toolRegistryPath, "utf-8");
@@ -150,7 +150,7 @@ describe("GAP-ABORT-003: Tool Timeout", () => {
 // ============================================================================
 
 describe("GAP-SLASH-001: Slash Command Infrastructure", () => {
-  const slashCommandsPath = "src/sidecars/slash-commands.ts";
+  const slashCommandsPath = "meow/src/sidecars/slash-commands.ts";
 
   test("slash-commands.ts sidecar exists", () => {
     const exists = existsSync(slashCommandsPath);
@@ -196,7 +196,7 @@ describe("GAP-SLASH-001: Slash Command Infrastructure", () => {
 // ============================================================================
 
 describe("GAP-TOOL-001: Edit Tool", () => {
-  const toolRegistryPath = "src/sidecars/tool-registry.ts";
+  const toolRegistryPath = "meow/src/sidecars/tool-registry.ts";
 
   test("edit tool exists in tool-registry", () => {
     const registrySrc = readFileSync(toolRegistryPath, "utf-8");
@@ -234,7 +234,7 @@ describe("GAP-TOOL-001: Edit Tool", () => {
 // ============================================================================
 
 describe("GAP-CORE-003: Budget Tracking", () => {
-  const leanAgentPath = "src/core/lean-agent.ts";
+  const leanAgentPath = "meow/src/core/lean-agent.ts";
 
   test("LeanAgentOptions accepts maxBudgetUSD parameter", () => {
     const leanAgentSrc = readFileSync(leanAgentPath, "utf-8");
