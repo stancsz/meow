@@ -25,24 +25,31 @@ The core loop never grows. Tools are **sidecar modules**:
 
 ```
 Core Agent (~100 lines, fixed)
-├── read, write, shell, git (always loaded)
-└── Skills (modular presets):
-    ├── skills/simplify.ts - code refactoring
-    ├── skills/review.ts - code review
-    ├── skills/commit.ts - conventional commits
-    └── tools/search.ts - glob, grep
+├── read, write, shell, git (via tool-registry)
+└── Sidecars (modular capabilities):
+    ├── tool-registry.ts   # Tool registration + built-ins
+    ├── permissions.ts     # Pattern-matching permissions
+    ├── mcp-client.ts      # MCP protocol client
+    └── skills/            # Modular presets (simplify, review, commit)
 ```
 
 ## PROJECT STRUCTURE
 
 ```
 meow/
-├── cli/index.ts              # CLI + REPL
+├── cli/index.ts              # CLI + REPL + slash commands
+├── tests/
+│   └── gap-impl.test.ts     # Gap implementation tests
 └── src/
     ├── core/
     │   ├── lean-agent.ts    # Core loop (~100 lines)
+    │   ├── auto-agent.ts    # OODA autonomous agent (tick/auto modes)
     │   ├── task-store.ts    # Task persistence (.meow/tasks.json)
-    │   └── session-store.ts # Session logs (~/.meow/sessions/)
+    │   └── session-store.ts # Session logs + LLM compaction (~/.meow/sessions/)
+    ├── sidecars/
+    │   ├── tool-registry.ts # Tool registry with read/write/edit/shell/git
+    │   ├── mcp-client.ts    # MCP protocol client
+    │   └── permissions.ts   # Pattern-matching permissions
     ├── skills/
     │   ├── index.ts         # Skill exports
     │   ├── loader.ts        # Skill loader
@@ -56,6 +63,15 @@ meowclaw/                     # Desktop App
 ├── electron/                 # Electron main/preload
 └── server/server/            # Next.js dashboard + API
 ```
+
+## RECENT CHANGES
+
+- **OpenAI SDK** — MiniMax via OpenAI-compatible endpoint, streaming support
+- **Auto/Tick modes** — autonomous OODA loop in auto-agent.ts
+- **Env loading** — automatic `.env` file on startup
+- **gap-impl.test.ts** — test suite for gap implementation
+- **gap-close.sh** — script to validate and close gaps
+- **slash-commands.ts** — slash command infrastructure sidecar
 
 ## TOOLS
 
@@ -100,9 +116,11 @@ bun run start --resume
 
 **Tasks:** File-based in `.meow/tasks.json`
 
-**Sessions:** JSONL logs in `~/.meow/sessions/<id>.jsonl`
+**Sessions:** JSONL logs in `~/.meow/sessions/<id>.jsonl` with LLM-powered compaction
 
 **Skills:** Modular capabilities loaded from `meow/src/skills/`
+
+**Permissions:** Pattern-matching rules (allow/deny/ask) per tool
 
 **Memory:** `~/.meow/memory/user.json` (future)
 

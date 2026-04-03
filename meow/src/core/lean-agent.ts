@@ -24,7 +24,7 @@ export interface LeanAgentOptions {
   systemPrompt?: string;
   abortSignal?: AbortSignal;
   maxTokens?: number;
-  messages?: { role: string; content: string }[];
+  messages?: any[];
   timeoutMs?: number;
 }
 
@@ -42,6 +42,48 @@ export interface AgentResult {
 }
 
 export type TokenHandler = (token: string) => void;
+
+/**
+ * Generate stream - yields tokens as they arrive.
+ * This is the primary streaming interface expected by tests.
+ */
+export async function* generateStream(
+  prompt: string,
+  options: LeanAgentOptions = {}
+): AsyncGenerator<string> {
+  const abortSignal = options.abortSignal;
+
+  if (abortSignal?.aborted) {
+    return;
+  }
+
+  const { model, client } = createOpenAIClient(options);
+  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: prompt },
+  ];
+
+  const stream = await client.chat.completions.create({
+    model,
+    messages,
+    tools: getOpenAITools(),
+    tool_choice: "auto",
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    if (abortSignal?.aborted) {
+      return;
+    }
+
+    const delta = chunk.choices[0]?.delta;
+    if (delta?.content) {
+      yield delta.content;
+    }
+  }
+}
 
 // ============================================================================
 // Streaming Types
