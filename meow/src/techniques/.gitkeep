@@ -1,0 +1,13 @@
+/**
+ * techniques/ — Harvested tricks that don't fit as sidecars or skills
+ *
+ * Techniques are novel implementations harvested from other projects.
+ * Each file should be minimal (<100 lines) and focused on one trick.
+ *
+ * Harvested techniques:
+ *   - rewind.ts    (from gemini-cli) — conversation time travel
+ *   - checkpointing.ts (from gemini-cli) — automatic safety snapshots
+ *
+ * When a technique grows complex enough, it should be promoted to
+ * a proper sidecar or skill.
+ */
