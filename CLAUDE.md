@@ -70,8 +70,21 @@ meowclaw/                     # Desktop App
 - **Auto/Tick modes** — autonomous OODA loop in auto-agent.ts
 - **Env loading** — automatic `.env` file on startup
 - **gap-impl.test.ts** — test suite for gap implementation
-- **gap-close.sh** — script to validate and close gaps
+- **cook.sh** — script to validate and close gaps (research/docs in `docs/`)
 - **slash-commands.ts** — slash command infrastructure sidecar
+- **timeoutMs** — shell/git tools respect per-call timeout via ToolContext
+- **generateStream** — AsyncGenerator yield-based streaming as primary test interface
+- **maxBudgetUSD** — budget limiting per agent run
+- **Fork sessions** — session-store supports forking for branching conversations
+
+## DOGFOOD NOTES
+
+- **cook.sh** iterates: run tests → pick top gap → implement → update docs → commit
+- **timeoutMs** prevents hung shell/git commands; propagated via ToolContext
+- **LLM compaction** keeps sessions under token limit by summarizing old messages
+- **maxBudgetUSD** halts agent when estimated cost exceeds threshold
+- **capability-matrix.test.ts** — capability coverage matrix tests
+- **gaps.test.ts** — gap identification and tracking tests
 
 ## TOOLS
 
