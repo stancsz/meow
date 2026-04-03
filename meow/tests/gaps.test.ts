@@ -428,8 +428,8 @@ describe("GAP-TRACKING: Hooks System", () => {
    * Impact: No extensibility via hooks
    */
   test("GAP-HOOK-001: No hooks implementation", () => {
-    const hasHooksFile = existsSync("./meow/src/"sidecars/hooks.ts") ||
-                          existsSync("./meow/src/"hooks.ts");
+    const hasHooksFile = existsSync("./meow/src/sidecars/hooks.ts") ||
+                          existsSync("./meow/src/hooks.ts");
     expect(hasHooksFile).toBe(false);
   });
 

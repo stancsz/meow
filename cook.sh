@@ -10,6 +10,8 @@
 #   6. Commit to cook branch (no push)
 #   7. Repeat
 #
+# Output goes to dogfood/logs/ and dogfood/tests/ (git-ignored)
+#
 # Usage: ./cook.sh
 
 set -e
@@ -17,6 +19,9 @@ set -e
 ITERATION=1
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Create dogfood output directories
+mkdir -p dogfood/logs dogfood/tests
 
 # Ensure we're on cook branch
 if ! git show-ref --verify --quiet refs/heads/cook; then
@@ -37,6 +42,7 @@ if [[ -z "$ANTHROPIC_API_KEY" && ! -f ".env" ]]; then
 fi
 
 while true; do
+  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
   echo ""
   echo "=============================================="
   echo "ITERATION $ITERATION"
@@ -47,22 +53,24 @@ while true; do
   echo "[1/7] Running gap analysis..."
   GAP_OUTPUT=$(cd meow && bun test tests/gaps.test.ts 2>&1 || true)
   echo "$GAP_OUTPUT" | tail -20
+  echo "$GAP_OUTPUT" > "dogfood/tests/gap-analysis-${ITERATION}-${TIMESTAMP}.txt"
   echo ""
 
   # Step 2: Use Claude Code to pick highest leverage gap
   echo "[2/7] Claude Code analyzing and deciding on highest leverage gap..."
-  claude --dangerously-skip-permissions "Analyze the test output above. Pick the ONE highest leverage gap to fix. Consider: impact (blocks user?), effort (complex?), dependencies. Reply with just GAP-ID and reason." 2>&1 | tail -5
+  GAP_ANALYSIS_FILE="dogfood/tests/gap-analysis-${ITERATION}-${TIMESTAMP}.txt"
+  claude --dangerously-skip-permissions "Analyze the test output in $GAP_ANALYSIS_FILE. Pick the ONE highest leverage gap to fix. Consider: impact (blocks user?), effort (complex?), dependencies. Reply with just GAP-ID and reason." 2>&1 | tee "dogfood/logs/gap-selection-${ITERATION}-${TIMESTAMP}.txt" | tail -5
   echo ""
 
   # Step 3: Claude Code implements the fix, writes tests, dogfoods
   echo "[3/7] Claude Code implementing fix..."
-  claude --dangerously-skip-permissions "Implement the fix for the gap identified. Write a test in meow/tests/gap-impl.test.ts, implement the code, run the test, and dogfood with: bun run meow/cli/index.ts --dangerous \"test the feature you just implemented\". Report pass/fail." 2>&1 | tail -50
+  claude --dangerously-skip-permissions "Implement the fix for the gap identified. Read the gap analysis at $GAP_ANALYSIS_FILE for context. Write a test in meow/tests/gap-impl.test.ts, implement the code, run the test, and dogfood with: bun run meow/cli/index.ts --dangerous \"test the feature you just implemented\". Report pass/fail." 2>&1 | tee "dogfood/logs/implementation-${ITERATION}-${TIMESTAMP}.txt" | tail -50
   echo ""
 
   # Step 4: Verify iteration works (live dogfood test)
   echo "[4/7] Verifying iteration works (live dogfood)..."
   DOGFOOD_RESULT=$(cd meow && bun run cli/index.ts --dangerous "run gap-impl.test.ts and report pass/fail" 2>&1 || true)
-  echo "$DOGFOOD_RESULT" | tail -20
+  echo "$DOGFOOD_RESULT" | tee "dogfood/tests/dogfood-verification-${ITERATION}-${TIMESTAMP}.txt" | tail -20
   if echo "$DOGFOOD_RESULT" | grep -qi "fail\|error\|✗"; then
     echo "ERROR: Dogfood verification failed!"
     echo "Reverting changes..."
@@ -77,7 +85,7 @@ while true; do
 
   # Step 5: Claude Code updates docs
   echo "[5/7] Claude Code updating TODO.md and CLAUDE.md..."
-  claude --dangerously-skip-permissions "Edit meow/TODO.md and meow/CLAUDE.md to reflect the changes you just made. Mark completed items, add dogfood notes. Be brief - 2-3 lines per change." 2>&1 | tail -20
+  claude --dangerously-skip-permissions "Edit meow/TODO.md and meow/CLAUDE.md to reflect the changes you just made. Mark completed items, add dogfood notes. Be brief - 2-3 lines per change." 2>&1 | tee "dogfood/logs/doc-update-${ITERATION}-${TIMESTAMP}.txt" | tail -20
   echo ""
 
   # Step 6: Commit if there are changes
@@ -94,6 +102,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   echo ""
 
   echo "[7/7] Iteration $ITERATION complete!"
+  echo "Logs: dogfood/logs/implementation-${ITERATION}-${TIMESTAMP}.txt"
+  echo "Tests: dogfood/tests/dogfood-verification-${ITERATION}-${TIMESTAMP}.txt"
   ((ITERATION++))
 
   # Brief pause
