@@ -377,6 +377,38 @@ async function decide(state: WisdomState, gapId: string | null): Promise<{ actio
   return { action: "implement", reason: `${gapData.attempts} prior attempts, difficulty ${gapData.score || 5}` };
 }
 
+// Cleanup: move stray untracked files to .trash before committing
+function cleanupTrash(): { trashed: string[] } {
+  const trashed: string[] = [];
+  try {
+    ensureDir(join(ROOT, ".trash"));
+    const status = runCmd("git status --porcelain", ROOT);
+    for (const line of status.stdout.split("\n")) {
+      if (!line.startsWith("?? ")) continue;
+      const file = line.slice(3).trim();
+      if (!file) continue;
+      // Skip intentional root files
+      const intentional = ["CLAUDE.md", "TODO.md", "README.md", "package.json", "tsconfig.json",
+        "cook.sh", "train.sh", "bun.lock", "package-lock.json", ".env", ".env.example",
+        ".gitignore", ".gitattributes"];
+      if (intentional.includes(file)) continue;
+      // Skip intentional dirs
+      const intentionalDirs = ["meow", "meowclaw", "docs", "dogfood", "node_modules",
+        "packages", "scripts", ".github", ".claude", ".meow", "tmp"];
+      if (intentionalDirs.some((d) => file === d || file.startsWith(d + "/"))) continue;
+      // Skip .trash itself
+      if (file.startsWith(".trash")) continue;
+      // Skip dogfood subdirs
+      if (file.startsWith("dogfood/")) continue;
+
+      const dest = `.trash/${file}-${Date.now()}`;
+      runCmd(`mv "${file}" "${dest}"`, ROOT);
+      trashed.push(file);
+    }
+  } catch {}
+  return { trashed };
+}
+
 async function act(state: WisdomState, gapId: string): Promise<{ success: boolean; rootCause?: string }> {
   console.log(`\n${"=".repeat(60)}`);
   console.log(`🔨 ACT — Implementing ${gapId}`);
@@ -388,7 +420,6 @@ async function act(state: WisdomState, gapId: string): Promise<{ success: boolea
   const gapData = difficulty[gapId] || { attempts: 0, rootCauses: [], status: "open" };
   const attemptNumber = gapData.attempts + 1;
 
-  // Update difficulty tracking
   difficulty[gapId] = { ...gapData, attempts: attemptNumber, status: "solving" };
   saveGapDifficulty(difficulty);
 
@@ -396,10 +427,8 @@ async function act(state: WisdomState, gapId: string): Promise<{ success: boolea
   let rootCause = "";
 
   try {
-    // Step 1: Ask Claude Code to implement the gap
-    console.log(`\n[1/5] Claude Code implementing ${gapId}...`);
-    const gapAnalysisContent = existsSync(GAP_ANALYSIS_FILE) ? readFileSync(GAP_ANALYSIS_FILE, "utf-8") : "";
-
+    // Step 1: Claude Code implements the gap
+    console.log(`\n[1/6] Claude Code implementing ${gapId}...`);
     const priorFailures = gapData.rootCauses.length > 0
       ? `Prior failure patterns to avoid: ${gapData.rootCauses.join("; ")}`
       : "No prior failures.";
@@ -422,35 +451,62 @@ Implement the fix:
 Report: PASS if all tests pass, FAIL with root cause if anything fails.`;
 
     const implResult = await claudeTask(implPrompt, `implement-${gapId}`);
-
     const implLogFile = join(LOGS_DIR, `implementation-${gapId}-${ts}.txt`);
     writeFileSync(implLogFile, implResult);
-    console.log(`  📝 Implementation log: ${relative(ROOT, implLogFile)}`);
+    console.log(`  📝 Implementation log saved`);
 
-    // Step 2: Verify dogfood
-    console.log(`\n[2/5] Verifying with dogfood...`);
-    const dogfoodPrompt = `Run gap-impl.test.ts and report pass/fail for ${gapId}.
-Command: bun test tests/gap-impl.test.ts
+    // Step 2: INDEPENDENT test run — parse actual output, no self-report
+    console.log(`\n[2/6] Running tests independently...`);
+    const testResult = runCmd(`bun test tests/gap-impl.test.ts 2>&1`, ROOT);
+    const testOutputFile = join(TESTS_DIR, `test-verify-${gapId}-${ts}.txt`);
+    writeFileSync(testOutputFile, testResult.stdout + testResult.stderr);
+    const output = testResult.stdout + testResult.stderr;
+    const passMatch = output.match(/(\d+)\s+pass/);
+    const failMatch = output.match(/(\d+)\s+fail/);
+    const passCount = passMatch ? parseInt(passMatch[1]) : 0;
+    const failCount = failMatch ? parseInt(failMatch[1]) : output.includes("fail") && !output.includes("0 fail") ? 1 : 0;
+    const testPass = passCount > 0 && failCount === 0;
+    console.log(`  🧪 Tests: ${passCount} pass, ${failCount} fail — ${testPass ? "✅" : "❌"}`);
+    if (!testPass) rootCause = extractRootCause(output);
 
-Return EXACTLY:
-PASS if all tests for ${gapId} pass.
-FAIL: <reason> if any test fails.`;
+    // Step 3: INDEPENDENT smoke test — exercise the actual feature via CLI
+    console.log(`\n[3/6] Running independent CLI smoke test...`);
+    const smokePrompt = `Exercise the ${gapId} feature you just implemented.
+Run: bun run cli/index.ts --dangerous "help" to see if the CLI starts and the feature is accessible.
+Report EXACTLY: what command you ran, what output you got, whether the feature works.`;
 
-    const dogfoodResult = await claudeTask(dogfoodPrompt, `dogfood-${gapId}`);
-    const dogfoodLogFile = join(TESTS_DIR, `dogfood-${gapId}-${ts}.txt`);
-    writeFileSync(dogfoodLogFile, dogfoodResult);
-    console.log(`  🐕 Dogfood result: ${dogfoodResult.slice(0, 200)}`);
+    const smokeResult = await claudeTask(smokePrompt, `smoke-${gapId}`);
+    const smokeOutputFile = join(TESTS_DIR, `smoke-${gapId}-${ts}.txt`);
+    writeFileSync(smokeOutputFile, smokeResult);
+    const smokePass = smokeResult.length > 50 && !smokeResult.toLowerCase().includes("could not");
+    console.log(`  🐕 Smoke: ${smokePass ? "✅" : "⚠️ check output"}`);
 
-    // Step 3: Analyze result — use word boundary to avoid "failures" matching "fail"
-    const isPass = /\bPASS\b/i.test(dogfoodResult) || /all.*pass/i.test(dogfoodResult.toLowerCase());
-    const isFail = /\bfail(ed|ure)?\b/i.test(dogfoodResult.slice(0, 500)) || /\berror\b/i.test(dogfoodResult.slice(0, 300));
+    // Step 4: Verify gaps.test.ts no longer flags this as missing
+    console.log(`\n[4/6] Verifying gaps.test.ts认可...`);
+    const gapsResult = runCmd(`bun test tests/gaps.test.ts 2>&1`, ROOT);
+    const gapsOutputFile = join(TESTS_DIR, `gaps-verify-${gapId}-${ts}.txt`);
+    writeFileSync(gapsOutputFile, gapsResult.stdout + gapsResult.stderr);
+    const gapsOutput = gapsResult.stdout + gapsResult.stderr;
+    // Check if this specific gap ID appears in a failure context
+    const gapIdEscaped = gapId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const gapFailsNow = new RegExp(`\\bfail\\b[^\\n]*${gapIdEscaped}|${gapIdEscaped}[^\\n]*\\bfail\\b`, "i").test(gapsOutput);
+    const gapsTestPass = !gapFailsNow;
+    console.log(`  📊 gaps.test.ts: ${gapsTestPass ? "✅ gap resolved" : "⚠️ still flagged"}`);
 
-    if (isPass) {
+    const allPass = testPass && smokePass && gapsTestPass;
+
+    if (allPass) {
       success = true;
-      console.log(`\n✅ ${gapId} PASSED!`);
+      console.log(`\n✅ ${gapId} PASSED all rigorous checks!`);
 
-      // Step 4: Update docs
-      console.log(`\n[3/5] Updating docs...`);
+      // Step 5: Cleanup trash before commit
+      console.log(`\n[5/6] Cleaning up stray files...`);
+      const { trashed } = cleanupTrash();
+      if (trashed.length > 0) console.log(`  🚮 Trashed: ${trashed.join(", ")}`);
+      else console.log(`  ✅ Nothing to trash`);
+
+      // Step 6: Update docs
+      console.log(`\n[6/6] Updating docs...`);
       const docPrompt = `Edit TODO.md and CLAUDE.md to reflect the ${gapId} implementation:
 1. Mark ${gapId} as done in TODO.md
 2. Add a dogfood note in CLAUDE.md under RECENT CHANGES
@@ -461,50 +517,42 @@ Be brief - 2-3 lines.`;
       const docLogFile = join(LOGS_DIR, `doc-update-${gapId}-${ts}.txt`);
       writeFileSync(docLogFile, docResult);
 
-      // Step 5: Commit
-      console.log(`\n[4/5] Committing...`);
-      const status = runCmd("git status --short", ROOT);
-      if (status.stdout.trim()) {
+      // Commit
+      const gitStatus = runCmd("git status --short", ROOT);
+      if (gitStatus.stdout.trim()) {
         runCmd(`git add . && git commit -m "fix(${gapId}): ${gapId} implementation
 
 Co-Authored-By: Claude <noreply@anthropic.com>"`, ROOT);
         console.log(`  ✅ Committed`);
       }
 
-      // Update solved gaps
       const solved = loadSolvedGaps();
       solved[gapId] = {
         solvedAt: timestamp(),
         iteration: state.iteration,
-        notes: `Solved on attempt ${attemptNumber}`,
+        notes: `Solved attempt ${attemptNumber}. Tests:${passCount}pass Smoke:${smokePass} Gaps:${gapsTestPass}`,
         approach: implResult.slice(0, 500),
       };
       saveSolvedGaps(solved);
-
-      // Update difficulty
       difficulty[gapId] = { ...difficulty[gapId], status: "solved" };
       saveGapDifficulty(difficulty);
 
     } else {
       success = false;
-      rootCause = extractRootCause(dogfoodResult);
-      console.log(`\n❌ ${gapId} FAILED: ${rootCause}`);
+      if (!rootCause) rootCause = "test/smoke/gaps verification failed";
+      console.log(`\n❌ ${gapId} FAILED:\n  Tests:${testPass ? "✅" : "❌"} Smoke:${smokePass ? "✅" : "❌"} Gaps:${gapsTestPass ? "✅" : "❌"}`);
 
-      // Record failure
       appendJsonl(FAILURE_MODES_FILE, {
         gapId,
         iteration: state.iteration,
         attempt: attemptNumber,
         cause: rootCause,
         timestamp: timestamp(),
+        testPass, smokePass, gapsTestPass,
       });
 
-      // Update difficulty with root cause
       const existingCauses = difficulty[gapId]?.rootCauses || [];
-      if (!existingCauses.includes(rootCause)) {
-        existingCauses.push(rootCause);
-      }
-      // Increase difficulty score (each failure makes it harder)
+      if (rootCause && !existingCauses.includes(rootCause)) existingCauses.push(rootCause);
       const newScore = Math.min((difficulty[gapId]?.score || 5) + 1, 10);
       difficulty[gapId] = {
         ...difficulty[gapId],
@@ -515,19 +563,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"`, ROOT);
       };
       saveGapDifficulty(difficulty);
 
-      // Block if score is too high
       if (newScore >= 8) {
-        console.log(`  🚫 ${gapId} blocked (difficulty score: ${newScore})`);
-        appendJsonl(BLOCKED_GAPS_FILE, {
-          gapId,
-          blockedAt: timestamp(),
-          reason: rootCause,
-          score: newScore,
-        });
+        console.log(`  🚫 ${gapId} blocked (difficulty: ${newScore})`);
+        appendJsonl(BLOCKED_GAPS_FILE, { gapId, blockedAt: timestamp(), reason: rootCause, score: newScore });
       }
     }
 
-    // Step 5: Log attempt
     const attemptLog: AttemptLog = {
       gapId,
       iteration: state.iteration,
@@ -536,11 +577,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>"`, ROOT);
       rootCause: success ? undefined : rootCause,
       timestamp: timestamp(),
       durationMs: Date.now() - startTime,
-      dogfoodOutput: dogfoodResult.slice(0, 1000),
     };
     appendJsonl(ATTEMPT_LOG_FILE, attemptLog);
-
-    console.log(`\n[5/5] Attempt logged (${attemptLog.durationMs}ms)`);
+    console.log(`\n[6/6] Attempt logged (${attemptLog.durationMs}ms)`);
 
   } catch (e: any) {
     success = false;
