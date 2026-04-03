@@ -121,9 +121,9 @@ Commands to support:
 - `/resume <id>` — resume a session
 - `/exit` — save and exit
 
-- [ ] Create `slash-commands.ts` sidecar
-- [ ] Command parser (regex or string match)
-- [ ] Built-in commands
+- [x] Create `slash-commands.ts` sidecar ✅
+- [x] Command parser (regex or string match) ✅
+- [x] Built-in commands (/help, /exit, /plan, /clear) ✅
 - [ ] Custom commands from `.meow/commands/`
 
 ### 3.2 Task Sidecar ✅
@@ -364,6 +364,11 @@ Missing/incomplete sidecars:
 3. **compactMessages crashed** — tool_call messages have `content: undefined`. Fixed by handling null/undefined content. ✅ (e0c359a)
 4. **OpenAI SDK migration** — switched from Anthropic to OpenAI SDK for MiniMax compatibility. Streaming works, env loading added. ✅ (c667c45)
 5. **OODA auto-agent** — observe-orient-decide-act loop with tick/auto modes. Dogfood: tick mode gives step-by-step control, auto mode runs autonomously. ✅ (ba4bf54/c667c45)
+
+### Dogfood: Slash Commands (2026-04-03)
+- **slash-commands.ts** created — command registry with /help, /exit, /plan, /clear built-ins
+- **gap-close.sh** created — automation script for iterative gap closing via Claude Code
+- Dogfood: used gap-close.sh to iteratively identify and fix gaps ✅
 
 ### Test Failures
 - **113 tests fail** due to path resolution issues — tests use relative paths like `"meow/src/core/lean-agent.ts"` but CWD is repo root

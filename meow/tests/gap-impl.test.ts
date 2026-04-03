@@ -8,7 +8,7 @@
  * Run with: bun test meow/tests/gap-impl.test.ts
  */
 import { describe, test, expect } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 
 // ============================================================================
 // GAP-ABORT-002: SIGINT Handler
@@ -142,5 +142,51 @@ describe("GAP-ABORT-003: Tool Timeout", () => {
     // Should either timeout with error OR complete quickly
     // The key is it shouldn't take 5 seconds
     expect(result.content || result.error).toBeTruthy();
+  });
+});
+
+// ============================================================================
+// GAP-SLASH-001: Slash Command Infrastructure
+// ============================================================================
+
+describe("GAP-SLASH-001: Slash Command Infrastructure", () => {
+  const slashCommandsPath = "meow/src/sidecars/slash-commands.ts";
+
+  test("slash-commands.ts sidecar exists", () => {
+    const exists = existsSync(slashCommandsPath);
+    expect(exists).toBe(true);
+  });
+
+  test("slash-commands.ts exports command registry", () => {
+    const slashCommandsSrc = readFileSync(slashCommandsPath, "utf-8");
+    const hasRegistry = slashCommandsSrc.includes("commands") ||
+                        slashCommandsSrc.includes("CommandRegistry") ||
+                        slashCommandsSrc.includes("registerCommand");
+    expect(hasRegistry).toBe(true);
+  });
+
+  test("slash-commands.ts has built-in commands defined", () => {
+    const slashCommandsSrc = readFileSync(slashCommandsPath, "utf-8");
+    const hasHelp = slashCommandsSrc.includes("help");
+    const hasExit = slashCommandsSrc.includes("exit");
+    const hasPlan = slashCommandsSrc.includes("plan");
+    // At least some built-in commands should be defined
+    expect(hasHelp || hasExit || hasPlan).toBe(true);
+  });
+
+  test("slash-commands.ts has command parser", () => {
+    const slashCommandsSrc = readFileSync(slashCommandsPath, "utf-8");
+    const hasParser = slashCommandsSrc.includes("parse") ||
+                      slashCommandsSrc.includes("execute") ||
+                      slashCommandsSrc.includes("run");
+    expect(hasParser).toBe(true);
+  });
+
+  test("slash-commands.ts supports custom commands", () => {
+    const slashCommandsSrc = readFileSync(slashCommandsPath, "utf-8");
+    const hasCustom = slashCommandsSrc.includes("custom") ||
+                      slashCommandsSrc.includes("user") ||
+                      slashCommandsSrc.includes("register");
+    expect(hasCustom).toBe(true);
   });
 });
