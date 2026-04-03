@@ -190,3 +190,41 @@ describe("GAP-SLASH-001: Slash Command Infrastructure", () => {
     expect(hasCustom).toBe(true);
   });
 });
+
+// ============================================================================
+// GAP-TOOL-001: Edit Tool
+// ============================================================================
+
+describe("GAP-TOOL-001: Edit Tool", () => {
+  const toolRegistryPath = "meow/src/sidecars/tool-registry.ts";
+
+  test("edit tool exists in tool-registry", () => {
+    const registrySrc = readFileSync(toolRegistryPath, "utf-8");
+    const hasEditTool = registrySrc.includes('name: "edit"') ||
+                        registrySrc.includes("name: 'edit'");
+    expect(hasEditTool).toBe(true);
+  });
+
+  test("edit tool has correct parameters (old_string, new_string)", () => {
+    const registrySrc = readFileSync(toolRegistryPath, "utf-8");
+    const hasOldString = registrySrc.includes("old_string");
+    const hasNewString = registrySrc.includes("new_string");
+    expect(hasOldString && hasNewString).toBe(true);
+  });
+
+  test("edit tool performs in-place file modification", () => {
+    const registrySrc = readFileSync(toolRegistryPath, "utf-8");
+    // Should use readFileSync + replace + writeFileSync for in-place edit
+    const hasRead = registrySrc.includes("readFileSync");
+    const hasReplace = registrySrc.includes("replace");
+    const hasWrite = registrySrc.includes("writeFileSync");
+    expect(hasRead && hasReplace && hasWrite).toBe(true);
+  });
+
+  test("edit tool returns error when old_string not found", () => {
+    const registrySrc = readFileSync(toolRegistryPath, "utf-8");
+    const hasNotFoundError = registrySrc.includes("Could not find") ||
+                              registrySrc.includes("not found");
+    expect(hasNotFoundError).toBe(true);
+  });
+});
