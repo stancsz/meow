@@ -15,6 +15,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions } from "../src/core/lean-agent.ts";
 import { runAutoAgent, formatAutoResults } from "../src/core/auto-agent.ts";
+import { registerSignalHandlers, getInterruptController } from "../src/sidecars/auto-mode.ts";
+import { runAutoLoop, formatAutoLoopSummary, formatTickStatus } from "../src/sidecars/auto-loop.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
 import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession } from "../src/core/session-store.ts";
@@ -398,31 +400,58 @@ async function main() {
     // Auto/Tick mode - OODA loop autonomous operation
     if (autoMode || tickMode) {
       console.log(`${colors.cyan}⚡ Auto mode${tickMode ? " (tick)" : ""} - OODA loop engaged${colors.reset}\n`);
+      console.log(`${colors.dim}Press Ctrl+C or send SIGTERM to interrupt${tickMode ? " after current tick" : ""}${colors.reset}\n`);
+
+      // Register global signal handlers (handles SIGINT + SIGTERM)
+      registerSignalHandlers();
+      const ic = getInterruptController();
+      ic.reset(); // clear any stale state from a previous run
+
+      // Wire SIGINT to the interrupt controller
+      const sigintHandler = () => {
+        if (!ic.shouldStop()) {
+          console.log(`\n${colors.yellow}⏹ Interrupt requested — stopping after current tick...${colors.reset}`);
+          ic.stopAfterTick();
+        }
+      };
+      process.on("SIGINT", sigintHandler);
 
       setCursorVisible(false);
       try {
-        const { ticks, results, finalResult } = await withSpinner(
-          runAutoAgent(prompt, {
+        const result = await withSpinner(
+          runAutoLoop(prompt, {
             dangerous,
             tickMode,
             ghostMode: true,
             autoCommit: dangerous,
             autoPush: dangerous,
             confidenceThreshold: 0.7,
+            abortSignal: ic.signal,
+            onTick: (progress) => {
+              // Live tick progress feedback
+              process.stdout.write("\r" + colors.dim + formatTickStatus(progress) + " ".repeat(20) + colors.reset + "\r");
+            },
           }),
-          tickMode ? "autonomous..." : "thinking..."
+          tickMode ? "autonomous..." : "thinking...",
+          () => { ic.stopNow(); }
         );
 
-        console.log(`\n${colors.green}✅ Autonomous operation complete${colors.reset}`);
-        console.log(`${colors.dim}Ticks: ${ticks} | Iterations: ${finalResult.iterations}${colors.reset}`);
-        console.log(formatUsage(finalResult.usage));
+        eraseLine();
 
-        if (results.length > 0 && tickMode) {
-          console.log(`\n${colors.bold}━━━ OODA Loop Summary ━━━${colors.reset}`);
-          console.log(formatAutoResults(results));
+        if (result.interrupted) {
+          console.log(`${colors.yellow}⏹ Interrupted after ${result.ticks} tick(s) (${Math.round(result.elapsedMs / 1000)}s)${colors.reset}`);
+        } else {
+          console.log(`${colors.green}✅ Autonomous operation complete${colors.reset}`);
+          console.log(`${colors.dim}Ticks: ${result.ticks} | Iterations: ${result.finalResult.iterations}${colors.reset}`);
+          console.log(formatUsage(result.finalResult.usage));
         }
 
-        console.log(`\n--- Output ---\n${finalResult.content}`);
+        if (result.actions.length > 0 || result.pauseReason) {
+          console.log(`\n${colors.bold}━━━ OODA Loop Summary ━━━${colors.reset}`);
+          console.log(formatAutoLoopSummary(result));
+        }
+
+        console.log(`\n--- Output ---\n${result.finalResult.content}`);
       } catch (e: any) {
         if (e.message === "Interrupted") {
           process.exit(130);
@@ -430,6 +459,7 @@ async function main() {
         console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}`);
         process.exit(1);
       } finally {
+        process.off("SIGINT", sigintHandler);
         setCursorVisible(true);
       }
       return;

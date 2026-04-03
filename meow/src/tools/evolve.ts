@@ -14,7 +14,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 // ============================================================================
@@ -88,16 +88,35 @@ import { spawn } from "node:child_process";
 
 async function runCmdAsync(cmd: string, cwd: string = ROOT): Promise<string> {
   return new Promise((resolve) => {
-    const child = spawn("bash", ["-c", cmd], { cwd, encoding: "utf-8", timeout: 300000 });
+    const timeoutMs = 300000;
+    const child = spawn("bash", ["-c", cmd], { cwd, encoding: "utf-8" });
     let stdout = "";
     let stderr = "";
+    let resolved = false;
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        child.kill("SIGKILL");
+        resolve(stdout + stderr);
+      }
+    }, timeoutMs);
+
     child.stdout?.on("data", (data) => { stdout += data; });
     child.stderr?.on("data", (data) => { stderr += data; });
-    child.on("close", () => {
-      resolve(stdout + stderr);
+    child.on("close", (code) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        resolve(stdout + stderr);
+      }
     });
     child.on("error", () => {
-      resolve(stdout + stderr);
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        resolve(stdout + stderr);
+      }
     });
   });
 }

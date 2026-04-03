@@ -12,6 +12,7 @@ import { mcp } from "./mcp.ts";
 import { perms } from "./perms.ts";
 import { permissions } from "./permissions.ts";
 import { help } from "./help.ts";
+import { auto } from "./auto.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -23,6 +24,7 @@ const allSkills: Skill[] = [
   perms,
   permissions,
   help,
+  auto,
 ];
 
 // Auto-register on import

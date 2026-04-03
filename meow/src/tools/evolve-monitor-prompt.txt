@@ -1,0 +1,16 @@
+You are the evolve loop watchdog. Check on the meow CLI self-evolution system and fix any issues.
+
+Steps:
+1. Check if train.sh is running: ps aux | grep train.sh
+2. Check the log: tail -50 /tmp/train-sh.log
+3. Check for stuck processes: ps aux | grep claude
+4. Check for git commits: cd /c/Users/stanc/github/meow && git log --oneline -5
+5. Check gap status: cat meow/dogfood/wisdom/gap-list-v2.json
+
+If there are issues:
+- If train.sh is dead, start it: cd /c/Users/stanc/github/meow && bash watchdog.sh
+- If processes are stuck, kill them: pkill -f "claude --print"
+- If evolve.ts has bugs, fix them
+- If gaps need to be added, add them
+
+Report what you find and what actions you took.
