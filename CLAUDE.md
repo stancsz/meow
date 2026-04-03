@@ -90,12 +90,14 @@ meowclaw/                     # Desktop App
 
 ## DOGFOOD NOTES
 
-- **cook.sh** iterates: run tests → pick top gap → implement → update docs → commit
+- **cook.sh** iterates via evolve.ts OODA loop: observe → orient → decide → act
+- **train.sh** directly closes gaps: run gaps.test.ts → implement in meow/src/ → dogfood → commit
 - **timeoutMs** prevents hung shell/git commands; propagated via ToolContext
 - **LLM compaction** keeps sessions under token limit by summarizing old messages
 - **maxBudgetUSD** halts agent when estimated cost exceeds threshold
 - **capability-matrix.test.ts** — capability coverage matrix tests
 - **gaps.test.ts** — gap identification and tracking tests
+- **/learn <capability>** — on-demand learning from harvest list (P0 capabilities)
 
 ## TOOLS
 
@@ -108,8 +110,13 @@ meowclaw/                     # Desktop App
 ## CLI COMMANDS
 
 ```bash
+# Training loops (gap closing)
+./train.sh               # Direct gap-closing loop
+./train.sh --once        # Single iteration
+./cook.sh                # OODA loop via evolve.ts
+./cook.sh --once         # Single OODA iteration
+
 # Interactive mode
-bun run start
 
 # Single task
 bun run start "your prompt"
