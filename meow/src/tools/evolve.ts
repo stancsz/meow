@@ -208,14 +208,11 @@ Respond with:
   // Check if implementation worked (look for SUCCESS or FAILED markers)
   const hasSuccess = result.includes("SUCCESS") || result.includes("success");
   const hasFailure = result.includes("FAILED:") || result.includes("FAILED");
-  console.log(`  [DEBUG] hasSuccess=${hasSuccess}, hasFailure=${hasFailure}, result.length=${result.length}`);
 
   if (hasSuccess || hasFailure) {
     // Check if files were actually modified
     console.log(`  📁 Checking for file changes...`);
     const gitStatus = runCmd(`git status --short .`, ROOT);
-    console.log(`  [DEBUG] gitStatus.stdout="${gitStatus.stdout}"`);
-    console.log(`  [DEBUG] gitStatus.stderr="${gitStatus.stderr}"`);
     const hasChanges = gitStatus.stdout.trim().length > 0;
 
     if (hasSuccess && !hasChanges) {

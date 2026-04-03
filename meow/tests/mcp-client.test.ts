@@ -4,11 +4,20 @@
  * Tests for the MCP (Model Context Protocol) client sidecar.
  * Verifies MCP server connection, tool listing, and tool calling.
  *
- * Run with: bun test tests/mcp-client.test.ts
+ * Run with: bun test meow/tests/mcp-client.test.ts
+ * (from project root C:\Users\stanc\github\meow)
  */
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "url";
+
+// Test files live in meow/tests/, project root is the parent of "meow/"
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = dirname(__dirname); // = meow/ directory
+const MCP_CLIENT_PATH = join(PROJECT_ROOT, "src", "sidecars", "mcp-client.ts");
+const MOCK_SERVER_PATH = join(PROJECT_ROOT, "scripts", "mock-mcp-server.ts");
 
 // ============================================================================
 // GAP-MCP-001: MCP Client Implementation Tests
@@ -16,9 +25,8 @@ import { join } from "node:path";
 
 describe("GAP-MCP-001: MCP Client Implementation", () => {
   test("MCP client file exists", () => {
-    const mcpClientPath = join(process.cwd(), "src", "sidecars", "mcp-client.ts");
-    expect(existsSync(mcpClientPath)).toBe(true);
-    console.log("  [GAP-MCP-001] MCP client file: EXISTS");
+    expect(existsSync(MCP_CLIENT_PATH)).toBe(true);
+    console.log("  [GAP-MCP-001] MCP client file: EXISTS at", MCP_CLIENT_PATH);
   });
 
   // NOTE: TypeScript interfaces (MCPTool, MCPServerConfig, MCPToolResult) are compile-time-only
@@ -404,8 +412,8 @@ describe("GAP-MCP-001 Summary", () => {
 // ============================================================================
 
 describe("MCP Live Integration (GAP-MCP-01)", () => {
-  // Path to the mock MCP server script (relative to project root)
-  const mockServerPath = join(process.cwd(), "scripts", "mock-mcp-server.ts");
+  // Path to the mock MCP server script (relative to meow/ project root)
+  const mockServerPath = MOCK_SERVER_PATH;
 
   test("MCP skill /mcp help shows commands", async () => {
     // Import the MCP skill directly and verify its execute function
