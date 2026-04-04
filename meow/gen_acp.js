@@ -1,4 +1,2 @@
-const lines=[
-];
-fs.writeFileSync("X", lines.join("
-"));
+const fs=require("fs");
+const lines=[];
