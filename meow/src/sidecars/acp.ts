@@ -28,4 +28,21 @@ function sendResponse(response: JSONRPCResponse): void {
 }
 function sendNotification(notification: JSONRPCNotification): void {
   process.stdout.write(JSON.stringify(notification) + "\n");
-}
+}const ACP_ERROR_PARSE_ERROR = -32700;
+const ACP_ERROR_INVALID_REQUEST = -32600;
+const ACP_ERROR_METHOD_NOT_FOUND = -32601;
+const ACP_ERROR_INVALID_PARAMS = -32602;
+const ACP_ERROR_INTERNAL_ERROR = -32603;
+
+// ACP Server State
+
+let agentAbortController: AbortController | null = null;
+let currentSessionId: string | null = null;
+let dangerousMode = false;
+
+// JSON-RPC Helpers
+
+function jsonRpcResponse(id: number | string | null, result: unknown): JsonRpcResponse { return { jsonrpc: "2.0", id, result }; }
+function jsonRpcError(id: number | string | null, code: number, message: string, data?: unknown): JsonRpcResponse { return { jsonrpc: "2.0", id, error: { code, message, ...(data !== undefined ? { data } : {}) } }; }
+function sendResponse(response: JsonRpcResponse): void { process.stdout.write(JSON.stringify(response) + "
+"); }
