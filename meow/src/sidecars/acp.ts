@@ -16,8 +16,7 @@ let currentSession:ACPSession|null=null;
 let currentAgentAbortController:AbortController|null=null;
 let dangerousMode=false;
 
-function sendResponse(response:JSONRPCResponse):void{process.stdout.write(JSON.stringify(response)+"
-");}
+function sendResponse(response:JSONRPCResponse):void{process.stdout.write(JSON.stringify(response)+"\n");}
 
 async function handleInitialize(params:Record<string,unknown>){if(params.dangerous===true)dangerousMode=true;return{protocolVersion:"1.0",capabilities:{sessions:true,tools:true,streaming:false}};}
 async function handleNewSession(){if(currentSession)appendToSession(currentSession.id,currentSession.messages);const id=createSession();currentSession={id,messages:[]};return{sessionId:id};}
