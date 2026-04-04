@@ -23,6 +23,7 @@ import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills
 import { initI18n, t } from "../src/sidecars/i18n/index.ts";
 import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.ts";
 import { startACPServer } from "../src/sidecars/acp.ts";
+import { parseAndExecute as parseSlashCommand } from "../src/sidecars/slash-commands.ts";
 
 // Initialize i18n
 initI18n();
