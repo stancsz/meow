@@ -436,6 +436,17 @@ async function main() {
         }
         return;
       }
+
+      // Not a skill — try slash commands from mangled path (e.g. /restore → C:/Program Files/Git/restore)
+      const mangledPrompt = `/${skillName}${fullArgs ? " " + fullArgs : ""}`;
+      const cmdResult2 = await parseSlashCommand(mangledPrompt, { cwd: process.cwd(), dangerous });
+      if (cmdResult2.handled) {
+        return;
+      }
+      if (cmdResult2.error) {
+        console.error(`${colors.red}${cmdResult2.error}${colors.reset}`);
+        return;
+      }
     }
 
     // Handle bare "help" command (without leading slash)

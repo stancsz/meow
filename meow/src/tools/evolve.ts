@@ -5,9 +5,9 @@
  * and calls Claude Code for complex ones (with rate limiting).
  *
  * Usage:
- *   bun run meow/src/tools/evolve.ts          # Run continuously
- *   bun run meow/src/tools/evolve.ts --once   # Single iteration
- *   bun run meow/src/tools/evolve.ts --status # Show gap status
+ *   bun run src/tools/evolve.ts          # Run continuously
+ *   bun run src/tools/evolve.ts --once   # Single iteration
+ *   bun run src/tools/evolve.ts --status # Show gap status
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
@@ -81,7 +81,8 @@ function runCmd(cmd: string, cwd: string = ROOT): { stdout: string; stderr: stri
   }
 }
 
-const MINClaudeInterval = 40000;
+// 4500 msgs / 5 hours = ~1 every 40s. Use 180s to be safe from rate limiting
+const MINClaudeInterval = 180000;
 
 function waitForRateLimit(lastCall: number): number {
   const now = Date.now();
@@ -164,7 +165,7 @@ function discoverGaps(): void {
           description: sg.desc,
           priority: "P2",
           status: "open",
-          whatToImplement: `Create meow/src/skills/${sg.name}.ts`
+          whatToImplement: `Create src/skills/${sg.name}.ts`
         });
         console.log(`  📝 Discovered: ${sg.id}`);
         break;
@@ -179,7 +180,7 @@ function implementSkill(gap: Gap): boolean {
   if (!gap.id.startsWith("GAP-SKILL-")) return false;
 
   const skillName = gap.id.replace("GAP-SKILL-", "").toLowerCase();
-  const skillPath = join(ROOT, "meow/src/skills", `${skillName}.ts`);
+  const skillPath = join(ROOT, "src/skills", `${skillName}.ts`);
 
   if (existsSync(skillPath)) return true;
 
@@ -290,7 +291,7 @@ ${"🐱".repeat(30)}
 async function callClaude(gap: Gap): Promise<boolean> {
   const prompt = `Close gap ${gap.id}: ${gap.description}. Implement: ${gap.whatToImplement}
 
-Work in meow/src/. Create skills or sidecars. Test: cd meow && bun run cli/index.ts --dangerous "help"
+Work in src/. Create skills or sidecars. Test: bun run cli/index.ts --dangerous "help"
 
 Report: SUCCESS or FAILED`;
 

@@ -1,32 +1,35 @@
 /**
- * skills/database.ts
+ * database.ts
  *
- * PlanetScale CLI database skill.
- * Learn database operations - connect, query, migrate, and branch databases.
+ * Learned from: https://github.com/planetscale/cli
+ * Why: Database inspection, migration, backup, and branching via CLI
+ * Minimal Slice: pscale database create + pscale branch + pscale connect
  *
- * repo: https://github.com/planetscale/cli
- * minimalSlice: "pscale database create + pscale branch + pscale connect"
+ * Wraps the PlanetScale CLI (pscale) for database operations.
+ * Requires pscale to be installed and authenticated.
+ * See: https://github.com/planetscale/cli#installation
  */
 import { exec } from "node:child_process";
 import type { Skill, SkillContext, SkillResult } from "./loader.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-interface PscaleResult { stdout: string; stderr: string; code: number | null; error?: string; }
-
-function pscale(args: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<PscaleResult> {
+function pscale(args: string, cwd: string, timeoutMs = DEFAULT_TIMEOUT_MS) {
   return new Promise((resolve) => {
-    const child = exec(`pscale ${args}`, { timeout: timeoutMs, shell: true });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (d: string) => { stdout += d; });
-    child.stderr?.on("data", (d: string) => { stderr += d; });
-    child.on("close", (code: number | null) => resolve({ stdout, stderr, code }));
-    child.on("error", (e: Error) => resolve({ stdout, stderr, code: null, error: e.message }));
+    const child = exec("pscale " + args, { cwd, timeout: timeoutMs, shell: true });
+    let stdout = ""; let stderr = "";
+    child.stdout && child.stdout.on("data", d => { stdout += d; });
+    child.stderr && child.stderr.on("data", d => { stderr += d; });
+    child.on("close", code => resolve({ stdout, stderr, code }));
+    child.on("error", e => resolve({ stdout, stderr, code: null, error: e.message }));
   });
 }
 
-function checkPscale(): Promise<{ installed: boolean; version?: string }> {
+function errMsg(code: number | null, stderr: string): string {
+  return "pscale exited with " + code + ": " + stderr;
+}
+
+async function checkPscale(): Promise<{ installed: boolean; version?: string }> {
   return new Promise((resolve) => {
     exec("pscale version", { timeout: 10000, shell: true }, (err, stdout) => {
       if (err) return resolve({ installed: false });
@@ -36,153 +39,128 @@ function checkPscale(): Promise<{ installed: boolean; version?: string }> {
   });
 }
 
-function formatOutput(result: PscaleResult, cmd: string): { content: string; error?: string } {
-  if (result.code === 0) {
-    return { content: result.stdout || `\`pscale ${cmd}\` succeeded` };
+async function runCmd(sub: string, rest: string, cwd: string): Promise<SkillResult> {
+  const pcheck = await checkPscale();
+  if (!pcheck.installed) {
+    return {
+      content: "",
+      error: "[database:NOT_INSTALLED] PlanetScale CLI (pscale) is not installed.\n" +
+        "Install: brew install planetscale/tap/pscale\n" +
+        "Docs: https://github.com/planetscale/cli#installation"
+    };
   }
-  const errMsg = `[database:ERROR] \`pscale ${cmd}\` exited with code ${result.code ?? "unknown"}\n` +
-    (result.stderr ? `\nstderr: ${result.stderr}` : "") +
-    (result.stdout ? `\nstdout: ${result.stdout}` : "");
-  return { content: "", error: errMsg };
+  switch (sub.toLowerCase()) {
+    case "list":
+    case "ls": {
+      const r = await pscale("database list", cwd);
+      return { content: "[pscale] v" + pcheck.version + "\n\n" + r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+    case "create": {
+      if (!rest) return { content: "", error: "Usage: /database create <name> [--region <region>]" };
+      const r = await pscale("database create " + rest, cwd);
+      return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+    case "delete":
+    case "rm": {
+      if (!rest) return { content: "", error: "Usage: /database delete <name>" };
+      const r = await pscale("database delete " + rest + " --force", cwd);
+      return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+    case "branch": {
+      if (!rest) {
+        const r = await pscale("branch list", cwd);
+        return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+      }
+      const bparts = rest.split(/\s+/);
+      const bsub = bparts[0];
+      if (bsub === "create" && bparts.length >= 2) {
+        const r2 = await pscale("branch create " + bparts.slice(1).join(" "), cwd);
+        return { content: r2.stdout, error: r2.code === 0 ? undefined : errMsg(r2.code, r2.stderr) };
+      }
+      if (bsub === "delete" && bparts.length >= 3) {
+        const r2 = await pscale("branch delete " + bparts.slice(1).join(" ") + " --force", cwd);
+        return { content: r2.stdout, error: r2.code === 0 ? undefined : errMsg(r2.code, r2.stderr) };
+      }
+      const r2 = await pscale("branch " + rest, cwd);
+      return { content: r2.stdout, error: r2.code === 0 ? undefined : errMsg(r2.code, r2.stderr) };
+    }
+    case "connect": {
+      if (!rest) return { content: "", error: "Usage: /database connect <name> [--branch <branch>]" };
+      const r = await pscale("connect " + rest, cwd, 5000);
+      return { content: "[pscale connect] Established connection to " + rest + "\n" + (r.stdout || "(connection active)"), error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+    case "backup": {
+      if (!rest) {
+        const r = await pscale("backup list", cwd);
+        return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+      }
+      const bparts = rest.split(/\s+/);
+      if (bparts[0] === "create" && bparts.length >= 2) {
+        const r2 = await pscale("backup create " + bparts.slice(1).join(" "), cwd);
+        return { content: r2.stdout, error: r2.code === 0 ? undefined : errMsg(r2.code, r2.stderr) };
+      }
+      const r2 = await pscale("backup " + rest, cwd);
+      return { content: r2.stdout, error: r2.code === 0 ? undefined : errMsg(r2.code, r2.stderr) };
+    }
+    case "shell":
+    case "sql": {
+      if (!rest) return { content: "", error: "Usage: /database sql <name> [--branch <branch>]" };
+      const r = await pscale("sql " + rest, cwd);
+      return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+    case "diff": {
+      if (!rest) return { content: "", error: "Usage: /database diff <name> [--branch <branch>]" };
+      const r = await pscale("diff " + rest, cwd);
+      return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+    case "deploy-request":
+    case "dr": {
+      if (!rest) return { content: "", error: "Usage: /database dr <name> create [--from <branch>] [--to <branch>] [--title <title>]" };
+      const r = await pscale("deploy-request " + rest, cwd);
+      return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+    case "help": {
+      return { content: [
+        "database skill - PlanetScale CLI (pscale) wrapper",
+        "",
+        "Usage: /database <subcommand> [args]",
+        "",
+        "Subcommands:",
+        "  list                          List all databases",
+        "  create <name> [--region r]    Create a new database",
+        "  delete <name>                 Delete a database",
+        "  connect <name> [--branch b]   Show connection string",
+        "  shell <name> [--branch b]     Open SQL shell",
+        "  diff <name> [--branch b]      Show schema diff",
+        "  backup [list|create]          Manage backups",
+        "  branch [create|delete|list]   Manage branches",
+        "  dr create [--from] [--to]     Create deploy request",
+        "  help                          Show this help",
+        "",
+        "Requires: pscale CLI installed + authenticated",
+        "Install:  brew install planetscale/tap/pscale",
+        "Docs:     https://github.com/planetscale/cli",
+      ].join("\n") };
+    }
+    default: {
+      const r = await pscale(sub + " " + rest, cwd);
+      return { content: r.stdout, error: r.code === 0 ? undefined : errMsg(r.code, r.stderr) };
+    }
+  }
 }
 
 export const database: Skill = {
   name: "database",
-  description: "PlanetScale database operations: list, create, branch, connect, migrate",
+  description: "PlanetScale database operations - create, branch, connect, backup, migrate",
   aliases: ["db", "pscale"],
-
   async execute(args: string, ctx: SkillContext): Promise<SkillResult> {
     if (!ctx.dangerous) {
-      return {
-        content: "",
-        error: "[database:BLOCKED] Database operations require --dangerous flag",
-      };
+      return { content: "", error: "[database:BLOCKED] Database operations require --dangerous flag" };
     }
-
-    const parts = args.trim().split(/\s+/);
-    const subcommand = parts[0]?.toLowerCase() || "";
-    const rest = parts.slice(1).join(" ");
-
-    // Check if pscale is installed for commands that need it
-    const needsPscale = subcommand !== "help" && subcommand !== "";
-    if (needsPscale) {
-      const pcheck = await checkPscale();
-      if (!pcheck.installed) {
-        return {
-          content: "",
-          error: "[database:NOT_INSTALLED] PlanetScale CLI (pscale) is not installed.\n\nInstall: brew install planetscale/tap/pscale\nDocs: https://github.com/planetscale/cli",
-        };
-      }
-    }
-
-    switch (subcommand) {
-      case "list": {
-        const result = await pscale("database list");
-        return {
-          content: `## Databases\n\n\`\`\`\n${result.stdout || result.stderr || "(empty)"}\n\`\`\`\n${result.code !== 0 ? `\nExit code: ${result.code}` : ""}`,
-        };
-      }
-
-      case "create": {
-        if (!rest) return { content: "", error: "Usage: /database create <name> [--region <region>]" };
-        const result = await pscale(`database create ${rest}`);
-        return formatOutput(result, `database create ${rest}`);
-      }
-
-      case "branch": {
-        if (!rest) return { content: "", error: "Usage: /database branch <sub-cmd> <database> [args]" };
-        const result = await pscale(`branch ${rest}`);
-        return formatOutput(result, `branch ${rest}`);
-      }
-
-      case "connect": {
-        if (!rest) return { content: "", error: "Usage: /database connect <database> [branch]" };
-        // connect is long-running, use short timeout
-        const result = await pscale(`connect ${rest}`, 5000);
-        return {
-          content: formatOutput(result, `connect ${rest}`).content ||
-            `\`pscale connect ${rest}\` — connection initiated (long-running, use Ctrl+C to stop)`,
-          error: result.code !== 0 ? formatOutput(result, `connect ${rest}`).error : undefined,
-        };
-      }
-
-      case "backup": {
-        if (!rest) return { content: "", error: "Usage: /database backup <database> [branch]" };
-        const result = await pscale(`backup ${rest}`);
-        return formatOutput(result, `backup ${rest}`);
-      }
-
-      case "shell": {
-        if (!rest) return { content: "", error: "Usage: /database shell <database> [--branch <branch>]" };
-        const result = await pscale(`shell ${rest}`);
-        return formatOutput(result, `shell ${rest}`);
-      }
-
-      case "deploy-request": {
-        if (!rest) return { content: "", error: "Usage: /database deploy-request <sub-cmd> <database> [branch]" };
-        const result = await pscale(`deploy-request ${rest}`);
-        return formatOutput(result, `deploy-request ${rest}`);
-      }
-
-      case "diff": {
-        if (!rest) return { content: "", error: "Usage: /database diff <database> [branch]" };
-        const result = await pscale(`diff ${rest}`);
-        return formatOutput(result, `diff ${rest}`);
-      }
-
-      case "auth": {
-        const result = await pscale("auth login");
-        return formatOutput(result, "auth login");
-      }
-
-      case "status": {
-        const pcheck = await checkPscale();
-        return {
-          content: `## PlanetScale CLI Status\n\n` +
-            `Installed: ${pcheck.installed ? "✅ Yes" : "❌ No"}\n` +
-            (pcheck.version ? `Version: ${pcheck.version}\n` : "") +
-            (!pcheck.installed ? "\nInstall: brew install planetscale/tap/pscale" : ""),
-        };
-      }
-
-      case "help":
-      case "":
-      default: {
-        return {
-          content: `## PlanetScale Database Skill
-
-PlanetScale CLI (pscale) database operations.
-Requires --dangerous flag.
-
-### Sub-commands
-
-  /database list              List all databases
-  /database create <name> [--region <region>]
-                             Create a new database
-  /database branch <sub-cmd> <database> [args]
-                             Manage branches (create, list, delete)
-  /database connect <database> [branch]
-                             Open a SQL shell connection
-  /database shell <database> [--branch <branch>]
-                             Run SQL in the database shell
-  /database backup <database> [branch]
-                             Manage backups
-  /database deploy-request <sub-cmd> <database> [branch]
-                             Manage deploy requests
-  /database diff <database> [branch]
-                             Show schema diff
-  /database auth              Authenticate with PlanetScale
-  /database status            Check CLI installation
-
-### Minimal Slice
-
-  pscale database create     — create a new database
-  pscale branch create       — create a branch
-  pscale connect             — connect and query
-
-Docs: https://github.com/planetscale/cli`,
-        };
-      }
-    }
-  },
+    const trimmed = args.trim();
+    const parts = trimmed.split(/\s+/);
+    const subcmd = parts[0] || "help";
+    const restargs = parts.slice(1).join(" ");
+    return runCmd(subcmd, restargs, ctx.cwd);
+  }
 };
