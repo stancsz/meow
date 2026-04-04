@@ -387,25 +387,30 @@ async function main() {
       // The first arg contains the full "C:/Program Files/Git/<skill> [args...]".
       // " /" (space + slash) marks the boundary between skill name and args.
       // If there's no space after the skill name (just "/mcp"), use last "/" as separator.
-      const spaceSlashIdx = firstArg.indexOf(" /");
+      // For split-mangle (space-split path), use the reassembled path.
+      const effectiveFirstArg = splitMangleMatch ? reassembleSplitMangle() : firstArg;
+      const spaceSlashIdx = effectiveFirstArg.indexOf(" /");
       let skillName: string;
       let remainingFirstArg: string;
       if (spaceSlashIdx >= 0) {
         // Has args: "C:/Program Files/Git/mcp connect..." → skillName="mcp", remaining="connect..."
-        remainingFirstArg = firstArg.slice(spaceSlashIdx + 2); // skip " /"
+        remainingFirstArg = effectiveFirstArg.slice(spaceSlashIdx + 2); // skip " /"
         const spaceIdx2 = remainingFirstArg.indexOf(" ");
         skillName = spaceIdx2 >= 0 ? remainingFirstArg.slice(0, spaceIdx2) : remainingFirstArg;
       } else {
         // No args: "C:/Program Files/Git/mcp" → skillName="mcp"
-        const lastSlash = firstArg.lastIndexOf("/");
-        skillName = lastSlash >= 0 ? firstArg.slice(lastSlash + 1) : firstArg;
+        const lastSlash = effectiveFirstArg.lastIndexOf("/");
+        skillName = lastSlash >= 0 ? effectiveFirstArg.slice(lastSlash + 1) : effectiveFirstArg;
         remainingFirstArg = "";
       }
       // Remaining args from firstArg after the skill name, plus extra filteredArgs
       const afterSkillName = spaceSlashIdx >= 0
         ? (remainingFirstArg.indexOf(" ") >= 0 ? remainingFirstArg.slice(remainingFirstArg.indexOf(" ") + 1) : "")
         : "";
-      const extraArgs = filteredArgs.slice(1).join(" ");
+      // For split-mangle, skip the first two args (reassembled path parts) and use the rest
+      const extraArgs = splitMangleMatch
+        ? filteredArgs.slice(2).join(" ")
+        : filteredArgs.slice(1).join(" ");
       const fullArgs = [afterSkillName, extraArgs].filter(Boolean).join(" ");
 
       const skill = findSkill(skillName);
