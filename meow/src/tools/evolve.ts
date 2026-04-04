@@ -7,9 +7,9 @@
  * All wisdom/state goes to dogfood/wisdom/
  *
  * Usage:
- *   bun run meow/src/tools/evolve.ts          # Run continuously
- *   bun run meow/src/tools/evolve.ts --once   # Single gap
- *   bun run meow/src/tools/evolve.ts --status # Show gap status
+ *   bun run src/tools/evolve.ts          # Run continuously
+ *   bun run src/tools/evolve.ts --once   # Single gap
+ *   bun run src/tools/evolve.ts --status # Show gap status
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
