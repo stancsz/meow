@@ -14,6 +14,7 @@ import { permissions } from "./permissions.ts";
 import { help } from "./help.ts";
 import { auto } from "./auto.ts";
 import { execSkill } from "./exec.ts";
+import { database } from "./database.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -27,6 +28,7 @@ const allSkills: Skill[] = [
   help,
   auto,
   execSkill,
+  database,
 ];
 
 // Auto-register on import

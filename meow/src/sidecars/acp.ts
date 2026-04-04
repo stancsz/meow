@@ -1,213 +1,148 @@
+/// <reference types="node" />
 /**
- * acp.ts — Agent Client Protocol (ACP) mode sidecar
+ * acp.ts - ACP (Agent Client Protocol) sidecar for Meow
  *
- * Implements JSON-RPC 2.0 over stdio for programmatic control of Meow.
+ * Implements JSON-RPC 2.0 over stdio.
  * Methods: initialize, newSession, loadSession, prompt, cancel
- *
- * ACP is an open protocol — IDEs and tools can implement once, control any ACP agent.
  */
-import { runLeanAgent } from "../core/lean-agent.ts";
-import { initializeToolRegistry, getAllTools } from "./tool-registry.ts";
-import { createSession, appendToSession, loadSession } from "../core/session-store.ts";
-
-// ============================================================================
-// JSON-RPC Types
-// ============================================================================
-
-interface JSONRPCRequest {
-  jsonrpc: "2.0";
-  id: string | number | null;
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-interface JSONRPCResponse {
-  jsonrpc: "2.0";
-  id: string | number | null;
-  result?: unknown;
-  error?: { code: number; message: string; data?: unknown };
-}
-
-interface JSONRPCNotification {
-  jsonrpc: "2.0";
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-// ============================================================================
-// ACP Session State
-// ============================================================================
-
-interface ACPSession {
-  id: string;
-  messages: { role: string; content: string; timestamp: string }[];
-}
-
-let currentSession: ACPSession | null = null;
-let currentAgentAbortController: AbortController | null = null;
-let dangerousMode = false;
-let initialized = false;
-
-// ============================================================================
-// JSON-RPC Transport
-// ============================================================================
-
-function sendResponse(response: JSONRPCResponse): void {
-  process.stdout.write(JSON.stringify(response) + "\n");
-}
-
-function sendNotification(notification: JSONRPCNotification): void {
-  process.stdout.write(JSON.stringify(notification) + "\n");
-}
-
-// ============================================================================
-// ACP Methods
-// ============================================================================
-
-async function handleInitialize(params: Record<string, unknown>): Promise<{ protocolVersion: string; capabilities: Record<string, unknown> }> {
-  initialized = true;
-  if (params.dangerous === true) {
-    dangerousMode = true;
+async function handlePrompt(params: Record<string, unknown>, id: number | string | null): Promise<JSONRPCResponse> {
+  if (!acpState.initialized) {
+    return makeError(id, ERR_INVALID_REQUEST, "Not initialized. Call initialize first.");
   }
-  return {
-    protocolVersion: "1.0",
-    capabilities: {
-      sessions: true,
-      tools: true,
-      streaming: false,
-    },
+
+  const prompt = params.prompt as string;
+  if (!prompt) {
+    return makeError(id, ERR_INVALID_REQUEST, "prompt is required");
+  }
+
+  if (!acpState.currentSession) {
+    acpState.currentSession = {
+      id: createSessionId(),
+      messages: [],
+      dangerous: acpState.dangerous,
+    };
+  }
+
+  const session = acpState.currentSession;
+  const dangerous = Boolean(params.dangerous ?? session.dangerous);
+
+  const agentMessages = session.messages.map((m) => ({
+    role: m.role as "user" | "assistant" | "system",
+    content: m.content,
+  }));
+
+  const agentOptions: LeanAgentOptions = {
+    dangerous,
+    messages: agentMessages,
   };
-}
 
-async function handleNewSession(_params: Record<string, unknown>): Promise<{ sessionId: string }> {
-  if (currentSession) {
-    appendToSession(currentSession.id, currentSession.messages);
-  }
-  const sessionId = createSession();
-  currentSession = { id: sessionId, messages: [] };
-  return { sessionId };
-}
+  acpState.abortController = new AbortController();
+  agentOptions.abortSignal = acpState.abortController.signal;
 
-async function handleLoadSession(params: Record<string, unknown>): Promise<{ sessionId: string; messages: { role: string; content: string; timestamp: string }[] }> {
-  const sessionId = params.sessionId as string;
-  if (!sessionId) throw new Error("sessionId is required");
-  const messages = loadSession(sessionId);
-  currentSession = { id: sessionId, messages };
-  return { sessionId, messages };
-}
-
-async function handlePrompt(params: Record<string, unknown>): Promise<{ content: string; usage?: { promptTokens: number; completionTokens: number; totalTokens: number; estimatedCost: number } }> {
-  const promptText = params.prompt as string;
-  if (!promptText) throw new Error("prompt is required");
-
-  currentAgentAbortController = new AbortController();
-  const sessionMessages = currentSession?.messages ?? [];
-
+  let result: AgentResult;
   try {
-    const result = await runLeanAgent(promptText, {
-      dangerous: dangerousMode,
-      abortSignal: currentAgentAbortController.signal,
-      messages: sessionMessages.map((m) => ({ role: m.role, content: m.content })),
-    });
+    result = await runLeanAgent(prompt, agentOptions);
+  } catch (e: unknown) {
+    acpState.abortController = null;
+    const msg = e instanceof Error ? e.message : String(e);
+    return makeError(id, ERR_INTERNAL_ERROR, "Agent error: " + msg);
+  }
 
-    if (currentSession) {
-      currentSession.messages.push(
-        { role: "user", content: promptText, timestamp: new Date().toISOString() },
-        { role: "assistant", content: result.content, timestamp: new Date().ToISOString() }
-      );
+  acpState.abortController = null;
+
+  session.messages.push({ role: "user", content: prompt });
+  session.messages.push({ role: "assistant", content: result.content });
+
+  return makeResponse(id, {
+    content: result.content,
+    iterations: result.iterations,
+    completed: result.completed,
+    sessionId: session.id,
+    usage: result.usage,
+  });
+}
+
+async function handleCancel(_params: Record<string, unknown>, id: number | string | null): Promise<JSONRPCResponse> {
+  if (!acpState.initialized) {
+    return makeError(id, ERR_INVALID_REQUEST, "Not initialized. Call initialize first.");
+  }
+
+  if (acpState.abortController) {
+    acpState.abortController.abort();
+    acpState.abortController = null;
+    return makeResponse(id, { cancelled: true });
+  }
+
+  return makeResponse(id, { cancelled: false, reason: "No operation in progress" });
+}
+async function handleMessage(req: JSONRPCRequest): Promise<JSONRPCResponse> {
+  if (req.jsonrpc !== "2.0") {
+    return makeError(req.id, ERR_INVALID_REQUEST, "Invalid jsonrpc version: " + req.jsonrpc);
+  }
+
+  if (typeof req.method !== "string" || !req.method) {
+    return makeError(req.id, ERR_INVALID_REQUEST, "method must be a non-empty string");
+  }
+
+  const params = req.params || {};
+
+  switch (req.method) {
+    case "initialize":
+      return await handleInitialize(params, req.id);
+    case "newSession":
+      return await handleNewSession(params, req.id);
+    case "loadSession":
+      return await handleLoadSession(params, req.id);
+    case "prompt":
+      return await handlePrompt(params, req.id);
+    case "cancel":
+      return await handleCancel(params, req.id);
+    default:
+      return makeError(req.id, ERR_METHOD_NOT_FOUND, "Method not found: " + req.method);
+  }
+}
+
+function readLines(cb: (line: string) => void): void {
+  let leftover = "";
+
+  process.stdin.setEncoding("utf-8");
+
+  process.stdin.on("data", (chunk: string) => {
+    leftover += chunk;
+    const lines = leftover.split(/?
+/);
+    leftover = lines.pop() || "";
+    for (const line of lines) {
+      if (line.trim()) cb(line.trim());
     }
+  });
 
-    return { content: result.content, usage: result.usage };
-  } finally {
-    currentAgentAbortController = null;
-  }
+  process.stdin.on("end", () => {
+    if (leftover.trim()) cb(leftover.trim());
+  });
 }
-
-async function handleCancel(_params: Record<string, unknown>): Promise<{ cancelled: boolean }> {
-  if (currentAgentAbortController) {
-    currentAgentAbortController.abort();
-    return { cancelled: true };
-  }
-  return { cancelled: false };
-}
-
-// ============================================================================
-// Dispatcher
-// ============================================================================
-
-async function dispatch(request: JSONRPCRequest): Promise<void> {
-  const { id, method, params = {} } = request;
-
-  try {
-    let result: unknown;
-
-    switch (method) {
-      case "initialize":
-        result = await handleInitialize(params);
-        break;
-      case "newSession":
-        result = await handleNewSession(params);
-        break;
-      case "loadSession":
-        result = await handleLoadSession(params);
-        break;
-      case "prompt":
-        result = await handlePrompt(params);
-        break;
-      case "cancel":
-        result = await handleCancel(params);
-        break;
-      case "tools/list":
-        result = getAllTools().map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
-        break;
-      default:
-        sendResponse({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
-        return;
-    }
-
-    sendResponse({ jsonrpc: "2.0", id, result });
-  } catch (err: any) {
-    sendResponse({ jsonrpc: "2.0", id, error: { code: -32603, message: err.message || "Internal error", data: err.stack } });
-  }
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function isValidRequest(obj: unknown): boolean {
-  return typeof obj === "object" && obj !== null && (obj as any).jsonrpc === "2.0" && typeof (obj as any).method === "string";
-}
-
-// ============================================================================
-// Main entry point — starts the ACP server
-// ============================================================================
 
 export async function startACPServer(): Promise<void> {
-  await initializeToolRegistry();
-
-  const rl = await import("node:readline").then((m) =>
-    m.createInterface({ input: process.stdin, crlfDelay: Infinity })
-  );
-
-  for await (const line of rl) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }) + "\n");
-      continue;
-    }
-
-    if (Array.isArray(parsed)) {
-      for (const req of parsed) {
-        if (isValidRequest(req)) await dispatch(req as JSONRPCRequest);
-      }
-    } else if (isValidRequest(parsed)) {
-      await dispatch(parsed as JSONRPCRequest);
-    }
+  function send(r: JSONRPCResponse) {
+    process.stdout.write(JSON.stringify(r) + "
+");
   }
+
+  readLines(async (line) => {
+    let req: JSONRPCRequest;
+    try {
+      req = JSON.parse(line);
+    } catch {
+      send(makeError(null, ERR_PARSE_ERROR, "Invalid JSON"));
+      return;
+    }
+
+    try {
+      const response = await handleMessage(req);
+      send(response);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      send(makeError(req.id, ERR_INTERNAL_ERROR, "Internal error: " + msg));
+    }
+  });
 }
