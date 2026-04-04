@@ -407,6 +407,20 @@ async function main() {
       }
     }
 
+    // Handle bare "help" command (without leading slash)
+    if (prompt.toLowerCase() === "help") {
+      const skill = findSkill("help");
+      if (skill) {
+        const result = await skill.execute("", { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    }
+
     console.log(`${colors.dim}🐱 meow${colors.reset}\n`);
     console.log(`${colors.dim}Prompt: ${prompt}${colors.reset}\n`);
 
