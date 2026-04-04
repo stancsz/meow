@@ -296,3 +296,38 @@ async function processRequest(req: JsonRpcRequest): Promise<string> {
     return jsonError(id, ACP_ERROR_INTERNAL, msg);
   }
 }
+export async function runACPServer(): Promise<void> {
+  await initializeToolRegistry();
+  const { registerTool } = await import("./tool-registry.ts");
+  setMCPToolRegistrar(registerTool);
+  await loadMCPConfig();
+  let buffer = "";
+  process.stdin.setEncoding("utf-8");
+  process.stdin.on("data", async (chunk: string) => {
+    buffer += chunk;
+    const lines = buffer.split("
+");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const req = parseJsonRpc(trimmed);
+      if (!req) {
+        process.stdout.write(jsonError(null, ACP_ERROR_PARSE_ERROR, "Invalid JSON-RPC request") + "
+");
+        continue;
+      }
+      const response = await processRequest(req);
+      process.stdout.write(response + "
+");
+    }
+  });
+  process.stdin.on("end", () => process.exit(0));
+  process.stdin.on("error", (err) => { console.error("[ACP] stdin error:", err.message); process.exit(1); });
+  process.stdin.resume();
+}
+
+export async function startACPMode(): Promise<void> {
+  console.error("[ACP] Starting ACP server (stdio JSON-RPC 2.0)");
+  await runACPServer();
+}
