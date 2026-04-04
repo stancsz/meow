@@ -403,68 +403,127 @@ ${"🐱".repeat(30)}
 async function discoverAndCreateGap(): Promise<boolean> {
   console.log(`\n🔍 Discovering new gaps...`);
 
-  const prompt = `You are analyzing the meow CLI project at /c/Users/stanc/github/meow to identify new gaps.
+  const gaps = loadGaps();
+  const HARVEST_DIR = join(ROOT, "docs/harvest");
+  const SRC_DIR = join(ROOT, "meow/src");
+  let newGapsFound = false;
 
-Look at:
-1. meow/src/ - what capabilities are missing?
-2. docs/harvest/ - what harvest candidates exist?
-3. docs/ - any TODOs or FIXME comments?
-4. meow/tests/ - what tests are missing?
-5. Check git log for recent issues
-
-Identify the most important gap to fill next. Focus on:
-- Missing skills that users would want
-- Broken or incomplete features
-- Missing test coverage
-- P0-PN capabilities that need implementation
-
-Respond ONLY with a JSON object like this (no other text):
-{
-  "id": "GAP-NEW-01",
-  "description": "Brief description of the gap",
-  "priority": "P1",
-  "whatToImplement": "What specifically should be implemented"
-}`;
-
-  const tmpDir = join(ROOT, "tmp");
-  ensureDir(tmpDir);
-  const promptFile = join(tmpDir, `discover-prompt-${Date.now()}.txt`);
-  writeFileSync(promptFile, prompt);
-
-  // Use execSync for claude discovery (more reliable stdin handling)
-  let result = "";
+  // 1. Check harvest directory for unimplemented candidates
   try {
-    // Write prompt directly and use bash process substitution
-    const cmd = `cat "${promptFile}" | bash -c 'claude --dangerously-skip-permissions --bare --print'`;
-    result = execSync(cmd, { cwd: ROOT, encoding: "utf-8", timeout: 120000, maxBuffer: 10 * 1024 * 1024 });
-  } catch (e: any) {
-    result = e.stdout || e.message || "";
-  }
+    const harvestFiles = existsSync(HARVEST_DIR) ? readFileSync(HARVEST_DIR, "utf-8").split("\n").filter(f => f.endsWith(".md")) : [];
 
-  // Try to parse JSON from response
-  const jsonMatch = result.match(/\{[\s\S]*"id"[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const newGap = JSON.parse(jsonMatch[0]);
-      console.log(`\n📝 Discovered new gap: ${newGap.id} — ${newGap.description}`);
+    for (const file of harvestFiles) {
+      const filePath = join(HARVEST_DIR, file);
+      const content = readFileSync(filePath, "utf-8");
+      const repoName = file.replace(".md", "");
+      const gapId = `GAP-HARVEST-${repoName.toUpperCase().replace(/-/g, "")}-01`;
 
-      const gaps = loadGaps();
-      // Check if this gap already exists
-      if (!gaps.find(g => g.id === newGap.id)) {
-        newGap.status = "open";
-        gaps.push(newGap);
-        saveGaps(gaps);
-        console.log(`✅ Added ${newGap.id} to gap list`);
-        return true;
-      } else {
-        console.log(`  Gap ${newGap.id} already exists`);
+      // Check if already harvested (gap exists and is solved, or skill/sidecar exists)
+      if (gaps.find(g => g.id === gapId && g.status === "solved")) {
+        continue; // Already done
       }
-    } catch (e) {
-      console.log(`  Failed to parse gap JSON: ${e}`);
+      if (gaps.find(g => g.id === gapId)) {
+        continue; // Already a gap
+      }
+
+      // Check if implementation exists
+      const implExists =
+        existsSync(join(SRC_DIR, "skills", `${repoName}.ts`)) ||
+        existsSync(join(SRC_DIR, "sidecars", `${repoName}.ts`)) ||
+        existsSync(join(SRC_DIR, "skills", `${repoName.replace(/-/g, "")}.ts`));
+
+      if (!implExists) {
+        // Extract first line as description
+        const description = content.split("\n")[0].replace(/^#\s*/, "").trim();
+        const newGap: Gap = {
+          id: gapId,
+          description: `Harvest: ${description}`,
+          priority: "P1",
+          status: "open",
+          whatToImplement: `Implement the ${repoName} capability from docs/harvest/${file}. ${description}`
+        };
+        gaps.push(newGap);
+        console.log(`  📝 Discovered: ${newGap.id} — ${newGap.description}`);
+        newGapsFound = true;
+      }
     }
-  } else {
-    console.log(`  No valid gap JSON found in response`);
+  } catch (e) {
+    console.log(`  Error checking harvest: ${e}`);
   }
+
+  // 2. Check for TODO/FIXME comments in source
+  try {
+    const todos = runCmd(`grep -r "TODO\\|FIXME\\|XXX" meow/src --include="*.ts" 2>/dev/null | head -20`, ROOT);
+    const todoLines = todos.stdout.split("\n").filter(l => l.trim());
+    if (todoLines.length > 0) {
+      const gapId = "GAP-TODO-01";
+      if (!gaps.find(g => g.id === gapId)) {
+        const newGap: Gap = {
+          id: gapId,
+          description: "Address TODO/FIXME comments in source code",
+          priority: "P2",
+          status: "open",
+          whatToImplement: `Fix these TODOs:\n${todoLines.slice(0, 5).join("\n")}`
+        };
+        gaps.push(newGap);
+        console.log(`  📝 Discovered: ${newGap.id} — TODO comments found`);
+        newGapsFound = true;
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+
+  // 3. Check for missing test files
+  try {
+    const srcFiles = runCmd(`find meow/src -name "*.ts" -type f 2>/dev/null | head -30`, ROOT);
+    const testGapId = "GAP-TESTS-01";
+    if (!gaps.find(g => g.id === testGapId)) {
+      const srcCount = srcFiles.stdout.split("\n").filter(l => l.trim()).length;
+      const testCount = runCmd(`find meow/tests -name "*.ts" -type f 2>/dev/null | wc -l`, ROOT);
+      const testNum = parseInt(testCount.stdout.trim() || "0");
+      if (srcCount > testNum * 2) {
+        const newGap: Gap = {
+          id: testGapId,
+          description: "Expand test coverage",
+          priority: "P2",
+          status: "open",
+          whatToImplement: `Source has ${srcCount} files but only ${testNum} test files. Add tests for untested modules.`
+        };
+        gaps.push(newGap);
+        console.log(`  📝 Discovered: ${newGap.id} — test coverage needed`);
+        newGapsFound = true;
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+
+  // 4. If nothing found, add a skill gap
+  if (!newGapsFound) {
+    const skillGaps = [
+      { id: "GAP-SKILL-EXEC", description: "Add shell command execution skill", priority: "P1" as const, whatToImplement: "Create meow/src/skills/exec.ts for running shell commands with timeout support" },
+      { id: "GAP-SKILL-GIT", description: "Add advanced git skill", priority: "P1" as const, whatToImplement: "Create meow/src/skills/git.ts with advanced git operations (rebase, bisect, stash)" },
+      { id: "GAP-SKILL-SEARCH", description: "Add code search skill", priority: "P2" as const, whatToImplement: "Create meow/src/skills/search.ts for semantic code search" },
+      { id: "GAP-SIDECAR-MONITOR", description: "Add system monitoring sidecar", priority: "P2" as const, whatToImplement: "Create meow/src/sidecars/monitor.ts for tracking system resources" },
+    ];
+
+    for (const sg of skillGaps) {
+      if (!gaps.find(g => g.id === sg.id)) {
+        gaps.push({ ...sg, status: "open" });
+        console.log(`  📝 Discovered: ${sg.id} — ${sg.description}`);
+        newGapsFound = true;
+        break; // Just add one at a time
+      }
+    }
+  }
+
+  if (newGapsFound) {
+    saveGaps(gaps);
+    console.log(`✅ New gaps added to list`);
+    return true;
+  }
+
   return false;
 }
 
