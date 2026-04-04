@@ -13,6 +13,7 @@ import { perms } from "./perms.ts";
 import { permissions } from "./permissions.ts";
 import { help } from "./help.ts";
 import { auto } from "./auto.ts";
+import { execSkill } from "./exec.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -25,6 +26,7 @@ const allSkills: Skill[] = [
   permissions,
   help,
   auto,
+  execSkill,
 ];
 
 // Auto-register on import

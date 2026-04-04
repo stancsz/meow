@@ -410,7 +410,7 @@ async function discoverAndCreateGap(): Promise<boolean> {
 
   // 1. Check harvest directory for unimplemented candidates
   try {
-    const harvestFiles = existsSync(HARVEST_DIR) ? readFileSync(HARVEST_DIR, "utf-8").split("\n").filter(f => f.endsWith(".md")) : [];
+    const harvestFiles = existsSync(HARVEST_DIR) ? readdirSync(HARVEST_DIR).filter(f => f.endsWith(".md")) : [];
 
     for (const file of harvestFiles) {
       const filePath = join(HARVEST_DIR, file);
