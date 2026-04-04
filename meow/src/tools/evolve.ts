@@ -12,7 +12,7 @@
  *   bun run meow/src/tools/evolve.ts --status # Show gap status
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
