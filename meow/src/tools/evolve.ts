@@ -193,16 +193,16 @@ Gap description: ${gap.description}
 What to implement: ${gap.whatToImplement}
 
 IMPORTANT:
-- Work in the meow/src/ directory
-- Implement the feature as a skill (src/skills/) or sidecar (src/sidecars/)
-- After implementing, test it by running: cd meow && bun run cli/index.ts --dangerous "help"
+- Work in the src/ directory
+- Implement the feature as a skill (skills/) or sidecar (sidecars/)
+- After implementing, test it by running: bun run cli/index.ts --dangerous "help"
 - If the CLI starts and shows help, the implementation works
 - You MUST modify actual files - do not just describe what you would do
 
 Steps:
-1. Read relevant existing code in meow/src/ to understand patterns
-2. Implement the feature by creating/modifying files in meow/src/
-3. Test with: cd meow && bun run cli/index.ts --dangerous "help"
+1. Read relevant existing code in src/ to understand patterns
+2. Implement the feature by creating/modifying files in src/
+3. Test with: bun run cli/index.ts --dangerous "help"
 4. Report what you did
 
 Respond with:
