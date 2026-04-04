@@ -302,16 +302,6 @@ Respond with:
   // Add delay before claude call to prevent rate limiting
   await new Promise(r => setTimeout(r, 10000));
 
-  // Use execSync for claude - pass prompt via stdin
-  let result = "";
-  try {
-    // Try with echo pipe - works for simple prompts
-    const cmd = `echo "${prompt.replace(/"/g, '\\"').replace(/\n/g, " ")}" | timeout 180 claude --dangerously-skip-permissions --bare --print`;
-    result = execSync(cmd, { cwd: ROOT, encoding: "utf-8", timeout: 200000, maxBuffer: 50 * 1024 * 1024 });
-  } catch (e: any) {
-    result = e.stdout || e.message || "";
-  }
-
   // Use execSync for reliable stdin piping to claude --print
   let result = "";
   try {
