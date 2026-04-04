@@ -1,0 +1,144 @@
+# Harvest Watchlist — Sources to study and learn from
+# Organized by category. Each source has a url, why to watch, and priority.
+# Priority: P1=harvest soon, P2=interesting but later, P3=monitor
+
+watchlist:
+
+  # =========================================================================
+  # Core Frameworks & Methodology
+  # =========================================================================
+
+  - name: superpowers
+    url: https://github.com/obra/superpowers
+    category: framework
+    priority: P2
+    why: "Meta-framework for building agentic workflows. Self-referential: can bootstrap itself."
+    notes: "Watch for architecture patterns"
+
+  - name: superpowers-marketplace
+    url: https://github.com/obra/superpowers-marketplace
+    category: framework
+    priority: P2
+    why: "Marketplace of techniques. Source of harvestable tricks."
+    notes: "Harvest individual skills from here"
+
+  - name: opencode
+    url: https://github.com/anomalyco/opencode
+    category: framework
+    priority: P2
+    why: "Open-source CLI alternative to Claude Code. Direct reference for gap closing."
+    notes: "Study its core loop and tool implementations"
+
+  # =========================================================================
+  # Anthropic Official
+  # =========================================================================
+
+  - name: anthropic-skills
+    url: https://github.com/anthropics/skills
+    category: official
+    priority: P1
+    why: "Official skill patterns from Anthropic. Reference implementation for skills system."
+    notes: "Harvest skill format and patterns"
+
+  - name: frontend-design-skill
+    url: https://github.com/anthropics/skills/tree/main/skills/frontend-design
+    category: official
+    priority: P1
+    why: "Official frontend design skill. Learn skill structure and scope."
+    notes: "Harvest as a skill"
+
+  - name: webapp-testing-skill
+    url: https://github.com/anthropics/skills/tree/main/skills/webapp-testing
+    category: official
+    priority: P1
+    why: "Playwright-based testing skill. Reference for tool-heavy skills."
+    notes: "Harvest as a skill"
+
+  # =========================================================================
+  # Requested / Specialized Skills
+  # =========================================================================
+
+  - name: CLI-Anything
+    url: https://github.com/HKUDS/CLI-Anything
+    category: skill
+    priority: P1
+    why: "Agent-native CLI hub. Any CLI tool becomes a skill. High utility."
+    notes: "Harvest as technique"
+
+  - name: colleague-skill
+    url: https://github.com/titanwings/colleague-skill
+    category: skill
+    priority: P2
+    why: "Persona simulation. Can add 'expert colleague' mode to Meow."
+    notes: "Interesting for personality/growth features"
+
+  # =========================================================================
+  # MCP Servers (Tooling Layer)
+  # =========================================================================
+
+  - name: sequential-thinking
+    url: https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking
+    category: mcp
+    priority: P1
+    why: "Chain-of-thought reasoning engine via MCP. Could integrate as a skill."
+    notes: "Harvest as MCP client usage example"
+
+  - name: browser-use
+    url: https://github.com/browser-use/browser-use
+    category: mcp
+    priority: P2
+    why: "Vision and web navigation. Heavy but enables browser agent."
+    notes: "Watch for MCP integration patterns"
+
+  - name: mcp-servers
+    url: https://github.com/modelcontextprotocol/servers
+    category: mcp
+    priority: P1
+    why: "Official MCP server reference implementations. Many harvestable tools."
+    notes: "Browse src/ directory for individual servers"
+
+  # =========================================================================
+  # Already Harvested (Reference)
+  # =========================================================================
+
+  - name: gemini-cli-checkpointing
+    url: https://github.com/google-gemini/gemini-cli
+    docPath: docs/cli/checkpointing.md
+    category: harvested
+    priority: P0
+    status: implemented
+    implementation: src/sidecars/checkpointing.ts
+    notes: "Done. Git stash safety net."
+
+  - name: gemini-cli-rewind
+    url: https://github.com/google-gemini/gemini-cli
+    docPath: docs/cli/rewind.md
+    category: harvested
+    priority: P1
+    status: pending
+    notes: "Session time travel. docs/harvest/rewind.md ready."
+
+  - name: gemini-cli-acp-mode
+    url: https://github.com/google-gemini/gemini-cli
+    docPath: docs/cli/acp-mode.md
+    category: harvested
+    priority: P2
+    status: pending
+    notes: "JSON-RPC stdio agent control. Complex, do later."
+
+# =========================================================================
+# Harvest Pipeline
+# =========================================================================
+# How to process this watchlist:
+#
+# 1. P1 sources → create docs/harvest/<name>.md → run harvest --once
+# 2. P2 sources → create docs/harvest/<name>.md when ready
+# 3. P3 sources → monitor, no action needed yet
+# 4. category=harvested → already done or in progress
+#
+# Adding a new source to watchlist.yaml:
+#   - Add entry with url, priority, why
+#   - Create docs/harvest/<name>.md with minimalSlice
+#   - Run: bun run src/tools/harvest.ts --once
+#
+# The harvest tool reads this watchlist via competitor docs auto-detection.
