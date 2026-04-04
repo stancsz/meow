@@ -349,7 +349,21 @@ async function main() {
       firstArg.startsWith("C:\\Program Files\\Git\\") ||
       (firstArg.length > 1 && firstArg[1] === ":" && /[A-Za-z]/.test(firstArg[0]) && firstArg.includes("Program Files") && firstArg.includes("Git"));
 
-    if (prompt.startsWith("/") && !startsWithMangledPrefix) {
+    // Detect split-mangle: Git Bash split "C:/Program Files/Git/skill" into
+    // ["C:/Program", "Files/Git/skill", ...] — firstArg="C:/Program", secondArg starts with "Files/Git/"
+    const secondArg = filteredArgs[1] || "";
+    const splitMangleMatch =
+      /^[A-Za-z]:[\/\\]?$/.test(firstArg) && secondArg.startsWith("Program Files/Git/") ||
+      /^([A-Za-z]:[\/\\][^\s\\\/]+)$/.test(firstArg) && secondArg.startsWith("Program Files/Git/");
+
+    // Reassemble a split Windows Git Bash mangled path
+    function reassembleSplitMangle(): string {
+      // e.g. ["C:/Program", "Files/Git/exec", "echo", "hello"] → "C:/Program Files/Git/exec"
+      const prefix = firstArg.replace(/[\/\\]+$/, ""); // strip trailing slashes
+      return prefix + "/" + secondArg;
+    }
+
+    if (prompt.startsWith("/") && !startsWithMangledPrefix && !splitMangleMatch) {
       // Normal slash command: /mcp help → prompt="/mcp help"
       const parts = prompt.slice(1).split(/\s+/);
       const skillName = parts[0];
@@ -368,7 +382,7 @@ async function main() {
       }
     }
 
-    if (startsWithMangledPrefix) {
+    if (startsWithMangledPrefix || splitMangleMatch) {
       // Windows Git Bash mangled the skill command.
       // The first arg contains the full "C:/Program Files/Git/<skill> [args...]".
       // " /" (space + slash) marks the boundary between skill name and args.
