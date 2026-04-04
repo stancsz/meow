@@ -22,6 +22,7 @@ import { createSession, appendToSession, loadSession, listSessions, formatSessio
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 import { initI18n, t } from "../src/sidecars/i18n/index.ts";
 import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.ts";
+import { startACPServer } from "../src/sidecars/acp.ts";
 
 // Initialize i18n
 initI18n();
@@ -266,6 +267,7 @@ async function main() {
   let resumeSession = false;
   let autoMode = false;
   let tickMode = false;
+  let acpMode = false;
 
   // Parse flags
   const filteredArgs = args.filter((arg) => {
@@ -285,8 +287,18 @@ async function main() {
       tickMode = true;
       return false;
     }
+    if (arg === "--acp") {
+      acpMode = true;
+      return false;
+    }
     return true;
   });
+
+  // ACP mode: start JSON-RPC stdio server
+  if (acpMode) {
+    await startACPServer();
+    return;
+  }
 
   // Initialize tools and skills
   await initializeToolRegistry();

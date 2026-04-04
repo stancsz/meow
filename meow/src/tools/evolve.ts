@@ -248,7 +248,7 @@ Respond with:
 
     // Dogfood test
     console.log(`  🧪 Dogfooding...`);
-    const dogfood = runCmd(`cd meow && bun run cli/index.ts --dangerous "help" 2>&1`, ROOT);
+    const dogfood = runCmd(`bun run cli/index.ts --dangerous "help" 2>&1`, ROOT);
     const works = dogfood.code === 0 && dogfood.stdout.length > 0;
 
     if (works) {
@@ -405,7 +405,7 @@ async function discoverAndCreateGap(): Promise<boolean> {
 
   const gaps = loadGaps();
   const HARVEST_DIR = join(ROOT, "docs/harvest");
-  const SRC_DIR = join(ROOT, "meow/src");
+  const SRC_DIR = join(ROOT, "src");
   let newGapsFound = false;
 
   // 1. Check harvest directory for unimplemented candidates
