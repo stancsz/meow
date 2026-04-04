@@ -2,95 +2,97 @@
  * skills/exec.ts
  *
  * Shell command execution skill with timeout support.
- * Runs arbitrary shell commands — requires --dangerous flag.
+ * Executes arbitrary shell commands - requires --dangerous flag.
  */
-import { spawn } from "node:child_process";
+import { exec, type ExecOptions } from "node:child_process";
+import { join } from "node:path";
 import type { Skill, SkillContext, SkillResult } from "./loader.ts";
 
-const DEFAULT_TIMEOUT_MS = 60_000; // 60 seconds
+// Default timeout: 60 seconds
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 export const execSkill: Skill = {
   name: "exec",
-  description: "Execute a shell command with optional timeout",
-  aliases: ["run", "shell"],
+  description: "Execute a shell command with optional timeout (requires --dangerous)",
+  aliases: ["run", "shell", "command"],
 
-  async execute(args: string, context: SkillContext): Promise<SkillResult> {
-    if (!context.dangerous) {
+  async execute(args: string, ctx: SkillContext): Promise<SkillResult> {
+    if (!ctx.dangerous) {
       return {
         content: "",
         error: "[exec:BLOCKED] Shell execution requires --dangerous flag",
       };
     }
 
-    // Parse: [--timeout <ms>] <command>
-    let timeoutMs = DEFAULT_TIMEOUT_MS;
-    let command = args.trim();
+    const trimmed = args.trim();
+    if (!trimmed) {
+      return {
+        content: "",
+        error: "Usage: /exec <command> [--timeout <ms>] [--cwd <dir>]",
+      };
+    }
 
-    const timeoutMatch = command.match(/^--timeout\s+(\d+)\s+(.+)$/s);
+    // Parse flags
+    let timeoutMs = DEFAULT_TIMEOUT_MS;
+    let cwd: string | undefined = ctx.cwd;
+    let command = trimmed;
+
+    // Extract --timeout flag
+    const timeoutMatch = trimmed.match(/--timeout\s+(\d+)/);
     if (timeoutMatch) {
       timeoutMs = parseInt(timeoutMatch[1], 10);
-      command = timeoutMatch[2].trim();
+      command = trimmed.replace(/--timeout\s+\d+/, "").trim();
+    }
+
+    // Extract --cwd flag
+    const cwdMatch = command.match(/--cwd\s+(\S+)/);
+    if (cwdMatch) {
+      cwd = join(ctx.cwd, cwdMatch[1]);
+      command = command.replace(/--cwd\s+\S+/, "").trim();
     }
 
     if (!command) {
       return {
         content: "",
-        error: "Usage: /exec [--timeout <ms>] <command>\n" +
-               "Examples:\n" +
-               "  /exec echo hello\n" +
-               "  /exec --timeout 5000 sleep 10\n" +
-               "  /exec --timeout 30000 npm run build",
+        error: "Usage: /exec <command> [--timeout <ms>] [--cwd <dir>]",
       };
     }
 
+    const start = Date.now();
+
     return new Promise<SkillResult>((resolve) => {
-      const output: { stdout: string; stderr: string } = { stdout: "", stderr: "" };
-      let timedOut = false;
-
-      // Use spawn for better control on Windows
-      const child = spawn(command, [], {
+      const options: ExecOptions = {
+        timeout: timeoutMs,
+        cwd: cwd ?? process.cwd(),
         shell: true,
-        cwd: context.cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+        env: { ...process.env },
+      };
 
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGTERM");
-      }, timeoutMs);
+      exec(command, options, (error, stdout, stderr) => {
+        const elapsed = Date.now() - start;
 
-      child.stdout?.on("data", (data: Buffer) => {
-        output.stdout += data.toString();
-      });
+        if (error) {
+          // Check for timeout
+          if (error.killed || (error as any).code === "ETIMEDOUT") {
+            resolve({
+              content: "",
+              error: `[exec:TIMEOUT] Command timed out after ${timeoutMs}ms\n` +
+                `stdout: ${stdout}\n` +
+                `stderr: ${stderr}`,
+            });
+            return;
+          }
 
-      child.stderr?.on("data", (data: Buffer) => {
-        output.stderr += data.toString();
-      });
-
-      child.on("close", (code: number | null) => {
-        clearTimeout(timer);
-        if (timedOut) {
           resolve({
-            content: "",
-            error: `[exec:TIMEOUT] Command timed out after ${timeoutMs}ms: ${command}`,
+            content: `stdout:\n${stdout || "(empty)"}`,
+            error: `[exec:ERROR] Exit ${error.status ?? "unknown"} after ${elapsed}ms\nstderr: ${stderr}`,
           });
           return;
         }
 
-        const stdout = output.stdout.trim();
-        const stderr = output.stderr.trim();
-
-        let content = "";
-        if (stdout) content += `STDOUT:\n${stdout}\n`;
-        if (stderr) content += `STDERR:\n${stderr}\n`;
-        content += `Exit code: ${code ?? 0}`;
-
-        resolve({ content: content.trim() });
-      });
-
-      child.on("error", (err: Error) => {
-        clearTimeout(timer);
-        resolve({ content: "", error: `[exec:ERROR] ${err.message}` });
+        resolve({
+          content: `[exec] Completed in ${elapsed}ms\n\nstdout:\n${stdout || "(empty)"}${stderr ? "\n\nstderr:\n" + stderr : ""}`,
+        });
       });
     });
   },
