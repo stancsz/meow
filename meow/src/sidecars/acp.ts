@@ -1,18 +1,13 @@
 /// <reference types="node" />
 /**
- * acp.ts - ACP (Agent Client Protocol) sidecar for Meow
+ * acp.ts - ACP (Agent Client Protocol) sidecar
  *
- * GAP-HARVEST-ACPMODE-01: Implement acp-mode capability
- *
- * ACP is a JSON-RPC 2.0 protocol over stdio.
- *
- * Supported methods:
- *   initialize   - Handshake: set up agent config and optional MCP servers
- *   newSession   - Create a new session
- *   loadSession  - Load an existing session by ID
- *   prompt       - Run a single prompt through the agent
- *   cancel       - Abort the current in-flight prompt
+ * Implements JSON-RPC 2.0 over stdio for programmatic control of Meow.
+ * Supported methods: initialize, newSession, loadSession, prompt, cancel.
  */
-import { runLeanAgent } from "../core/lean-agent.ts";
-import { initializeToolRegistry } from "./tool-registry.ts";
-import { setMCPToolRegistrar, loadMCPConfig } from "./mcp-client.ts";
+interface JsonRpcRequest { jsonrpc: "2.0"; id: number | string | null; method: string; params?: Record<string, unknown>; }
+interface JsonRpcResponse { jsonrpc: "2.0"; id: number | string | null; result?: unknown; error?: { code: number; message: string; data?: unknown; }; }
+interface InitializeParams { capabilities?: { mcpServers?: Array<{ command: string; args?: string[] }>; dangerous?: boolean; }; sessionId?: string; }
+interface PromptParams { prompt: string; dangerous?: boolean; systemPrompt?: string; }
+interface NewSessionParams { sessionId?: string; }
+interface LoadSessionParams { sessionId: string; }
