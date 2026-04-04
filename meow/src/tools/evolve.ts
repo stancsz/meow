@@ -453,7 +453,7 @@ async function discoverAndCreateGap(): Promise<boolean> {
 
   // 2. Check for TODO/FIXME comments in source
   try {
-    const todos = runCmd(`grep -r "TODO\\|FIXME\\|XXX" meow/src --include="*.ts" 2>/dev/null | head -20`, ROOT);
+    const todos = runCmd(`grep -r "TODO\\|FIXME\\|XXX" src --include="*.ts" 2>/dev/null | head -20`, ROOT);
     const todoLines = todos.stdout.split("\n").filter(l => l.trim());
     if (todoLines.length > 0) {
       const gapId = "GAP-TODO-01";
@@ -476,11 +476,11 @@ async function discoverAndCreateGap(): Promise<boolean> {
 
   // 3. Check for missing test files
   try {
-    const srcFiles = runCmd(`find meow/src -name "*.ts" -type f 2>/dev/null | head -30`, ROOT);
+    const srcFiles = runCmd(`find src -name "*.ts" -type f 2>/dev/null | head -30`, ROOT);
     const testGapId = "GAP-TESTS-01";
     if (!gaps.find(g => g.id === testGapId)) {
       const srcCount = srcFiles.stdout.split("\n").filter(l => l.trim()).length;
-      const testCount = runCmd(`find meow/tests -name "*.ts" -type f 2>/dev/null | wc -l`, ROOT);
+      const testCount = runCmd(`find tests -name "*.ts" -type f 2>/dev/null | wc -l`, ROOT);
       const testNum = parseInt(testCount.stdout.trim() || "0");
       if (srcCount > testNum * 2) {
         const newGap: Gap = {
@@ -530,7 +530,7 @@ async function discoverAndCreateGap(): Promise<boolean> {
 async function dogfoodTest(): Promise<void> {
   console.log(`\n🧪 Running dogfood test...`);
 
-  const result = runCmd(`cd meow && bun run cli/index.ts --dangerous "help" 2>&1`, ROOT);
+  const result = runCmd(`bun run cli/index.ts --dangerous "help" 2>&1`, ROOT);
 
   if (result.code === 0 && result.stdout.includes("help")) {
     console.log(`  ✅ CLI help works`);
