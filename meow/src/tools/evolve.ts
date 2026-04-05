@@ -14,6 +14,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { join, dirname } from "node:path";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import OpenAI from "openai";
+import { getToolDefinitions, executeTool } from "../sidecars/tool-registry.ts";
 
 // ============================================================================
 // Paths
@@ -289,21 +291,115 @@ ${"🐱".repeat(30)}
 }
 
 async function callClaude(gap: Gap): Promise<boolean> {
-  const prompt = `Close gap ${gap.id}: ${gap.description}. Implement: ${gap.whatToImplement}
+  const apiKey = process.env.LLM_API_KEY || process.env.ANTHROPIC_API_KEY;
+  const baseURL = process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic";
+  const model = process.env.LLM_MODEL || "MiniMax-M2.7";
 
-Work in src/. Create skills or sidecars. Test: bun run cli/index.ts --dangerous "help"
+  if (!apiKey) {
+    console.log("  ❌ Error: LLM_API_KEY not set");
+    return false;
+  }
 
-Report: SUCCESS or FAILED`;
+  const client = new OpenAI({ apiKey, baseURL });
+
+  const tools = getToolDefinitions().map((t) => ({
+    type: "function" as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    },
+  }));
+
+  const systemPrompt = `You are an autonomous agent. Work in ${ROOT}.
+
+Close the gap by implementing the required code. Create or modify files as needed.
+After completing the implementation, run tests if available.
+Report SUCCESS when the gap is fully closed, or FAILED if you could not complete it.`;
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: `Close gap ${gap.id}: ${gap.description}\n\n${gap.whatToImplement}\n\nWork in src/. Create skills or sidecars.\nTest: bun run cli/index.ts --dangerous "help"\n\nReport: SUCCESS or FAILED` },
+  ];
 
   try {
-    const result = execSync(
-      `echo "${prompt.replace(/"/g, '\\"')}" | timeout 180 claude --dangerously-skip-permissions --bare --print`,
-      { cwd: ROOT, encoding: "utf-8", timeout: 200000 }
-    );
+    let fullResponse = "";
+    let toolCallsHandled = 0;
+    const maxToolCalls = 50; // Prevent infinite loops
 
-    console.log(`  📝 Response (${result.length} chars)`);
+    while (toolCallsHandled < maxToolCalls) {
+      const stream = await client.chat.completions.create({
+        model,
+        messages,
+        tools,
+        tool_choice: "auto",
+        stream: true,
+        stream_options: { include_usage: true },
+      });
 
-    if (result.includes("SUCCESS") || result.includes("success")) {
+      let hasToolCall = false;
+      let finishReason = "";
+      let usage = null;
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        if (delta?.content) {
+          fullResponse += delta.content;
+          process.stdout.write(delta.content);
+        }
+        if (chunk.choices[0]?.finish_reason) {
+          finishReason = chunk.choices[0].finish_reason;
+        }
+        if (chunk.usage) {
+          usage = chunk.usage;
+        }
+      }
+      console.log(""); // Newline after streaming
+
+      // Handle tool calls
+      if (finishReason === "tool_calls") {
+        hasToolCall = true;
+        toolCallsHandled++;
+
+        // Find the last assistant message with tool calls
+        const lastAssistantMsg = messages[messages.length - 1];
+        if (lastAssistantMsg.role === "assistant" && "tool_calls" in lastAssistantMsg) {
+          for (const toolCall of lastAssistantMsg.tool_calls || []) {
+            const toolName = toolCall.function.name;
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+
+            console.log(`  🔧 Calling tool: ${toolName}`);
+
+            try {
+              const result = await executeTool({ name: toolName, args, signal: undefined });
+              const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+
+              messages.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: resultStr,
+              });
+            } catch (e: any) {
+              messages.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: `Error: ${e.message}`,
+              });
+            }
+          }
+        }
+      } else {
+        // No more tool calls, check for SUCCESS
+        break;
+      }
+    }
+
+    console.log(`  📝 Response (${fullResponse.length} chars)`);
+
+    // Check final response for SUCCESS
+    const success = fullResponse.includes("SUCCESS") || fullResponse.includes("success");
+
+    if (success) {
       const gitStatus = runCmd(`git status --short .`);
       if (gitStatus.stdout.trim()) {
         console.log(`  📁 Changes: ${gitStatus.stdout.trim()}`);
