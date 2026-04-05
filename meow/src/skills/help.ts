@@ -23,6 +23,7 @@ Usage:
   bun run start --resume          # Resume last session
   bun run start --auto "task"    # Autonomous OODA loop mode
   bun run start --tick "task"    # Continuous mode with tick heartbeats
+  bun run start --acp          # ACP mode: JSON-RPC stdio server for IDE/tool control
 
 Commands:
   /exit       Exit meow

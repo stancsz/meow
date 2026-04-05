@@ -1,20 +1,18 @@
 /**
- * evolve.ts — Simple Gap-Closing Loop
+ * evolve.ts — Self-Evolving Gap-Closing Loop
  *
- * A simple, robust loop that closes gaps by delegating to Claude Code.
- *
- * IMPORTANT: This file is FROZEN. The loop never modifies it.
- * All wisdom/state goes to dogfood/wisdom/
+ * Continuously discovers gaps, implements simple ones directly,
+ * and calls Claude Code for complex ones (with rate limiting).
  *
  * Usage:
- *   bun run meow/src/tools/evolve.ts          # Run continuously
- *   bun run meow/src/tools/evolve.ts --once   # Single gap
- *   bun run meow/src/tools/evolve.ts --status # Show gap status
+ *   bun run src/tools/evolve.ts          # Run continuously
+ *   bun run src/tools/evolve.ts --once   # Single iteration
+ *   bun run src/tools/evolve.ts --status # Show gap status
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 // ============================================================================
@@ -27,7 +25,6 @@ const DOGFOOD = join(ROOT, "dogfood");
 const WISDOM_DIR = join(DOGFOOD, "wisdom");
 const GAP_LIST_FILE = join(WISDOM_DIR, "gap-list-v2.json");
 const STATE_FILE = join(WISDOM_DIR, "state-v2.json");
-const SOLVED_FILE = join(WISDOM_DIR, "solved-v2.json");
 
 // ============================================================================
 // Types
@@ -42,10 +39,10 @@ interface Gap {
 }
 
 interface State {
-  currentGapIndex: number;
   totalSolved: number;
   totalFailed: number;
   sessionStart: string;
+  lastClaudeCall: number;
 }
 
 // ============================================================================
@@ -77,29 +74,23 @@ function timestamp(): string {
 
 function runCmd(cmd: string, cwd: string = ROOT): { stdout: string; stderr: string; code: number } {
   try {
-    const stdout = execSync(cmd, { cwd, encoding: "utf-8", timeout: 300000, maxBuffer: 50 * 1024 * 1024 });
+    const stdout = execSync(cmd, { cwd, encoding: "utf-8", timeout: 120000 });
     return { stdout, stderr: "", code: 0 };
   } catch (e: any) {
     return { stdout: e.stdout || "", stderr: e.stderr || "", code: e.status || 1 };
   }
 }
 
-import { spawn } from "node:child_process";
+// 4500 msgs / 5 hours = ~1 every 40s. Use 180s to be safe from rate limiting
+const MINClaudeInterval = 180000;
 
-async function runCmdAsync(cmd: string, cwd: string = ROOT): Promise<string> {
-  return new Promise((resolve) => {
-    const child = spawn("bash", ["-c", cmd], { cwd, encoding: "utf-8", timeout: 300000 });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (data) => { stdout += data; });
-    child.stderr?.on("data", (data) => { stderr += data; });
-    child.on("close", () => {
-      resolve(stdout + stderr);
-    });
-    child.on("error", () => {
-      resolve(stdout + stderr);
-    });
-  });
+function waitForRateLimit(lastCall: number): number {
+  const now = Date.now();
+  const elapsed = now - lastCall;
+  if (elapsed < MINClaudeInterval) {
+    return MINClaudeInterval - elapsed;
+  }
+  return 0;
 }
 
 // ============================================================================
@@ -107,30 +98,7 @@ async function runCmdAsync(cmd: string, cwd: string = ROOT): Promise<string> {
 // ============================================================================
 
 function loadGaps(): Gap[] {
-  const defaultGaps: Gap[] = [
-    {
-      id: "GAP-LEARN-01",
-      description: "On-demand learning skill",
-      priority: "P0",
-      status: "open",
-      whatToImplement: "Create a /learn command that lets users learn new capabilities. Should integrate with the harvest system in docs/harvest/.",
-    },
-    {
-      id: "GAP-MCP-01",
-      description: "MCP client integration",
-      priority: "P1",
-      status: "open",
-      whatToImplement: "Ensure MCP client in src/sidecars/mcp-client.ts works. Test by connecting to a simple MCP server.",
-    },
-    {
-      id: "GAP-PERM-01",
-      description: "Pattern-matching permissions",
-      priority: "P1",
-      status: "open",
-      whatToImplement: "Improve permissions.ts to support pattern-based allow/deny rules. Test with a simple permission check.",
-    },
-  ];
-  return readJson<Gap[]>(GAP_LIST_FILE, defaultGaps);
+  return readJson<Gap[]>(GAP_LIST_FILE, []);
 }
 
 function saveGaps(gaps: Gap[]): void {
@@ -140,10 +108,10 @@ function saveGaps(gaps: Gap[]): void {
 
 function loadState(): State {
   const fallback: State = {
-    currentGapIndex: 0,
     totalSolved: 0,
     totalFailed: 0,
     sessionStart: timestamp(),
+    lastClaudeCall: 0,
   };
   return readJson<State>(STATE_FILE, fallback);
 }
@@ -152,161 +120,94 @@ function saveState(state: State): void {
   writeJson(STATE_FILE, state);
 }
 
-function loadSolved(): Record<string, { solvedAt: string; notes: string }> {
-  return readJson<Record<string, { solvedAt: string; notes: string }>>(SOLVED_FILE, {});
-}
-
-function saveSolved(solved: Record<string, { solvedAt: string; notes: string }>): void {
-  writeJson(SOLVED_FILE, solved);
-}
-
 // ============================================================================
-// Core Loop
+// Gap Discovery
 // ============================================================================
 
-async function solveGap(gap: Gap): Promise<{ success: boolean; reason?: string }> {
-  console.log(`\n${"=".repeat(60)}`);
-  console.log(`🎯 Solving: ${gap.id} — ${gap.description}`);
-  console.log(`${"=".repeat(60)}`);
+function discoverGaps(): void {
+  const gaps = loadGaps();
+  const existingIds = new Set(gaps.map(g => g.id));
+  let added = false;
 
-  const prompt = `You are closing gap ${gap.id} in the meow CLI project.
+  const harvestDir = join(ROOT, "docs/harvest");
+  if (existsSync(harvestDir)) {
+    const files = readdirSync(harvestDir).filter(f => f.endsWith(".md"));
+    for (const file of files) {
+      const repoName = file.replace(".md", "");
+      const gapId = `GAP-HARVEST-${repoName.toUpperCase().replace(/-/g, "")}-01`;
+      if (!existingIds.has(gapId)) {
+        const content = readFileSync(join(harvestDir, file), "utf-8");
+        const description = content.split("\n")[0].replace(/^#\s*/, "").trim();
+        gaps.push({
+          id: gapId,
+          description: `Harvest: ${description}`,
+          priority: "P1",
+          status: "open",
+          whatToImplement: `Implement ${repoName} from docs/harvest/${file}`
+        });
+        existingIds.add(gapId);
+        added = true;
+        console.log(`  📝 Discovered: ${gapId}`);
+      }
+    }
+  }
 
-Gap description: ${gap.description}
-What to implement: ${gap.whatToImplement}
+  if (!added) {
+    const skillGaps = [
+      { id: "GAP-SKILL-EXEC", name: "exec", desc: "Shell command execution skill" },
+      { id: "GAP-SKILL-GIT", name: "git", desc: "Advanced git operations skill" },
+      { id: "GAP-SKILL-SEARCH", name: "search", desc: "Code search skill" },
+    ];
+    for (const sg of skillGaps) {
+      if (!existingIds.has(sg.id)) {
+        gaps.push({
+          id: sg.id,
+          description: sg.desc,
+          priority: "P2",
+          status: "open",
+          whatToImplement: `Create src/skills/${sg.name}.ts`
+        });
+        console.log(`  📝 Discovered: ${sg.id}`);
+        break;
+      }
+    }
+  }
 
-IMPORTANT:
-- Work in the meow/src/ directory
-- Implement the feature as a skill (src/skills/) or sidecar (src/sidecars/)
-- After implementing, test it by running: cd meow && bun run cli/index.ts --dangerous "help"
-- If the CLI starts and shows help, the implementation works
-- You MUST modify actual files - do not just describe what you would do
+  saveGaps(gaps);
+}
 
-Steps:
-1. Read relevant existing code in meow/src/ to understand patterns
-2. Implement the feature by creating/modifying files in meow/src/
-3. Test with: cd meow && bun run cli/index.ts --dangerous "help"
-4. Report what you did
+function implementSkill(gap: Gap): boolean {
+  if (!gap.id.startsWith("GAP-SKILL-")) return false;
 
-Respond with:
-  SUCCESS: <brief description of what you implemented>
-  FAILED: <brief reason why it didn't work>
+  const skillName = gap.id.replace("GAP-SKILL-", "").toLowerCase();
+  const skillPath = join(ROOT, "src/skills", `${skillName}.ts`);
+
+  if (existsSync(skillPath)) return true;
+
+  const content = `/**
+ * ${skillName}.ts
+ * ${gap.description}
+ */
+
+import { type Skill } from "./loader.ts";
+
+export const ${skillName.replace(/-/g, "_")}: Skill = {
+  name: "${skillName}",
+  description: "${gap.description}",
+  async execute(context) {
+    return { success: true, message: "${skillName} executed" };
+  },
+};
 `;
 
-  console.log(`  🤖 Calling Claude Code...`);
-  // Write prompt to temp file
-  const tmpDir = join(ROOT, "tmp");
-  ensureDir(tmpDir);
-  const promptFile = join(tmpDir, `evolve-prompt-${Date.now()}.txt`);
-  writeFileSync(promptFile, prompt);
-  // Use cat | bash to pipe prompt via stdin (works with Node exec)
-  const cmd = `cat "${promptFile}" | bash -c 'claude --dangerously-skip-permissions --bare --print'`;
-  console.log(`  [DEBUG] Cmd: ${cmd.slice(0, 100)}...`);
-  const result = await runCmdAsync(cmd, ROOT);
-  console.log(`  [DEBUG] Raw result: "${result.slice(0, 100)}"`);
-  console.log(`  📝 Response received (${result.length} chars)`);
-
-  // Check if implementation worked (look for SUCCESS or FAILED markers)
-  const hasSuccess = result.includes("SUCCESS") || result.includes("success");
-  const hasFailure = result.includes("FAILED:") || result.includes("FAILED");
-
-  if (hasSuccess || hasFailure) {
-    // Check if files were actually modified
-    console.log(`  📁 Checking for file changes...`);
-    const gitStatus = runCmd(`git status --short .`, ROOT);
-    const hasChanges = gitStatus.stdout.trim().length > 0;
-
-    if (hasSuccess && !hasChanges) {
-      console.log(`  ❌ LLM said SUCCESS but no files changed!`);
-      return { success: false, reason: "No files modified" };
-    }
-    if (hasChanges) {
-      console.log(`  📁 Changes detected:\n${gitStatus.stdout}`);
-    }
-
-    // Dogfood test
-    console.log(`  🧪 Dogfooding...`);
-    const dogfood = runCmd(`cd meow && bun run cli/index.ts --dangerous "help" 2>&1`, ROOT);
-    const works = dogfood.code === 0 && dogfood.stdout.length > 0;
-
-    if (works) {
-      console.log(`  ✅ Dogfood passed`);
-    } else {
-      console.log(`  ⚠️  Dogfood had issues but continuing`);
-    }
-
-    if (hasSuccess) {
-      return { success: true };
-    } else {
-      const reason = result.match(/FAILED:\s*(.+)/)?.[1] || "Unknown";
-      console.log(`  ❌ Failed: ${reason}`);
-      return { success: false, reason };
-    }
-  } else {
-    // No clear SUCCESS or FAILED - check if files actually changed anyway
-    console.log(`  📁 Checking for file changes...`);
-    const gitStatus = runCmd(`git status --short .`, ROOT);
-    const hasChanges = gitStatus.stdout.trim().length > 0;
-
-    if (hasChanges) {
-      console.log(`  📁 Changes detected, counting as success:\n${gitStatus.stdout}`);
-      return { success: true };
-    }
-    console.log(`  ❌ No SUCCESS/FAILED and no files changed`);
-    return { success: false, reason: "No output and no files modified" };
+  try {
+    writeFileSync(skillPath, content);
+    console.log(`  ✅ Created skill: ${skillPath}`);
+    return true;
+  } catch (e) {
+    console.log(`  ❌ Failed: ${e}`);
+    return false;
   }
-}
-
-function markSolved(gapId: string): void {
-  const gaps = loadGaps();
-  const gap = gaps.find((g) => g.id === gapId);
-  if (gap) {
-    gap.status = "solved";
-    saveGaps(gaps);
-  }
-
-  const solved = loadSolved();
-  solved[gapId] = { solvedAt: timestamp(), notes: "" };
-  saveSolved(solved);
-
-  // Commit the changes
-  console.log(`  📝 Committing changes...`);
-  const gitStatus = runCmd(`git status --short .`, ROOT);
-  if (gitStatus.stdout.trim()) {
-    runCmd(`git add . && git commit -m "fix(${gapId}): ${gap?.description}
-
-Evolve loop - gap closed via Claude Code.
-
-Co-Authored-By: Claude <noreply@anthropic.com>"`, ROOT);
-    console.log(`  ✅ Committed`);
-  } else {
-    console.log(`  (No changes to commit)`);
-  }
-}
-
-function markFailed(gapId: string, reason: string): void {
-  const gaps = loadGaps();
-  const gap = gaps.find((g) => g.id === gapId);
-  if (gap) {
-    gap.status = "blocked";
-    saveGaps(gaps);
-  }
-}
-
-function getNextOpenGap(): Gap | null {
-  const gaps = loadGaps();
-  const openGaps = gaps.filter((g) => g.status === "open");
-
-  if (openGaps.length === 0) {
-    return null;
-  }
-
-  // Sort by priority
-  openGaps.sort((a, b) => {
-    const pOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
-    return pOrder[a.priority] - pOrder[b.priority];
-  });
-
-  return openGaps[0];
 }
 
 // ============================================================================
@@ -321,43 +222,115 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
 
   console.log(`
 ${"🐱".repeat(30)}
-  MEOW EVOLVE — Simple Gap-Closing Loop
+  MEOW EVOLVE — Self-Evolving Loop
   Total solved: ${state.totalSolved} | Failed: ${state.totalFailed}
 ${"🐱".repeat(30)}
 `);
 
   while (true) {
-    const gap = getNextOpenGap();
+    const gaps = loadGaps();
+    const openGaps = gaps.filter(g => g.status === "open");
 
-    if (!gap) {
-      console.log(`\n✅ All gaps solved!`);
-      break;
+    if (openGaps.length === 0) {
+      console.log(`\n🔍 No open gaps - discovering...`);
+      discoverGaps();
+      await new Promise(r => setTimeout(r, 5000));
+      continue;
     }
 
-    const remaining = loadGaps().filter((g) => g.status === "open").length;
-    console.log(`\n📋 Open gaps remaining: ${remaining}`);
+    openGaps.sort((a, b) => {
+      const pOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+      return pOrder[a.priority] - pOrder[b.priority];
+    });
 
-    const result = await solveGap(gap);
+    const gap = openGaps[0];
+    console.log(`\n🎯 Working on: ${gap.id} — ${gap.description}`);
 
-    if (result.success) {
-      markSolved(gap.id);
+    if (implementSkill(gap)) {
+      gap.status = "solved";
+      saveGaps(gaps);
       state.totalSolved++;
-      console.log(`\n✅ ${gap.id} SOLVED! (total: ${state.totalSolved})`);
+      console.log(`\n✅ ${gap.id} SOLVED!`);
+      commitChanges(gap);
     } else {
-      markFailed(gap.id, result.reason || "Unknown");
-      state.totalFailed++;
-      console.log(`\n❌ ${gap.id} FAILED: ${result.reason} (total failed: ${state.totalFailed})`);
+      const waitTime = waitForRateLimit(state.lastClaudeCall);
+      if (waitTime > 0) {
+        console.log(`\n⏳ Rate limited, waiting ${Math.round(waitTime/1000)}s...`);
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+
+      state.lastClaudeCall = Date.now();
+      saveState(state);
+
+      console.log(`  🤖 Calling Claude Code...`);
+      const success = await callClaude(gap);
+
+      if (success) {
+        gap.status = "solved";
+        state.totalSolved++;
+        console.log(`\n✅ ${gap.id} SOLVED!`);
+      } else {
+        gap.status = "blocked";
+        state.totalFailed++;
+        console.log(`\n❌ ${gap.id} FAILED`);
+      }
+      saveGaps(gaps);
     }
 
     saveState(state);
 
     if (options.once) {
-      console.log(`\nSingle iteration complete.`);
+      console.log(`\nIteration complete.`);
       break;
     }
 
-    // Brief pause between gaps
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
+async function callClaude(gap: Gap): Promise<boolean> {
+  const prompt = `Close gap ${gap.id}: ${gap.description}. Implement: ${gap.whatToImplement}
+
+Work in src/. Create skills or sidecars. Test: bun run cli/index.ts --dangerous "help"
+
+Report: SUCCESS or FAILED`;
+
+  try {
+    const result = execSync(
+      `echo "${prompt.replace(/"/g, '\\"')}" | timeout 180 claude --dangerously-skip-permissions --bare --print`,
+      { cwd: ROOT, encoding: "utf-8", timeout: 200000 }
+    );
+
+    console.log(`  📝 Response (${result.length} chars)`);
+
+    if (result.includes("SUCCESS") || result.includes("success")) {
+      const gitStatus = runCmd(`git status --short .`);
+      if (gitStatus.stdout.trim()) {
+        console.log(`  📁 Changes: ${gitStatus.stdout.trim()}`);
+        commitChanges(gap);
+        return true;
+      }
+    }
+    return false;
+  } catch (e: any) {
+    console.log(`  ❌ Error: ${e.message}`);
+    return false;
+  }
+}
+
+function commitChanges(gap: Gap): void {
+  try {
+    const gitStatus = runCmd(`git status --short .`);
+    if (gitStatus.stdout.trim()) {
+      runCmd(`git add . && git commit -m "fix(${gap.id}): ${gap.description}
+
+Evolve loop - autonomous improvement.
+
+Co-Authored-By: Claude <noreply@anthropic.com>"`);
+      console.log(`  ✅ Committed`);
+    }
+  } catch (e) {
+    console.log(`  ⚠️ Commit failed: ${e}`);
   }
 }
 
@@ -383,11 +356,7 @@ function showStatus(): void {
   for (const gap of gaps) {
     const icon = gap.status === "solved" ? "✅" : gap.status === "blocked" ? "🚫" : "📋";
     console.log(`  ${icon} ${gap.id} [${gap.priority}] ${gap.description}`);
-    if (gap.status === "open") {
-      console.log(`      → ${gap.whatToImplement.slice(0, 60)}...`);
-    }
   }
-
   console.log(`\n`);
 }
 

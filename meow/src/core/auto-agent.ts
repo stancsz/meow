@@ -11,9 +11,22 @@
  * - Silent/ghost operations for background tasks
  * - Decision confidence thresholds
  * - Auto-commit and push capabilities
+ *
+ * GAP-AUTO-01: InterruptController is imported from ./interrupt.ts
+ * to avoid circular dependencies with auto-mode.ts.
  */
 import { runLeanAgent, type AgentResult, type LeanAgentOptions } from "./lean-agent.ts";
-import { existsSync } from "node:fs";
+import { type InterruptController, createInterruptController } from "./interrupt.ts";
+import {
+  registerSignalHandlers,
+  waitForTickInterval,
+  getInterruptController,
+  shouldPauseAutonomous,
+  isTerminalFocused,
+} from "../sidecars/auto-mode.ts";
+
+export type { InterruptController };
+export { createInterruptController, getInterruptController };
 
 // ============================================================================
 // Types
@@ -66,9 +79,22 @@ interface Observation {
  * ACT: Execute the decided action
  */
 
-async function observe(options: AutoAgentOptions): Promise<Observation[]> {
+async function observe(options: AutoAgentOptions, ic?: InterruptController): Promise<Observation[]> {
+  if (ic?.shouldStopNow()) return [];
+
   const observations: Observation[] = [];
   const now = Date.now();
+
+  // Health check: verify API key is present
+  const apiKey = options.apiKey || process.env.LLM_API_KEY;
+  if (!apiKey) {
+    observations.push({
+      type: "tool_result",
+      content: "⚠️ LLM_API_KEY not set — autonomous loop paused",
+      timestamp: now,
+      confidence: 1.0,
+    });
+  }
 
   // Check git status
   try {
@@ -85,9 +111,6 @@ async function observe(options: AutoAgentOptions): Promise<Observation[]> {
   } catch {
     // Git not available or not a repo
   }
-
-  // Check for file changes in last tick
-  // (Would track via filesystem watcher in full implementation)
 
   return observations;
 }
@@ -203,9 +226,10 @@ export function unregisterGhostTask(id: string): void {
   ghostTasks.delete(id);
 }
 
-async function runGhostTasks(): Promise<void> {
+async function runGhostTasks(ic?: InterruptController): Promise<void> {
   const now = Date.now();
   for (const [id, task] of ghostTasks) {
+    if (ic?.shouldStopNow()) break;
     if (task.running) continue;
     if (task.interval && task.lastRun && now - task.lastRun < task.interval) continue;
 
@@ -213,7 +237,6 @@ async function runGhostTasks(): Promise<void> {
     try {
       const result = await task.execute();
       if (result) {
-        // Could log or store result
         console.log(`[ghost:${id}] ${result}`);
       }
       task.lastRun = now;
@@ -231,42 +254,63 @@ async function runGhostTasks(): Promise<void> {
 
 export async function runAutoAgent(
   initialPrompt: string,
-  options: AutoAgentOptions = {}
+  options: AutoAgentOptions = {},
+  ic?: InterruptController
 ): Promise<{
   ticks: number;
   results: TickResult[];
   finalResult: AgentResult;
 }> {
+  // Wire in the shared interrupt controller from auto-mode sidecar if not provided.
+  // This allows CLI, REPL, and signal handlers to signal the loop to stop.
+  const activeIC = ic ?? getInterruptController();
+  // Register SIGINT/SIGTERM handlers so Ctrl+C stops the OODA loop gracefully
+  registerSignalHandlers();
   const tickInterval = options.tickInterval || 5000;
-  const maxTicks = options.tickMode ? 100 : 1;  // Max ticks in tick mode
+  const maxTicks = options.tickMode ? 100 : 1;
 
   const results: TickResult[] = [];
-  let iterations = 0;
   let ticks = 0;
   let lastResult: AgentResult | null = null;
-  let isRunning = true;
+  let interrupted = false;
 
-  // Register default ghost tasks
-  registerGhostTask({
-    id: "git-sync",
-    description: "Check and sync git status",
-    interval: 30000,  // Every 30 seconds
-    execute: async () => {
-      const { execSync } = await import("node:child_process");
-      try {
-        execSync("git fetch", { encoding: "utf-8", timeout: 5000 });
-        return "";
-      } catch {
-        return "";
-      }
-    },
-  });
+  // Register default ghost tasks (idempotent)
+  if (!ghostTasks.has("git-sync")) {
+    registerGhostTask({
+      id: "git-sync",
+      description: "Check and sync git status",
+      interval: 30000,
+      execute: async () => {
+        const { execSync } = await import("node:child_process");
+        try {
+          execSync("git fetch", { encoding: "utf-8", timeout: 5000 });
+          return "";
+        } catch {
+          return "";
+        }
+      },
+    });
+  }
 
-  while (isRunning && ticks < maxTicks) {
+  // Pass abort signal to lean agent so Ctrl+C also aborts LLM calls
+  const leanOptions: LeanAgentOptions = {
+    ...options,
+    abortSignal: activeIC.signal,
+  };
+
+  while (!activeIC.shouldStopNow() && ticks < maxTicks) {
+    // Pause if terminal is unfocused (GAP-AUTO-01: terminal focus awareness)
+    if (shouldPauseAutonomous()) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (activeIC.shouldStopNow()) { interrupted = true; break; }
+      continue;
+    }
+
     ticks++;
 
     // Observe
-    const observations = await observe(options);
+    const observations = await observe(options, activeIC);
+    if (activeIC.shouldStopNow()) { interrupted = true; break; }
 
     // Orient
     const { summary, confidence, recommendedAction } = orient(observations, lastResult?.content || "");
@@ -289,62 +333,117 @@ export async function runAutoAgent(
       action: actionResult,
       confidence,
       ticks,
-      iterations,
+      iterations: 0,
     });
+
+    // Progress indicator for tick mode
+    if (options.tickMode) {
+      process.stdout.write(`\r${tickSpinner(ticks)} tick ${ticks}/${maxTicks}  `);
+    }
 
     // Run ghost tasks
     if (options.ghostMode) {
-      await runGhostTasks();
+      await runGhostTasks(activeIC);
     }
 
-    // Check if we should continue
-    if (!options.tickMode) {
-      isRunning = false;
+    // Check if we should stop after this tick
+    if (!options.tickMode || activeIC.shouldStop()) {
       break;
     }
 
     // Wait for next tick
-    await new Promise(resolve => setTimeout(resolve, tickInterval));
+    await sleepWithAbort(tickInterval, activeIC.signal);
+    if (activeIC.shouldStopNow()) { interrupted = true; break; }
   }
 
-  // Final agent run to produce output
+  // Clear progress line
+  if (options.tickMode) {
+    process.stdout.write("\r" + " ".repeat(40) + "\r");
+  }
+
+  // Build summary context from ticks
+  let contextFromTicks = "";
+  if (results.length > 0) {
+    const actions = results.filter(r => r.action).map(r => r.action);
+    if (actions.length > 0) {
+      contextFromTicks = `\n\nAutonomous actions taken:\n${actions.join("\n")}`;
+    }
+  }
+
+  // Final lean agent run
   const finalPrompt = options.tickMode
-    ? `Based on ${ticks} autonomous ticks, provide a summary of what was accomplished.`
+    ? `Based on ${ticks} autonomous tick(s), provide a summary of what was accomplished.${contextFromTicks}`
     : initialPrompt;
 
-  const finalResult = await runLeanAgent(finalPrompt, options);
+  let finalResult: AgentResult;
+  if (interrupted || activeIC.shouldStop()) {
+    finalResult = { content: `Interrupted after ${ticks} tick(s).`, iterations: 0, completed: false };
+  } else {
+    finalResult = await runLeanAgent(finalPrompt, leanOptions);
+  }
 
   return { ticks, results, finalResult };
 }
 
-// ============================================================================
-// Terminal Focus Awareness
-// ============================================================================
-
-let isTerminalFocused = true;
-
-export function setTerminalFocus(focused: boolean): void {
-  isTerminalFocused = focused;
+// Tick spinner frames
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+function tickSpinner(n: number): string {
+  return SPINNER[n % SPINNER.length];
 }
 
-export function shouldPauseAutonomous(): boolean {
-  return !isTerminalFocused;
+// Sleep that respects abort signal
+function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) { resolve(); return; }
+    const timeout = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => { clearTimeout(timeout); resolve(); }, { once: true });
+  });
 }
+
+// Progress callback type
+export type ProgressCallback = (msg: string) => void;
+
+/**
+ * Run the autonomous loop with a progress callback.
+ * Returns a cleanup function to stop the loop.
+ */
+export async function runAutoAgentWithProgress(
+  initialPrompt: string,
+  options: AutoAgentOptions = {},
+  onProgress?: ProgressCallback
+): Promise<{ ticks: number; results: TickResult[]; finalResult: AgentResult }> {
+  const ic = createInterruptController();
+
+  onProgress?.(`Starting autonomous loop...`);
+
+  const result = await runAutoAgent(initialPrompt, options, ic);
+
+  onProgress?.(`Completed ${result.ticks} tick(s).`);
+
+  return result;
+}
+
+// ============================================================================
+// Terminal Focus Awareness (delegated to auto-mode sidecar)
+// ============================================================================
+
+export { setTerminalFocus, shouldPauseAutonomous, onFocusChange } from "../sidecars/auto-mode.ts";
 
 // ============================================================================
 // CLI Integration
 // ============================================================================
 
-export function formatAutoResults(results: TickResult[]): string {
+export function formatAutoResults(results: TickResult[], interrupted = false): string {
   if (results.length === 0) return "No autonomous actions taken.";
 
-  let output = "## Autonomous Operation Summary\n\n";
-  output += `Ticks: ${results.length} | Total Iterations: ${results.reduce((s, r) => s + r.iterations, 0)}\n\n`;
+  const actions = results.filter(r => r.action);
+  let output = `## Autonomous Operation Summary${interrupted ? " (INTERRUPTED)" : ""}\n\n`;
+  output += `Ticks: ${results.length} | Actions: ${actions.length} taken\n\n`;
 
   for (const result of results) {
     output += `### Tick ${result.ticks}\n`;
     output += `**Confidence:** ${(result.confidence * 100).toFixed(0)}%\n`;
-    output += `**Observe:** ${result.observation.slice(0, 100)}...\n`;
+    output += `**Observe:** ${result.observation.slice(0, 120)}${result.observation.length > 120 ? "..." : ""}\n`;
     output += `**Orient:** ${result.orientation}\n`;
     output += `**Decide:** ${result.decision}\n`;
     if (result.action) {

@@ -14,13 +14,16 @@ import { stdin as input, stdout as output } from "node:process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions } from "../src/core/lean-agent.ts";
-import { runAutoAgent, formatAutoResults } from "../src/core/auto-agent.ts";
+import { registerSignalHandlers, getInterruptController } from "../src/sidecars/auto-mode.ts";
+import { runAutoLoop, formatAutoLoopSummary, formatTickStatus } from "../src/sidecars/auto-loop.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
 import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 import { initI18n, t } from "../src/sidecars/i18n/index.ts";
 import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.ts";
+import { startACPServer } from "../src/sidecars/acp.ts";
+import { parseAndExecute as parseSlashCommand } from "../src/sidecars/slash-commands.ts";
 
 // Initialize i18n
 initI18n();
@@ -265,6 +268,7 @@ async function main() {
   let resumeSession = false;
   let autoMode = false;
   let tickMode = false;
+  let acpMode = false;
 
   // Parse flags
   const filteredArgs = args.filter((arg) => {
@@ -284,8 +288,18 @@ async function main() {
       tickMode = true;
       return false;
     }
+    if (arg === "--acp") {
+      acpMode = true;
+      return false;
+    }
     return true;
   });
+
+  // ACP mode: start JSON-RPC stdio server
+  if (acpMode) {
+    await startACPServer();
+    return;
+  }
 
   // Initialize tools and skills
   await initializeToolRegistry();
@@ -325,6 +339,20 @@ async function main() {
     // Single task mode
     const prompt = filteredArgs.join(" ");
 
+    // Handle bare "help" command (no leading slash, e.g. --dangerous "help")
+    if (filteredArgs[0].toLowerCase() === "help") {
+      const skill = findSkill("help");
+      if (skill) {
+        const result = await skill.execute(filteredArgs.slice(1).join(" "), { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+    }
+
     // On Windows Git Bash, /mcp connect args → "C:/Program Files/Git/mcp" + "connect" + "args..."
     // Since the shell splits the mangled path at spaces, "C:/Program Files/Git/mcp" becomes
     // separate args. Check if the FIRST filteredArg itself starts with the mangled path pattern.
@@ -334,7 +362,21 @@ async function main() {
       firstArg.startsWith("C:\\Program Files\\Git\\") ||
       (firstArg.length > 1 && firstArg[1] === ":" && /[A-Za-z]/.test(firstArg[0]) && firstArg.includes("Program Files") && firstArg.includes("Git"));
 
-    if (prompt.startsWith("/") && !startsWithMangledPrefix) {
+    // Detect split-mangle: Git Bash split "C:/Program Files/Git/skill" into
+    // ["C:/Program", "Files/Git/skill", ...] — firstArg="C:/Program", secondArg starts with "Files/Git/"
+    const secondArg = filteredArgs[1] || "";
+    const splitMangleMatch =
+      /^[A-Za-z]:[\/\\]?$/.test(firstArg) && secondArg.startsWith("Program Files/Git/") ||
+      /^([A-Za-z]:[\/\\][^\s\\\/]+)$/.test(firstArg) && secondArg.startsWith("Program Files/Git/");
+
+    // Reassemble a split Windows Git Bash mangled path
+    function reassembleSplitMangle(): string {
+      // e.g. ["C:/Program", "Files/Git/exec", "echo", "hello"] → "C:/Program Files/Git/exec"
+      const prefix = firstArg.replace(/[\/\\]+$/, ""); // strip trailing slashes
+      return prefix + "/" + secondArg;
+    }
+
+    if (prompt.startsWith("/") && !startsWithMangledPrefix && !splitMangleMatch) {
       // Normal slash command: /mcp help → prompt="/mcp help"
       const parts = prompt.slice(1).split(/\s+/);
       const skillName = parts[0];
@@ -353,36 +395,66 @@ async function main() {
       }
     }
 
-    if (startsWithMangledPrefix) {
+    if (startsWithMangledPrefix || splitMangleMatch) {
       // Windows Git Bash mangled the skill command.
       // The first arg contains the full "C:/Program Files/Git/<skill> [args...]".
       // " /" (space + slash) marks the boundary between skill name and args.
       // If there's no space after the skill name (just "/mcp"), use last "/" as separator.
-      const spaceSlashIdx = firstArg.indexOf(" /");
+      // For split-mangle (space-split path), use the reassembled path.
+      const effectiveFirstArg = splitMangleMatch ? reassembleSplitMangle() : firstArg;
+      const spaceSlashIdx = effectiveFirstArg.indexOf(" /");
       let skillName: string;
       let remainingFirstArg: string;
       if (spaceSlashIdx >= 0) {
         // Has args: "C:/Program Files/Git/mcp connect..." → skillName="mcp", remaining="connect..."
-        remainingFirstArg = firstArg.slice(spaceSlashIdx + 2); // skip " /"
+        remainingFirstArg = effectiveFirstArg.slice(spaceSlashIdx + 2); // skip " /"
         const spaceIdx2 = remainingFirstArg.indexOf(" ");
         skillName = spaceIdx2 >= 0 ? remainingFirstArg.slice(0, spaceIdx2) : remainingFirstArg;
       } else {
         // No args: "C:/Program Files/Git/mcp" → skillName="mcp"
-        const lastSlash = firstArg.lastIndexOf("/");
-        skillName = lastSlash >= 0 ? firstArg.slice(lastSlash + 1) : firstArg;
+        const lastSlash = effectiveFirstArg.lastIndexOf("/");
+        skillName = lastSlash >= 0 ? effectiveFirstArg.slice(lastSlash + 1) : effectiveFirstArg;
         remainingFirstArg = "";
       }
       // Remaining args from firstArg after the skill name, plus extra filteredArgs
       const afterSkillName = spaceSlashIdx >= 0
         ? (remainingFirstArg.indexOf(" ") >= 0 ? remainingFirstArg.slice(remainingFirstArg.indexOf(" ") + 1) : "")
         : "";
-      const extraArgs = filteredArgs.slice(1).join(" ");
+      // For split-mangle, skip the first two args (reassembled path parts) and use the rest
+      const extraArgs = splitMangleMatch
+        ? filteredArgs.slice(2).join(" ")
+        : filteredArgs.slice(1).join(" ");
       const fullArgs = [afterSkillName, extraArgs].filter(Boolean).join(" ");
 
       const skill = findSkill(skillName);
       if (skill) {
         console.log(`${colors.dim}Running skill: /${skill.name} (via Windows path mangle)${colors.reset}`);
         const result = await skill.execute(fullArgs, { cwd: process.cwd(), dangerous });
+        if (result.error) {
+          console.error(`${colors.red}${result.error}${colors.reset}`);
+        } else {
+          console.log(`\n${result.content}\n`);
+        }
+        return;
+      }
+
+      // Not a skill — try slash commands from mangled path (e.g. /restore → C:/Program Files/Git/restore)
+      const mangledPrompt = `/${skillName}${fullArgs ? " " + fullArgs : ""}`;
+      const cmdResult2 = await parseSlashCommand(mangledPrompt, { cwd: process.cwd(), dangerous });
+      if (cmdResult2.handled) {
+        return;
+      }
+      if (cmdResult2.error) {
+        console.error(`${colors.red}${cmdResult2.error}${colors.reset}`);
+        return;
+      }
+    }
+
+    // Handle bare "help" command (without leading slash)
+    if (prompt.toLowerCase() === "help") {
+      const skill = findSkill("help");
+      if (skill) {
+        const result = await skill.execute("", { cwd: process.cwd(), dangerous });
         if (result.error) {
           console.error(`${colors.red}${result.error}${colors.reset}`);
         } else {
@@ -398,31 +470,58 @@ async function main() {
     // Auto/Tick mode - OODA loop autonomous operation
     if (autoMode || tickMode) {
       console.log(`${colors.cyan}⚡ Auto mode${tickMode ? " (tick)" : ""} - OODA loop engaged${colors.reset}\n`);
+      console.log(`${colors.dim}Press Ctrl+C or send SIGTERM to interrupt${tickMode ? " after current tick" : ""}${colors.reset}\n`);
+
+      // Register global signal handlers (handles SIGINT + SIGTERM)
+      registerSignalHandlers();
+      const ic = getInterruptController();
+      ic.reset(); // clear any stale state from a previous run
+
+      // Wire SIGINT to the interrupt controller
+      const sigintHandler = () => {
+        if (!ic.shouldStop()) {
+          console.log(`\n${colors.yellow}⏹ Interrupt requested — stopping after current tick...${colors.reset}`);
+          ic.stopAfterTick();
+        }
+      };
+      process.on("SIGINT", sigintHandler);
 
       setCursorVisible(false);
       try {
-        const { ticks, results, finalResult } = await withSpinner(
-          runAutoAgent(prompt, {
+        const result = await withSpinner(
+          runAutoLoop(prompt, {
             dangerous,
             tickMode,
             ghostMode: true,
             autoCommit: dangerous,
             autoPush: dangerous,
             confidenceThreshold: 0.7,
+            abortSignal: ic.signal,
+            onTick: (progress) => {
+              // Live tick progress feedback
+              process.stdout.write("\r" + colors.dim + formatTickStatus(progress) + " ".repeat(20) + colors.reset + "\r");
+            },
           }),
-          tickMode ? "autonomous..." : "thinking..."
+          tickMode ? "autonomous..." : "thinking...",
+          () => { ic.stopNow(); }
         );
 
-        console.log(`\n${colors.green}✅ Autonomous operation complete${colors.reset}`);
-        console.log(`${colors.dim}Ticks: ${ticks} | Iterations: ${finalResult.iterations}${colors.reset}`);
-        console.log(formatUsage(finalResult.usage));
+        eraseLine();
 
-        if (results.length > 0 && tickMode) {
-          console.log(`\n${colors.bold}━━━ OODA Loop Summary ━━━${colors.reset}`);
-          console.log(formatAutoResults(results));
+        if (result.interrupted) {
+          console.log(`${colors.yellow}⏹ Interrupted after ${result.ticks} tick(s) (${Math.round(result.elapsedMs / 1000)}s)${colors.reset}`);
+        } else {
+          console.log(`${colors.green}✅ Autonomous operation complete${colors.reset}`);
+          console.log(`${colors.dim}Ticks: ${result.ticks} | Iterations: ${result.finalResult.iterations}${colors.reset}`);
+          console.log(formatUsage(result.finalResult.usage));
         }
 
-        console.log(`\n--- Output ---\n${finalResult.content}`);
+        if (result.actions.length > 0 || result.pauseReason) {
+          console.log(`\n${colors.bold}━━━ OODA Loop Summary ━━━${colors.reset}`);
+          console.log(formatAutoLoopSummary(result));
+        }
+
+        console.log(`\n--- Output ---\n${result.finalResult.content}`);
       } catch (e: any) {
         if (e.message === "Interrupted") {
           process.exit(130);
@@ -430,6 +529,7 @@ async function main() {
         console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}`);
         process.exit(1);
       } finally {
+        process.off("SIGINT", sigintHandler);
         setCursorVisible(true);
       }
       return;
