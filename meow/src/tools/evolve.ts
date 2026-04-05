@@ -179,14 +179,14 @@ function discoverGaps(): void {
 }
 
 function implementSkill(gap: Gap): boolean {
-  if (!gap.id.startsWith("GAP-SKILL-")) return false;
+  // GAP-SKILL-* gaps: create simple skill stubs
+  if (gap.id.startsWith("GAP-SKILL-")) {
+    const skillName = gap.id.replace("GAP-SKILL-", "").toLowerCase();
+    const skillPath = join(ROOT, "src/skills", `${skillName}.ts`);
 
-  const skillName = gap.id.replace("GAP-SKILL-", "").toLowerCase();
-  const skillPath = join(ROOT, "src/skills", `${skillName}.ts`);
+    if (existsSync(skillPath)) return true;
 
-  if (existsSync(skillPath)) return true;
-
-  const content = `/**
+    const content = `/**
  * ${skillName}.ts
  * ${gap.description}
  */
@@ -202,14 +202,78 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
 };
 `;
 
-  try {
-    writeFileSync(skillPath, content);
-    console.log(`  ✅ Created skill: ${skillPath}`);
-    return true;
-  } catch (e) {
-    console.log(`  ❌ Failed: ${e}`);
-    return false;
+    try {
+      writeFileSync(skillPath, content);
+      console.log(`  ✅ Created skill: ${skillPath}`);
+      return true;
+    } catch (e) {
+      console.log(`  ❌ Failed: ${e}`);
+      return false;
+    }
   }
+
+  // GAP-HARVEST-* gaps: auto-implement from harvest docs
+  if (gap.id.startsWith("GAP-HARVEST-") && gap.whatToImplement) {
+    const match = gap.whatToImplement.match(/Implement (\w+) from docs\/harvest\/(\w+)\.md/);
+    if (!match) return false;
+
+    const [, fullName, fileName] = match;
+    const skillName = fullName.toLowerCase();
+    const docPath = join(ROOT, "docs", "harvest", `${fileName}.md`);
+
+    if (!existsSync(docPath)) {
+      console.log(`  ⚠️ Harvest doc not found: ${docPath}`);
+      return false;
+    }
+
+    const skillPath = join(ROOT, "src", "skills", `${skillName}.ts`);
+    if (existsSync(skillPath)) return true;
+
+    try {
+      const docContent = readFileSync(docPath, "utf-8");
+      const frontmatterMatch = docContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+      let repo = "", why = "", minimalSlice = "", description = "";
+
+      if (frontmatterMatch) {
+        const fm = frontmatterMatch[1];
+        repo = (fm.match(/repo:\s*(.+)/) || [])[1] || "";
+        why = (fm.match(/why:\s*(.+)/) || [])[1] || "";
+        minimalSlice = (fm.match(/minimalSlice:\s*"(.+?)"/) || [])[1] || "";
+        description = frontmatterMatch[2].replace(/^#.*\n/, "").trim();
+      } else {
+        description = docContent.replace(/^#.*\n/, "").trim();
+      }
+
+      const content = `/**
+ * ${skillName}.ts
+ * ${description || gap.description}
+ *
+ * Harvested from: ${repo}
+ * Why: ${why}
+ * Minimal slice: ${minimalSlice}
+ */
+
+import { type Skill } from "./loader.ts";
+
+export const ${skillName.replace(/-/g, "_")}: Skill = {
+  name: "${skillName}",
+  description: "${description || gap.description}",
+  async execute(context) {
+    return { success: true, message: "${skillName} capability" };
+  },
+};
+`;
+
+      writeFileSync(skillPath, content);
+      console.log(`  ✅ Harvested skill: ${skillPath}`);
+      return true;
+    } catch (e) {
+      console.log(`  ❌ Failed to harvest: ${e}`);
+      return false;
+    }
+  }
+
+  return false;
 }
 
 // ============================================================================
@@ -317,101 +381,112 @@ Close the gap by implementing the required code. Create or modify files as neede
 After completing the implementation, run tests if available.
 Report SUCCESS when the gap is fully closed, or FAILED if you could not complete it.`;
 
+  // Retry with exponential backoff for rate limits
+  const maxRetries = 5;
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    attempt++;
+    try {
+      return await callClaudeOnce(client, model, tools, systemPrompt, gap);
+    } catch (e: any) {
+      const isRateLimit = e.message?.includes("2062") ||
+                          e.message?.includes("rate limit") ||
+                          e.message?.includes("Traffic is currently high");
+
+      if (isRateLimit && attempt < maxRetries) {
+        const backoffMs = Math.min(30000 * Math.pow(2, attempt - 1), 120000);
+        console.log(`  ⏳ Rate limited (attempt ${attempt}/${maxRetries}), waiting ${backoffMs/1000}s...`);
+        await new Promise(r => setTimeout(r, backoffMs));
+        continue;
+      }
+      console.log(`  ❌ Error: ${e.message}`);
+      return false;
+    }
+  }
+  return false;
+}
+
+async function callClaudeOnce(client: OpenAI, model: string, tools: any[], systemPrompt: string, gap: Gap): Promise<boolean> {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: `Close gap ${gap.id}: ${gap.description}\n\n${gap.whatToImplement}\n\nWork in src/. Create skills or sidecars.\nTest: bun run cli/index.ts --dangerous "help"\n\nReport: SUCCESS or FAILED` },
   ];
 
-  try {
-    let fullResponse = "";
-    let toolCallsHandled = 0;
-    const maxToolCalls = 50; // Prevent infinite loops
+  let fullResponse = "";
+  let toolCallsHandled = 0;
+  const maxToolCalls = 50;
 
-    while (toolCallsHandled < maxToolCalls) {
-      const stream = await client.chat.completions.create({
-        model,
-        messages,
-        tools,
-        tool_choice: "auto",
-        stream: true,
-        stream_options: { include_usage: true },
-      });
+  while (toolCallsHandled < maxToolCalls) {
+    const stream = await client.chat.completions.create({
+      model,
+      messages,
+      tools,
+      tool_choice: "auto",
+      stream: true,
+      stream_options: { include_usage: true },
+    });
 
-      let hasToolCall = false;
-      let finishReason = "";
-      let usage = null;
+    let finishReason = "";
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta;
-        if (delta?.content) {
-          fullResponse += delta.content;
-          process.stdout.write(delta.content);
-        }
-        if (chunk.choices[0]?.finish_reason) {
-          finishReason = chunk.choices[0].finish_reason;
-        }
-        if (chunk.usage) {
-          usage = chunk.usage;
-        }
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+      if (delta?.content) {
+        fullResponse += delta.content;
+        process.stdout.write(delta.content);
       }
-      console.log(""); // Newline after streaming
+      if (chunk.choices[0]?.finish_reason) {
+        finishReason = chunk.choices[0].finish_reason;
+      }
+    }
+    console.log("");
 
-      // Handle tool calls
-      if (finishReason === "tool_calls") {
-        hasToolCall = true;
-        toolCallsHandled++;
+    if (finishReason === "tool_calls") {
+      toolCallsHandled++;
+      const lastAssistantMsg = messages[messages.length - 1];
+      if (lastAssistantMsg.role === "assistant" && "tool_calls" in lastAssistantMsg) {
+        for (const toolCall of lastAssistantMsg.tool_calls || []) {
+          const toolName = toolCall.function.name;
+          const args = JSON.parse(toolCall.function.arguments || "{}");
 
-        // Find the last assistant message with tool calls
-        const lastAssistantMsg = messages[messages.length - 1];
-        if (lastAssistantMsg.role === "assistant" && "tool_calls" in lastAssistantMsg) {
-          for (const toolCall of lastAssistantMsg.tool_calls || []) {
-            const toolName = toolCall.function.name;
-            const args = JSON.parse(toolCall.function.arguments || "{}");
+          console.log(`  🔧 Calling tool: ${toolName}`);
 
-            console.log(`  🔧 Calling tool: ${toolName}`);
+          try {
+            const result = await executeTool({ name: toolName, args, signal: undefined });
+            const resultStr = typeof result === "string" ? result : JSON.stringify(result);
 
-            try {
-              const result = await executeTool({ name: toolName, args, signal: undefined });
-              const resultStr = typeof result === "string" ? result : JSON.stringify(result);
-
-              messages.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: resultStr,
-              });
-            } catch (e: any) {
-              messages.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: `Error: ${e.message}`,
-              });
-            }
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: resultStr,
+            });
+          } catch (e: any) {
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: `Error: ${e.message}`,
+            });
           }
         }
-      } else {
-        // No more tool calls, check for SUCCESS
-        break;
       }
+    } else {
+      break;
     }
-
-    console.log(`  📝 Response (${fullResponse.length} chars)`);
-
-    // Check final response for SUCCESS
-    const success = fullResponse.includes("SUCCESS") || fullResponse.includes("success");
-
-    if (success) {
-      const gitStatus = runCmd(`git status --short .`);
-      if (gitStatus.stdout.trim()) {
-        console.log(`  📁 Changes: ${gitStatus.stdout.trim()}`);
-        commitChanges(gap);
-        return true;
-      }
-    }
-    return false;
-  } catch (e: any) {
-    console.log(`  ❌ Error: ${e.message}`);
-    return false;
   }
+
+  console.log(`  📝 Response (${fullResponse.length} chars)`);
+
+  const success = fullResponse.includes("SUCCESS") || fullResponse.includes("success");
+
+  if (success) {
+    const gitStatus = runCmd(`git status --short .`);
+    if (gitStatus.stdout.trim()) {
+      console.log(`  📁 Changes: ${gitStatus.stdout.trim()}`);
+      commitChanges(gap);
+      return true;
+    }
+  }
+  return false;
 }
 
 function commitChanges(gap: Gap): void {
