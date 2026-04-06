@@ -496,22 +496,36 @@ function commitChanges(gap: Gap): void {
       // Generate meaningful commit message
       let commitTitle: string;
       if (gap.whatToImplement) {
-        // Extract capability name from "Implement X from docs/harvest/Y.md"
-        const match = gap.whatToImplement.match(/Implement (\w+)/);
+        let capability = "";
+        // Try "Implement X from..." pattern (harvest gaps)
+        let match = gap.whatToImplement.match(/Implement (\w+) from/);
         if (match) {
-          const capability = match[1];
+          capability = match[1];
+        }
+        // Try "Create src/skills/X.ts" pattern (skill gaps)
+        if (!capability) {
+          match = gap.whatToImplement.match(/Create src\/skills\/(\w+)\.ts/);
+          if (match) capability = match[1];
+        }
+        // Try "Create src/sidecars/X.ts" pattern (sidecar gaps)
+        if (!capability) {
+          match = gap.whatToImplement.match(/Create src\/sidecars\/(\w+)\.ts/);
+          if (match) capability = match[1];
+        }
+
+        if (capability) {
           if (gap.id.startsWith("GAP-HARVEST-")) {
             commitTitle = `feat(harvest): implement ${capability} capability`;
           } else if (gap.id.startsWith("GAP-SKILL-")) {
-            commitTitle = `feat(skills): implement ${capability} skill`;
+            commitTitle = `feat(skills): add ${capability} skill`;
           } else {
             commitTitle = `feat(${gap.id}): implement ${capability}`;
           }
         } else {
-          commitTitle = `feat: ${gap.id}`;
+          commitTitle = `feat(${gap.id})`;
         }
       } else {
-        commitTitle = `feat: ${gap.id}`;
+        commitTitle = `feat(${gap.id})`;
       }
 
       runCmd(`git add . && git commit -m "${commitTitle}
