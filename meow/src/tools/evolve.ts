@@ -493,12 +493,33 @@ function commitChanges(gap: Gap): void {
   try {
     const gitStatus = runCmd(`git status --short .`);
     if (gitStatus.stdout.trim()) {
-      runCmd(`git add . && git commit -m "fix(${gap.id}): ${gap.description}
+      // Generate meaningful commit message
+      let commitTitle: string;
+      if (gap.whatToImplement) {
+        // Extract capability name from "Implement X from docs/harvest/Y.md"
+        const match = gap.whatToImplement.match(/Implement (\w+)/);
+        if (match) {
+          const capability = match[1];
+          if (gap.id.startsWith("GAP-HARVEST-")) {
+            commitTitle = `feat(harvest): implement ${capability} capability`;
+          } else if (gap.id.startsWith("GAP-SKILL-")) {
+            commitTitle = `feat(skills): implement ${capability} skill`;
+          } else {
+            commitTitle = `feat(${gap.id}): implement ${capability}`;
+          }
+        } else {
+          commitTitle = `feat: ${gap.id}`;
+        }
+      } else {
+        commitTitle = `feat: ${gap.id}`;
+      }
+
+      runCmd(`git add . && git commit -m "${commitTitle}
 
 Evolve loop - autonomous improvement.
 
 Co-Authored-By: Claude <noreply@anthropic.com>"`);
-      console.log(`  ✅ Committed`);
+      console.log(`  ✅ Committed: ${commitTitle}`);
     }
   } catch (e) {
     console.log(`  ⚠️ Commit failed: ${e}`);
