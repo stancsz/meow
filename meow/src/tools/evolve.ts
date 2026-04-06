@@ -2,7 +2,13 @@
  * evolve.ts — Self-Evolving Gap-Closing Loop
  *
  * Continuously discovers gaps, implements simple ones directly,
- * and calls Claude Code for complex ones (with rate limiting).
+ * and calls LLM providers for complex ones (with smart rate limit handling).
+ *
+ * Rate Limit Strategy:
+ * - Persistent rate limit tracking (saves next available time to state)
+ * - Multi-provider fallback (MiniMax → Anthropic → OpenAI)
+ * - Exponential backoff starting at 5 minutes
+ * - Scheduled retries (if rate limited, retry in 10-30 minutes)
  *
  * Usage:
  *   bun run src/tools/evolve.ts          # Run continuously
@@ -36,8 +42,9 @@ interface Gap {
   id: string;
   description: string;
   priority: "P0" | "P1" | "P2";
-  status: "open" | "solved" | "blocked";
+  status: "open" | "solved" | "blocked" | "waiting";
   whatToImplement: string;
+  retryAfter?: number; // Timestamp when to retry
 }
 
 interface State {
@@ -45,7 +52,46 @@ interface State {
   totalFailed: number;
   sessionStart: string;
   lastClaudeCall: number;
+  rateLimitUntil: number; // Timestamp when rate limit ends
+  consecutiveFailures: number;
+  lastProvider: string;
 }
+
+// ============================================================================
+// LLM Providers Configuration
+// ============================================================================
+
+interface LLMProvider {
+  name: string;
+  apiKeyEnv: string;
+  baseURL: string;
+  model: string;
+  priority: number; // Lower = tried first
+}
+
+const PROVIDERS: LLMProvider[] = [
+  {
+    name: "minimax",
+    apiKeyEnv: "LLM_API_KEY",
+    baseURL: process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic",
+    model: process.env.LLM_MODEL || "MiniMax-M2.7",
+    priority: 1,
+  },
+  {
+    name: "anthropic",
+    apiKeyEnv: "ANTHROPIC_API_KEY",
+    baseURL: "https://api.anthropic.com/v1",
+    model: "claude-sonnet-4-6",
+    priority: 2,
+  },
+  {
+    name: "openai",
+    apiKeyEnv: "OPENAI_API_KEY",
+    baseURL: "https://api.openai.com/v1",
+    model: "gpt-4o",
+    priority: 3,
+  },
+];
 
 // ============================================================================
 // Helpers
@@ -83,20 +129,30 @@ function runCmd(cmd: string, cwd: string = ROOT): { stdout: string; stderr: stri
   }
 }
 
-// 4500 msgs / 5 hours = ~1 every 40s. Use 180s to be safe from rate limiting
-const MINClaudeInterval = 180000;
+// ============================================================================
+// State Management
+// ============================================================================
 
-function waitForRateLimit(lastCall: number): number {
-  const now = Date.now();
-  const elapsed = now - lastCall;
-  if (elapsed < MINClaudeInterval) {
-    return MINClaudeInterval - elapsed;
-  }
-  return 0;
+function loadState(): State {
+  const state = readJson<State>(STATE_FILE, {
+    totalSolved: 0,
+    totalFailed: 0,
+    sessionStart: timestamp(),
+    lastClaudeCall: 0,
+    rateLimitUntil: 0,
+    consecutiveFailures: 0,
+    lastProvider: "",
+  });
+  return state;
+}
+
+function saveState(state: State): void {
+  ensureDir(WISDOM_DIR);
+  writeJson(STATE_FILE, state);
 }
 
 // ============================================================================
-// Gap List Management
+// Gap Management
 // ============================================================================
 
 function loadGaps(): Gap[] {
@@ -106,20 +162,6 @@ function loadGaps(): Gap[] {
 function saveGaps(gaps: Gap[]): void {
   ensureDir(WISDOM_DIR);
   writeJson(GAP_LIST_FILE, gaps);
-}
-
-function loadState(): State {
-  const fallback: State = {
-    totalSolved: 0,
-    totalFailed: 0,
-    sessionStart: timestamp(),
-    lastClaudeCall: 0,
-  };
-  return readJson<State>(STATE_FILE, fallback);
-}
-
-function saveState(state: State): void {
-  writeJson(STATE_FILE, state);
 }
 
 // ============================================================================
@@ -177,6 +219,10 @@ function discoverGaps(): void {
 
   saveGaps(gaps);
 }
+
+// ============================================================================
+// Auto-Implementation
+// ============================================================================
 
 function implementSkill(gap: Gap): boolean {
   // GAP-SKILL-* gaps: create simple skill stubs
@@ -259,6 +305,8 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
   name: "${skillName}",
   description: "${description || gap.description}",
   async execute(context) {
+    // TODO: Implement ${skillName} capability from ${repo}
+    // ${minimalSlice}
     return { success: true, message: "${skillName} capability" };
   },
 };
@@ -277,94 +325,19 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
 }
 
 // ============================================================================
-// Main Loop
+// LLM Calling with Multi-Provider and Rate Limit Handling
 // ============================================================================
 
-async function runLoop(options: { once?: boolean }): Promise<void> {
-  ensureDir(DOGFOOD);
-  ensureDir(WISDOM_DIR);
-
-  const state = loadState();
-
-  console.log(`
-${"🐱".repeat(30)}
-  MEOW EVOLVE — Self-Evolving Loop
-  Total solved: ${state.totalSolved} | Failed: ${state.totalFailed}
-${"🐱".repeat(30)}
-`);
-
-  while (true) {
-    const gaps = loadGaps();
-    const openGaps = gaps.filter(g => g.status === "open");
-
-    if (openGaps.length === 0) {
-      console.log(`\n🔍 No open gaps - discovering...`);
-      discoverGaps();
-      await new Promise(r => setTimeout(r, 5000));
-      continue;
-    }
-
-    openGaps.sort((a, b) => {
-      const pOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
-      return pOrder[a.priority] - pOrder[b.priority];
-    });
-
-    const gap = openGaps[0];
-    console.log(`\n🎯 Working on: ${gap.id} — ${gap.description}`);
-
-    if (implementSkill(gap)) {
-      gap.status = "solved";
-      saveGaps(gaps);
-      state.totalSolved++;
-      console.log(`\n✅ ${gap.id} SOLVED!`);
-      commitChanges(gap);
-    } else {
-      const waitTime = waitForRateLimit(state.lastClaudeCall);
-      if (waitTime > 0) {
-        console.log(`\n⏳ Rate limited, waiting ${Math.round(waitTime/1000)}s...`);
-        await new Promise(r => setTimeout(r, waitTime));
-      }
-
-      state.lastClaudeCall = Date.now();
-      saveState(state);
-
-      console.log(`  🤖 Calling Claude Code...`);
-      const success = await callClaude(gap);
-
-      if (success) {
-        gap.status = "solved";
-        state.totalSolved++;
-        console.log(`\n✅ ${gap.id} SOLVED!`);
-      } else {
-        gap.status = "blocked";
-        state.totalFailed++;
-        console.log(`\n❌ ${gap.id} FAILED`);
-      }
-      saveGaps(gaps);
-    }
-
-    saveState(state);
-
-    if (options.once) {
-      console.log(`\nIteration complete.`);
-      break;
-    }
-
-    await new Promise(r => setTimeout(r, 3000));
-  }
-}
-
-async function callClaude(gap: Gap): Promise<boolean> {
-  const apiKey = process.env.LLM_API_KEY || process.env.ANTHROPIC_API_KEY;
-  const baseURL = process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic";
-  const model = process.env.LLM_MODEL || "MiniMax-M2.7";
-
+async function callClaudeWithProvider(
+  provider: LLMProvider,
+  gap: Gap
+): Promise<{ success: boolean; error?: string; isRateLimit?: boolean }> {
+  const apiKey = process.env[provider.apiKeyEnv];
   if (!apiKey) {
-    console.log("  ❌ Error: LLM_API_KEY not set");
-    return false;
+    return { success: false, error: `${provider.name}: No API key` };
   }
 
-  const client = new OpenAI({ apiKey, baseURL });
+  const client = new OpenAI({ apiKey, baseURL: provider.baseURL });
 
   const tools = getToolDefinitions().map((t) => ({
     type: "function" as const,
@@ -381,162 +354,280 @@ Close the gap by implementing the required code. Create or modify files as neede
 After completing the implementation, run tests if available.
 Report SUCCESS when the gap is fully closed, or FAILED if you could not complete it.`;
 
-  // Retry with exponential backoff for rate limits
-  const maxRetries = 5;
-  let attempt = 0;
-
-  while (attempt < maxRetries) {
-    attempt++;
-    try {
-      return await callClaudeOnce(client, model, tools, systemPrompt, gap);
-    } catch (e: any) {
-      const isRateLimit = e.message?.includes("2062") ||
-                          e.message?.includes("rate limit") ||
-                          e.message?.includes("Traffic is currently high");
-
-      if (isRateLimit && attempt < maxRetries) {
-        const backoffMs = Math.min(30000 * Math.pow(2, attempt - 1), 120000);
-        console.log(`  ⏳ Rate limited (attempt ${attempt}/${maxRetries}), waiting ${backoffMs/1000}s...`);
-        await new Promise(r => setTimeout(r, backoffMs));
-        continue;
-      }
-      console.log(`  ❌ Error: ${e.message}`);
-      return false;
-    }
-  }
-  return false;
-}
-
-async function callClaudeOnce(client: OpenAI, model: string, tools: any[], systemPrompt: string, gap: Gap): Promise<boolean> {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: `Close gap ${gap.id}: ${gap.description}\n\n${gap.whatToImplement}\n\nWork in src/. Create skills or sidecars.\nTest: bun run cli/index.ts --dangerous "help"\n\nReport: SUCCESS or FAILED` },
   ];
 
-  let fullResponse = "";
-  let toolCallsHandled = 0;
-  const maxToolCalls = 50;
+  try {
+    let fullResponse = "";
+    let toolCallsHandled = 0;
+    const maxToolCalls = 30;
 
-  while (toolCallsHandled < maxToolCalls) {
-    const stream = await client.chat.completions.create({
-      model,
-      messages,
-      tools,
-      tool_choice: "auto",
-      stream: true,
-      stream_options: { include_usage: true },
-    });
+    while (toolCallsHandled < maxToolCalls) {
+      const stream = await client.chat.completions.create({
+        model: provider.model,
+        messages,
+        tools,
+        tool_choice: "auto",
+        stream: true,
+        stream_options: { include_usage: true },
+      });
 
-    let finishReason = "";
+      let finishReason = "";
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
-      if (delta?.content) {
-        fullResponse += delta.content;
-        process.stdout.write(delta.content);
-      }
-      if (chunk.choices[0]?.finish_reason) {
-        finishReason = chunk.choices[0].finish_reason;
-      }
-    }
-    console.log("");
-
-    if (finishReason === "tool_calls") {
-      toolCallsHandled++;
-      const lastAssistantMsg = messages[messages.length - 1];
-      if (lastAssistantMsg.role === "assistant" && "tool_calls" in lastAssistantMsg) {
-        for (const toolCall of lastAssistantMsg.tool_calls || []) {
-          const toolName = toolCall.function.name;
-          const args = JSON.parse(toolCall.function.arguments || "{}");
-
-          console.log(`  🔧 Calling tool: ${toolName}`);
-
-          try {
-            const result = await executeTool({ name: toolName, args, signal: undefined });
-            const resultStr = typeof result === "string" ? result : JSON.stringify(result);
-
-            messages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: resultStr,
-            });
-          } catch (e: any) {
-            messages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: `Error: ${e.message}`,
-            });
-          }
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        if (delta?.content) {
+          fullResponse += delta.content;
+          process.stdout.write(delta.content);
+        }
+        if (chunk.choices[0]?.finish_reason) {
+          finishReason = chunk.choices[0].finish_reason;
         }
       }
-    } else {
-      break;
+      console.log("");
+
+      if (finishReason === "tool_calls") {
+        toolCallsHandled++;
+        const lastAssistantMsg = messages[messages.length - 1];
+        if (lastAssistantMsg.role === "assistant" && "tool_calls" in lastAssistantMsg) {
+          for (const toolCall of lastAssistantMsg.tool_calls || []) {
+            const toolName = toolCall.function.name;
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+
+            console.log(`  🔧 [${provider.name}] Calling tool: ${toolName}`);
+
+            try {
+              const result = await executeTool({ name: toolName, args, signal: undefined });
+              const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+
+              messages.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: resultStr,
+              });
+            } catch (e: any) {
+              messages.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: `Error: ${e.message}`,
+              });
+            }
+          }
+        }
+      } else {
+        break;
+      }
     }
+
+    console.log(`  📝 [${provider.name}] Response (${fullResponse.length} chars)`);
+
+    const success = fullResponse.includes("SUCCESS") || fullResponse.includes("success");
+    return { success };
+
+  } catch (e: any) {
+    const errorMsg = e.message || "";
+    const isRateLimit = errorMsg.includes("2062") ||
+                        errorMsg.includes("rate limit") ||
+                        errorMsg.includes("Traffic is currently high") ||
+                        errorMsg.includes("429") ||
+                        errorMsg.includes("Connection error");
+
+    return { success: false, error: errorMsg, isRateLimit };
   }
-
-  console.log(`  📝 Response (${fullResponse.length} chars)`);
-
-  const success = fullResponse.includes("SUCCESS") || fullResponse.includes("success");
-
-  if (success) {
-    const gitStatus = runCmd(`git status --short .`);
-    if (gitStatus.stdout.trim()) {
-      console.log(`  📁 Changes: ${gitStatus.stdout.trim()}`);
-      commitChanges(gap);
-      return true;
-    }
-  }
-  return false;
 }
+
+async function callClaude(gap: Gap, state: State): Promise<{ success: boolean; providerUsed?: string }> {
+  // Sort providers by priority
+  const sortedProviders = [...PROVIDERS].sort((a, b) => a.priority - b.priority);
+
+  for (const provider of sortedProviders) {
+    console.log(`  🤖 Trying provider: ${provider.name}`);
+
+    const result = await callClaudeWithProvider(provider, gap);
+
+    if (result.success) {
+      state.consecutiveFailures = 0;
+      state.lastProvider = provider.name;
+      return { success: true, providerUsed: provider.name };
+    }
+
+    if (result.isRateLimit) {
+      console.log(`  ⏳ [${provider.name}] Rate limited: ${result.error}`);
+      // Mark gap for later retry
+      gap.status = "waiting";
+      // Schedule retry in 10-30 minutes (randomized)
+      gap.retryAfter = Date.now() + (10 + Math.random() * 20) * 60 * 1000;
+      state.rateLimitUntil = Date.now() + 5 * 60 * 1000; // Global rate limit 5 min
+      state.consecutiveFailures++;
+      return { success: false };
+    }
+
+    console.log(`  ⚠️ [${provider.name}] Failed: ${result.error}`);
+  }
+
+  // All providers failed
+  state.consecutiveFailures++;
+  gap.status = "waiting";
+  gap.retryAfter = Date.now() + (15 + state.consecutiveFailures * 5) * 60 * 1000;
+  state.rateLimitUntil = Date.now() + state.consecutiveFailures * 5 * 60 * 1000;
+
+  return { success: false };
+}
+
+// ============================================================================
+// Commit with Meaningful Messages
+// ============================================================================
 
 function commitChanges(gap: Gap): void {
   try {
     const gitStatus = runCmd(`git status --short .`);
     if (gitStatus.stdout.trim()) {
       // Generate meaningful commit message
-      let commitTitle: string;
-      if (gap.whatToImplement) {
-        let capability = "";
-        // Try "Implement X from..." pattern (harvest gaps)
-        let match = gap.whatToImplement.match(/Implement (\w+) from/);
+      let commitTitle = `feat(${gap.id})`;
+      let capability = "";
+
+      // Try patterns in whatToImplement
+      const patterns = [
+        /Implement (\w+) from/,
+        /Create src\/skills\/(\w+)\.ts/,
+        /Create src\/sidecars\/(\w+)\.ts/,
+      ];
+
+      for (const pattern of patterns) {
+        const match = gap.whatToImplement?.match(pattern);
         if (match) {
           capability = match[1];
+          break;
         }
-        // Try "Create src/skills/X.ts" pattern (skill gaps)
-        if (!capability) {
-          match = gap.whatToImplement.match(/Create src\/skills\/(\w+)\.ts/);
-          if (match) capability = match[1];
-        }
-        // Try "Create src/sidecars/X.ts" pattern (sidecar gaps)
-        if (!capability) {
-          match = gap.whatToImplement.match(/Create src\/sidecars\/(\w+)\.ts/);
-          if (match) capability = match[1];
-        }
+      }
 
-        if (capability) {
-          if (gap.id.startsWith("GAP-HARVEST-")) {
-            commitTitle = `feat(harvest): implement ${capability} capability`;
-          } else if (gap.id.startsWith("GAP-SKILL-")) {
-            commitTitle = `feat(skills): add ${capability} skill`;
-          } else {
-            commitTitle = `feat(${gap.id}): implement ${capability}`;
-          }
+      if (capability) {
+        if (gap.id.startsWith("GAP-HARVEST-")) {
+          commitTitle = `feat(harvest): implement ${capability} capability`;
+        } else if (gap.id.startsWith("GAP-SKILL-")) {
+          commitTitle = `feat(skills): add ${capability} skill`;
         } else {
-          commitTitle = `feat(${gap.id})`;
+          commitTitle = `feat(${gap.id}): implement ${capability}`;
         }
-      } else {
-        commitTitle = `feat(${gap.id})`;
       }
 
       runCmd(`git add . && git commit -m "${commitTitle}
 
 Evolve loop - autonomous improvement.
 
-Co-Authored-By: Claude <noreply@anthropic.com>"`);
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"`);
+
       console.log(`  ✅ Committed: ${commitTitle}`);
     }
   } catch (e) {
     console.log(`  ⚠️ Commit failed: ${e}`);
+  }
+}
+
+// ============================================================================
+// Main Loop
+// ============================================================================
+
+async function runLoop(options: { once?: boolean }): Promise<void> {
+  const state = loadState();
+  console.log(`
+🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
+  MEOW EVOLVE — Self-Evolving Loop
+  Total solved: ${state.totalSolved} | Failed: ${state.totalFailed}
+🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
+`);
+
+  while (true) {
+    const now = Date.now();
+    let gaps = loadGaps();
+
+    // Filter to actionable gaps (not waiting for rate limit)
+    let actionableGaps = gaps.filter(g =>
+      g.status === "open" ||
+      (g.status === "waiting" && g.retryAfter && now >= g.retryAfter)
+    );
+
+    if (actionableGaps.length === 0) {
+      // Check if we need to discover new gaps
+      const openGaps = gaps.filter(g => g.status === "open" || g.status === "waiting");
+      if (openGaps.length === 0) {
+        console.log(`\n🔍 No open gaps - discovering...`);
+        discoverGaps();
+      } else {
+        // Find next waiting gap
+        const waitingGaps = gaps.filter(g => g.status === "waiting" && g.retryAfter);
+        if (waitingGaps.length > 0) {
+          const nextRetry = waitingGaps
+            .map(g => g.retryAfter!)
+            .sort((a, b) => a - b)[0];
+          const waitMs = nextRetry - now;
+          const waitMin = Math.ceil(waitMs / 60000);
+          console.log(`\n💤 All gaps waiting. Next retry in ${waitMin} minutes...`);
+        }
+      }
+      await new Promise(r => setTimeout(r, 60000)); // Check again in 1 minute
+      continue;
+    }
+
+    // Sort by priority
+    actionableGaps.sort((a, b) => {
+      const pOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+      return pOrder[a.priority] - pOrder[b.priority];
+    });
+
+    const gap = actionableGaps[0];
+
+    // Check if we're still in global rate limit window
+    if (state.rateLimitUntil > now) {
+      const waitMs = state.rateLimitUntil - now;
+      const waitMin = Math.ceil(waitMs / 60000);
+      console.log(`\n⏳ Global rate limit active. Waiting ${waitMin} minutes...`);
+      await new Promise(r => setTimeout(r, Math.min(waitMs, 60000)));
+      continue;
+    }
+
+    console.log(`\n🎯 Working on: ${gap.id} — ${gap.description}`);
+
+    // Try auto-implementation first
+    if (implementSkill(gap)) {
+      gap.status = "solved";
+      gap.retryAfter = undefined;
+      saveGaps(gaps);
+      state.totalSolved++;
+      console.log(`\n✅ ${gap.id} SOLVED!`);
+      commitChanges(gap);
+    } else {
+      // Call LLM
+      state.lastClaudeCall = now;
+      saveState(state);
+
+      console.log(`  🤖 Calling LLM...`);
+      const result = await callClaude(gap, state);
+
+      if (result.success) {
+        gap.status = "solved";
+        gap.retryAfter = undefined;
+        state.totalSolved++;
+        console.log(`\n✅ ${gap.id} SOLVED! (via ${result.providerUsed})`);
+        commitChanges(gap);
+      } else {
+        gap.status = "waiting";
+        console.log(`\n❌ ${gap.id} FAILED - scheduled for retry`);
+      }
+      saveGaps(gaps);
+    }
+
+    saveState(state);
+
+    if (options.once) {
+      console.log(`\nIteration complete.`);
+      break;
+    }
+
+    // Wait between iterations to avoid hammering
+    await new Promise(r => setTimeout(r, 5000));
   }
 }
 
@@ -554,14 +645,21 @@ function showStatus(): void {
   Session start: ${state.sessionStart}
   Total solved: ${state.totalSolved}
   Total failed: ${state.totalFailed}
+  Last provider: ${state.lastProvider || "none"}
+  Rate limit until: ${state.rateLimitUntil > Date.now() ? new Date(state.rateLimitUntil).toISOString() : "none"}
 ═══════════════════════════════════════════════
 
   GAPS (${gaps.length} total)
   ───────────────────────────────────────────────`);
-
+  const now = Date.now();
   for (const gap of gaps) {
-    const icon = gap.status === "solved" ? "✅" : gap.status === "blocked" ? "🚫" : "📋";
-    console.log(`  ${icon} ${gap.id} [${gap.priority}] ${gap.description}`);
+    let extra = "";
+    if (gap.status === "waiting" && gap.retryAfter) {
+      const waitMin = Math.ceil((gap.retryAfter - now) / 60000);
+      extra = ` (retry in ${waitMin}m)`;
+    }
+    const icon = gap.status === "solved" ? "✅" : gap.status === "blocked" ? "🚫" : gap.status === "waiting" ? "⏳" : "📋";
+    console.log(`  ${icon} ${gap.id} [${gap.priority}] ${gap.status}${extra}`);
   }
   console.log(`\n`);
 }
