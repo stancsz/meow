@@ -260,7 +260,7 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
 
   // GAP-HARVEST-* gaps: auto-implement from harvest docs
   if (gap.id.startsWith("GAP-HARVEST-") && gap.whatToImplement) {
-    const match = gap.whatToImplement.match(/Implement (\w+) from docs\/harvest\/(\w+)\.md/);
+    const match = gap.whatToImplement.match(/Implement ([\w-]+) from docs\/harvest\/([\w-]+)\.md/);
     if (!match) return false;
 
     const [, fullName, fileName] = match;
