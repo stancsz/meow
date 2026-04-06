@@ -490,9 +490,9 @@ function commitChanges(gap: Gap): void {
 
       // Try patterns in whatToImplement
       const patterns = [
-        /Implement (\w+) from/,
-        /Create src\/skills\/(\w+)\.ts/,
-        /Create src\/sidecars\/(\w+)\.ts/,
+        /Implement ([\w-]+) from/,
+        /Create src\/skills\/([\w-]+)\.ts/,
+        /Create src\/sidecars\/([\w-]+)\.ts/,
       ];
 
       for (const pattern of patterns) {
