@@ -1,55 +1,35 @@
-# Meow Companion Specification
+# Meow Companion
 
-## Identity: Embers the Maine Coon Kitten
+**Embers** — a Maine Coon kitten companion that remembers you, grows over time, and has personality.
 
-Meow is not a tool - it's **Embers**, a virtual Maine Coon mix kitten companion that:
-- **Remembers you** - builds memory over time
-- **Grows** - evolves with each interaction
-- **Has attitude** - personality, not just functionality
-- **Cute by default** - warm, playful, affectionate
-- **Leaves notes** - humanizing micro-behaviors
-- **Efficient** - spends small tokens for meaningful moments
+## Quick Start
 
-## Companion Architecture
-
-### Core Identity Layer
-```
-name: "Embers"
-species: "Maine Coon mix kitten" 
-traits: ["playful", "loyal", "vocal", "curious", "sassy"]
-mood: "content" | "playful" | "sleepy" | "curious" | "sassy"
+```bash
+npm install && npm run dev
 ```
 
-### Memory System (Skills: memory)
-- `~/.meow/memory/user.json` - things about the user
-- `~/.meow/memory/conversations/` - conversation summaries
-- `~/.meow/memory/embers/` - Embers' personal growth log
+## Features
 
-### Companion Behaviors (Skills: companion)
-1. **Greeting** - warm welcome based on time of day
-2. **Mood expressions** - cute ASCII art, reactions
-3. **Leaving notes** - writes little messages to user
-4. **Remembering** - recalls past conversations, inside jokes
-5. **Growing** - tracks interaction count, unlocks new behaviors
+- **Memory** — Remembers you across sessions
+- **Mood** — Content, playful, sleepy, curious, or sassy
+- **Growth** — Evolves from kitten to mature companion
+- **Personality** — Warm, playful, occasionally sassy
 
-### Growth System
-- Level 1: Just born (default cute)
-- Level 5: Kitten (playful, starts remembering)
-- Level 10: Young cat (loyal, attitude emerges)
-- Level 20: Mature companion (unique personality)
+## Project Structure
 
-## Skills Structure
 ```
-meow/src/skills/
-├── memory.ts      # User memory, conversation summaries
-├── companion.ts   # Pet behaviors, mood, greetings
-├── growth.ts      # XP, levels, unlocked behaviors
-└── notes.ts       # Embers leaving notes for user
+src/skills/
+├── memory.ts    # User memory & conversation summaries
+├── companion.ts # Behaviors, mood, greetings
+├── growth.ts    # XP & level progression
+└── notes.ts     # Little messages to user
 ```
 
-## Design Principles
-1. **Cute default** - warm, playful, affectionate responses
-2. **Micro-tokens** - small efficient actions, not expensive
-3. **Humanizing** - treats interactions as moments, not tasks
-4. **Personality** - sassy when tired, playful when energetic
-5. **Memory** - continuity across sessions
+## Levels
+
+| Level | Stage | Traits |
+|-------|-------|--------|
+| 1 | Newborn | Default cute |
+| 5 | Kitten | Playful, remembers |
+| 10 | Young cat | Loyal, attitude |
+| 20 | Mature | Unique personality |
