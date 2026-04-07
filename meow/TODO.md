@@ -409,45 +409,45 @@ Missing/incomplete sidecars:
 
 ---
 
-## BUGS TO FIX (2026-04-07)
+## BUGS FIXED (2026-04-07)
 
-### BUG-001: Slash commands broken
+### BUG-001: Slash commands broken ✅ FIXED
 **Problem:** `/exec`, `/simplify` → "Unknown command" but `exec`, `simplify` (no slash) works
-**Root cause:** CLI checks for slash commands before skill lookup, but the check happens after skill registry lookup fails
-**Fix:** Check `findSkill()` first before slash command parsing in cli/index.ts
+**Root cause:** Windows Git Bash mangles `/mcp help` to `C:/Program Files/Git/mcp help`
+**Fix:** Improved skill name extraction from mangled paths using known skill names list
 
-### BUG-002: Auto-commit message escaping
+### BUG-002: Auto-commit message escaping ✅ FIXED
 **Problem:** `git commit -m 'chore: auto-save'` fails because apostrophe breaks pathspec
-**Root cause:** Message contains single quote that shell interprets as end of string
-**Fix:** Use double quotes or escape apostrophes in auto-agent.ts commit messages
+**Fix:** Use double quotes instead of single quotes in auto-agent.ts commit messages
 
-### BUG-003: Network unreachable
+### BUG-003: Network unreachable ⚠️ ENVIRONMENT
 **Problem:** `git push` fails with "Could not resolve host: github.com"
 **Note:** This is an environment issue, not code bug. May need VPN or network fix.
 
 ---
 
-## GAPS TO CLOSE (2026-04-07)
+## GAPS STATUS (2026-04-07)
 
-### GAP-REAL-001: MCP servers not connected
-**Problem:** Only skill stub exists, no real MCP server connection
-**Fix:** Implement proper MCP client connection using mcp-client.ts
+### ✅ Harvest Stubs Removed
+Removed 14 harvest stub skills that were not really implemented:
+- acp-mode.ts, agency-agents.ts, checkpointing.ts, claude-code.ts
+- context7.ts, deploy.ts, hooks.ts, kafka.ts
+- mcp-servers.ts, memory.ts, research.ts, rewind.ts
+- streaming.ts, workspace-trust.ts
 
-### GAP-REAL-002: Streaming UX incomplete
-**Problem:** No partial renders, no buffered output, spinner flickers
-**Fix:** Add token buffering and partial render support in streaming.ts sidecar
+Real implementations exist in:
+- ACP mode: `src/sidecars/acp.ts` (works via `meow --acp`)
+- MCP client: `src/sidecars/mcp-client.ts` (protocol client)
+- Database: `src/skills/database.ts` (real implementation)
 
-### GAP-REAL-003: Hooks not implemented
-**Problem:** Pre/post execution hooks missing
-**Fix:** Implement hooks.ts sidecar with pre-hook and post-hook execution
+### Remaining Real Gaps (Not Harvest Stubs)
 
-### GAP-REAL-004: Workspace trust not implemented
-**Problem:** Security prompts for untrusted directories missing
-**Fix:** Implement workspace-trust.ts sidecar with trust checking
+These would require genuine implementation effort:
 
-### GAP-REAL-005: Context7 not implemented
-**Problem:** RAG-style doc retrieval not available
-**Fix:** Implement context7.ts as a skill that queries docs
+1. **GAP-REAL-002: Streaming UX** - Token buffering, partial renders, smoother animations
+2. **GAP-REAL-003: Hooks** - Pre/post execution hooks for automation
+3. **GAP-REAL-004: Workspace Trust** - Security prompts for untrusted directories
+4. **GAP-REAL-005: Context7 RAG** - RAG-style doc retrieval from docs
 
 ---
 
