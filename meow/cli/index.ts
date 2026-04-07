@@ -304,6 +304,28 @@ async function main() {
   // Initialize tools and skills
   await initializeToolRegistry();
 
+  // Initialize workspace trust — prompt if running in untrusted directory
+  const { initWorkspaceTrust, checkWorkspaceTrust, isPromptNeeded, recordPromptShown, trustWorkspace, distrustWorkspace } = await import("../src/sidecars/workspace-trust.ts");
+  initWorkspaceTrust(process.cwd());
+  const trustStatus = checkWorkspaceTrust();
+  if (!trustStatus.trusted && isPromptNeeded()) {
+    console.log(`${colors.yellow}[!] Workspace Trust${colors.reset}`);
+    const reason = trustStatus.reason || "This directory is not trusted.";
+    console.log("  " + reason);
+    console.log();
+    console.log(`  ${colors.cyan}Current directory: ${process.cwd()}${colors.reset}`);
+    console.log();
+    console.log(`  ${colors.dim}Options:${colors.reset}`);
+    console.log(`    ${colors.green}trust${colors.reset}   - Trust this directory permanently`);
+    console.log(`    ${colors.red}deny${colors.reset}    - Do not trust (skip prompt for this dir)`);
+    console.log(`    ${colors.dim}continue${colors.reset} - Proceed without changes`);
+    console.log();
+
+    // For now, just record that we showed the prompt and continue
+    // Interactive trust prompt would go here in REPL mode
+    recordPromptShown();
+  }
+
   // Initialize checkpointing sidecar (wraps write/edit tools with auto-checkpoint)
   const { initializeCheckpointing } = await import("../src/sidecars/checkpointing.ts");
   await initializeCheckpointing();
@@ -403,8 +425,8 @@ async function main() {
       const effectiveFirstArg = splitMangleMatch ? reassembleSplitMangle() : firstArg;
 
       // Strategy: Find known skill by searching for skill name patterns in the mangled string
-      // Skills are: simplify, review, commit, learn, mcp, perms, permissions, help, auto, exec, database
-      const knownSkills = ["simplify", "review", "commit", "learn", "mcp", "perms", "permissions", "help", "auto", "exec", "database"];
+      // Skills are: simplify, review, commit, learn, mcp, perms, permissions, help, auto, exec, database, context7
+      const knownSkills = ["simplify", "review", "commit", "learn", "mcp", "perms", "permissions", "help", "auto", "exec", "database", "context7"];
 
       // Look for a known skill followed by space (skill name followed by args)
       // or at the end of the string (skill name alone)
@@ -710,17 +732,22 @@ async function main() {
   };
 
   const runAgentStream = async (prompt: string, options: LeanAgentOptions = {}) => {
-    // Streaming mode - shows tokens as they arrive
+    // Streaming mode - shows tokens as they arrive with buffering
+    const { createBufferedStream } = await import("../src/sidecars/streaming.ts");
     process.stdout.write(`${colors.dim}`);
     let lastFrame = 0;
     let aborted = false;
 
+    const bufferedStream = createBufferedStream(
+      (text) => {
+        process.stdout.write(text);
+        lastFrame++;
+      },
+      { bufferSize: 15, flushIntervalMs: 30 }
+    );
+
     const onToken = (token: string) => {
-      process.stdout.write(token);
-      lastFrame++;
-      if (lastFrame % 10 === 0) {
-        process.stdout.write(`${colors.reset}${colors.dim}`);
-      }
+      bufferedStream.write(token);
     };
 
     abortController = new AbortController();
@@ -732,6 +759,7 @@ async function main() {
 
     try {
       const result = await runLeanAgentSimpleStream(prompt, { dangerous, ...options }, onToken);
+      bufferedStream.close();
       console.log(`${colors.reset}`);
       const tokenCount = result.usage?.totalTokens || lastFrame;
       console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset} ${colors.dim}(${tokenCount} tokens)${colors.reset}`);

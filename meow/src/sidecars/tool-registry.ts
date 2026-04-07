@@ -13,6 +13,7 @@
  * }
  */
 import { existsSync, readdirSync, statSync, readFileSync, writeFileSync } from "node:fs";
+import { runBeforeHooks, runAfterHooks } from "./hooks.ts";
 
 // ============================================================================
 // Types
@@ -138,7 +139,10 @@ const builtInTools: Tool[] = [
         };
       }
 
-      return new Promise((resolve) => {
+      // Run pre-hooks
+      runBeforeHooks({ command: cmd, tool: "shell", args: cmd });
+
+      const result = await new Promise<{ content: string; error?: string }>((resolve) => {
         const output: string[] = [];
         const errOutput: string[] = [];
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -194,6 +198,11 @@ const builtInTools: Tool[] = [
           finish("", `Shell failed: ${e.message}`);
         });
       });
+
+      // Run post-hooks
+      runAfterHooks({ command: cmd, tool: "shell", args: cmd });
+
+      return result;
     },
   },
   {
@@ -209,7 +218,10 @@ const builtInTools: Tool[] = [
     execute: async (args: unknown, context: ToolContext) => {
       const { cmd } = args as { cmd: string };
 
-      return new Promise((resolve) => {
+      // Run pre-hooks
+      runBeforeHooks({ command: `git ${cmd}`, tool: "git", args: cmd });
+
+      const result = await new Promise<{ content: string; error?: string }>((resolve) => {
         const output: string[] = [];
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
         let settled = false;
@@ -259,6 +271,11 @@ const builtInTools: Tool[] = [
           finish("", `Git failed: ${e.message}`);
         });
       });
+
+      // Run post-hooks
+      runAfterHooks({ command: `git ${cmd}`, tool: "git", args: cmd });
+
+      return result;
     },
   },
 ];
