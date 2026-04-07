@@ -304,12 +304,15 @@ async function main() {
   // Initialize tools and skills
   await initializeToolRegistry();
 
-  // Initialize workspace trust — prompt if running in untrusted directory
+  // Initialize workspace trust — BLOCK if running in untrusted directory
   const { initWorkspaceTrust, checkWorkspaceTrust, isPromptNeeded, recordPromptShown, trustWorkspace, distrustWorkspace } = await import("../src/sidecars/workspace-trust.ts");
   initWorkspaceTrust(process.cwd());
-  const trustStatus = checkWorkspaceTrust();
-  if (!trustStatus.trusted && isPromptNeeded()) {
-    console.log(`${colors.yellow}[!] Workspace Trust${colors.reset}`);
+
+  const handleTrustPrompt = async (): Promise<boolean> => {
+    const trustStatus = checkWorkspaceTrust();
+    if (trustStatus.trusted) return true;
+
+    console.log(`${colors.yellow}[!] Workspace Trust — This directory is not trusted${colors.reset}`);
     const reason = trustStatus.reason || "This directory is not trusted.";
     console.log("  " + reason);
     console.log();
@@ -317,13 +320,39 @@ async function main() {
     console.log();
     console.log(`  ${colors.dim}Options:${colors.reset}`);
     console.log(`    ${colors.green}trust${colors.reset}   - Trust this directory permanently`);
-    console.log(`    ${colors.red}deny${colors.reset}    - Do not trust (skip prompt for this dir)`);
-    console.log(`    ${colors.dim}continue${colors.reset} - Proceed without changes`);
+    console.log(`    ${colors.red}deny${colors.reset}    - Do not trust (exit)`);
+    console.log(`    ${colors.dim}continue${colors.reset} - Proceed without changes (single session only)`);
     console.log();
 
-    // For now, just record that we showed the prompt and continue
-    // Interactive trust prompt would go here in REPL mode
+    const rlTrust = readline.createInterface({ input, output });
+    const answer = await new Promise<string>((resolve) => {
+      rlTrust.question(
+        `${colors.bold}Choice (trust/deny/continue): ${colors.reset}`,
+        (ans) => resolve(ans.trim().toLowerCase())
+      );
+    });
+    rlTrust.close();
+
+    if (answer === "trust") {
+      trustWorkspace();
+      console.log(`${colors.green}✓ Directory trusted permanently${colors.reset}\n`);
+      return true;
+    }
+
+    if (answer === "deny") {
+      console.log(`${colors.red}✗ Exiting at your request${colors.reset}\n`);
+      process.exit(0);
+    }
+
+    // "continue" or anything else - session only, no permanent trust
     recordPromptShown();
+    console.log(`${colors.dim}Proceeding without permanent trust (this prompt will recur)${colors.reset}\n`);
+    return true;
+  };
+
+  // BLOCKING: wait for trust decision before any tool execution
+  if (isPromptNeeded()) {
+    await handleTrustPrompt();
   }
 
   // Initialize checkpointing sidecar (wraps write/edit tools with auto-checkpoint)
@@ -997,6 +1026,34 @@ Respond with ONLY the plan.`;
       }
     }
 
+    // Interactive confirmation for dangerous patterns (skip if already in dangerous mode)
+    if (!dangerous) {
+      const DANGEROUS_PATTERNS = [
+        { pattern: /^\s*(rm|del|format|rd)\s+[^-]/i, desc: "file deletion" },
+        { pattern: /^\s*git\s+push.*(-f|--force)/i, desc: "force push" },
+        { pattern: /^\s*git\s+reset.*(--hard|--mixed)/i, desc: "git reset" },
+        { pattern: /;\s*(rm|del|format)/i, desc: "destructive command in chain" },
+        { pattern: /\|.*(rm|del|format)/i, desc: "destructive command in pipe" },
+      ];
+
+      for (const { pattern, desc } of DANGEROUS_PATTERNS) {
+        if (pattern.test(trimmed)) {
+          console.log(`${colors.yellow}⚠️  Warning: This command may cause ${desc}${colors.reset}`);
+          const rlWarn = readline.createInterface({ input, output });
+          const answer = await new Promise<string>((resolve) => {
+            rlWarn.question(`${colors.bold}Proceed anyway? [y/N] ${colors.reset}`, (ans) => resolve(ans.trim().toLowerCase()));
+          });
+          rlWarn.close();
+          if (answer !== "y") {
+            console.log(`${colors.dim}Cancelled.${colors.reset}\n`);
+            conversation.pop(); // Remove the user message we added
+            return;
+          }
+          break; // Only prompt once
+        }
+      }
+    }
+
     // Run agent with conversation context
     conversation.push({ role: "user", content: trimmed });
     try {
@@ -1010,13 +1067,19 @@ Respond with ONLY the plan.`;
     }
   };
 
+  // Multi-line input state
+  let multiLineBuffer: string[] = [];
+  let isMultiLineMode = false;
+  const MULTI_LINE_TRIGGERS = [":", "{", "(", "=>", "->"];
+  const MULTI_LINE_INDENT = /^\s{2,}/;
+
   const promptUser = () => {
     let line = "";
     let cursorPos = 0;
 
     const redrawLine = () => {
       eraseLine();
-      process.stdout.write(prefix + line);
+      process.stdout.write((isMultiLineMode ? "│ " : prefix) + line);
       // Move cursor back to correct position
       const cursorBack = line.length - cursorPos;
       if (cursorBack > 0) {
@@ -1026,8 +1089,49 @@ Respond with ONLY the plan.`;
 
     const handleKeypress = (char: string, key: { name?: string; sequence?: string }) => {
       if (key?.name === "return") {
-        // Enter - submit command
+        // Enter - submit command (or continue multi-line)
         process.stdout.write("\n");
+
+        const trimmedLine = line.trim();
+        const isIndentContinued = MULTI_LINE_INDENT.test(line) && isMultiLineMode;
+        const endsWithTrigger = MULTI_LINE_TRIGGERS.some(t => trimmedLine.endsWith(t));
+        const isEmpty = trimmedLine === "";
+
+        // In multi-line mode, double-enter (empty line) submits, or indent continues
+        if (isMultiLineMode) {
+          if (isEmpty) {
+            // Double-enter: submit multi-line command
+            rl.history.push(multiLineBuffer.join("\n"));
+            historyIndex = -1;
+            const cmd = multiLineBuffer.join("\n");
+            multiLineBuffer = [];
+            isMultiLineMode = false;
+            rl.off("keypress", handleKeypress);
+            handleLine(cmd).then(() => {
+              if (!rl.closed) promptUser();
+            });
+            return;
+          } else if (isIndentContinued || endsWithTrigger) {
+            // Continue multi-line
+            multiLineBuffer.push(line);
+            line = "";
+            cursorPos = 0;
+            process.stdout.write("│ ");
+            return;
+          }
+        }
+
+        // Check if this starts multi-line mode
+        if (endsWithTrigger || (isIndentContinued && trimmedLine.length > 0)) {
+          multiLineBuffer.push(line);
+          isMultiLineMode = true;
+          line = "";
+          cursorPos = 0;
+          process.stdout.write("│ ");
+          return;
+        }
+
+        // Single line: submit normally
         rl.history.push(line);
         historyIndex = -1;
         const cmd = line;
@@ -1043,10 +1147,20 @@ Respond with ONLY the plan.`;
       }
 
       if (key?.name === "ctrl-c") {
-        process.stdout.write("^C\n");
-        line = "";
-        cursorPos = 0;
-        redrawLine();
+        if (isMultiLineMode) {
+          // Cancel multi-line input
+          process.stdout.write("^C\n");
+          multiLineBuffer = [];
+          isMultiLineMode = false;
+          line = "";
+          cursorPos = 0;
+          redrawLine();
+        } else {
+          process.stdout.write("^C\n");
+          line = "";
+          cursorPos = 0;
+          redrawLine();
+        }
         return;
       }
 
