@@ -26,7 +26,7 @@ interface ToolCall {
 declare global {
   interface Window {
     acp: {
-      initialize: (params?: { dangerous?: boolean }) => Promise<any>;
+      initialize: (params?: { dangerous?: boolean; workspacePath?: string }) => Promise<any>;
       newSession: () => Promise<any>;
       loadSession: (sessionId: string) => Promise<any>;
       prompt: (prompt: string) => Promise<{ content: string; usage: any }>;
@@ -35,6 +35,11 @@ declare global {
       toolsList: () => Promise<any[]>;
       toolsCall: (name: string, args: Record<string, unknown>) => Promise<any>;
       onAcpStream: (callback: (event: StreamEvent) => void) => () => void;
+    };
+    workspace: {
+      set: (path: string) => Promise<{ success: boolean; workspacePath: string | null }>;
+      get: () => Promise<{ workspacePath: string | null }>;
+      select: () => Promise<{ canceled: boolean; workspacePath: string | null }>;
     };
   }
 }
@@ -47,6 +52,7 @@ export default function ChatView() {
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [isAcpReady, setIsAcpReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -60,7 +66,11 @@ export default function ChatView() {
   useEffect(() => {
     const initAcp = async () => {
       try {
-        const result = await window.acp.initialize({ dangerous: true });
+        // Get stored workspace path
+        const ws = await window.workspace.get();
+        setWorkspacePath(ws.workspacePath || null);
+
+        const result = await window.acp.initialize({ dangerous: true, workspacePath: ws.workspacePath || undefined });
         console.log('ACP initialized:', result);
         setIsAcpReady(true);
 
@@ -73,6 +83,15 @@ export default function ChatView() {
     };
 
     initAcp();
+  }, []);
+
+  const selectWorkspace = useCallback(async () => {
+    const result = await window.workspace.select();
+    if (!result.canceled && result.workspacePath) {
+      setWorkspacePath(result.workspacePath);
+      // Re-initialize ACP with new workspace
+      await window.acp.initialize({ dangerous: true, workspacePath: result.workspacePath });
+    }
   }, []);
 
   // Subscribe to stream events
@@ -179,8 +198,19 @@ export default function ChatView() {
           <span className="text-sm text-[#888]">
             {isAcpReady ? 'Meow connected' : 'Connecting...'}
           </span>
+          {workspacePath && (
+            <span className="text-xs text-[#666] ml-2" title={workspacePath}>
+              📁 {workspacePath.split(/[/\\]/).pop()}
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={selectWorkspace}
+            className="text-xs px-2 py-1 rounded border border-[#333] text-[#888] hover:border-[#555]"
+          >
+            {workspacePath ? 'Change Workspace' : 'Set Workspace'}
+          </button>
           <button
             onClick={toggleStreaming}
             className="text-xs px-2 py-1 rounded border border-[#333] text-[#888] hover:border-[#555]"

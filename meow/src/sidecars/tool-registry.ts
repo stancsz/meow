@@ -24,6 +24,7 @@ export interface ToolContext {
   dangerous: boolean;
   abortSignal?: AbortSignal;
   timeoutMs?: number;  // Timeout for tool execution in milliseconds
+  workspacePath?: string;  // Restrict file operations to this directory
 }
 
 export interface ToolResult {
@@ -45,6 +46,25 @@ export interface Tool {
 }
 
 // ============================================================================
+// Workspace Path Guard
+// ============================================================================
+
+function isPathInWorkspace(filePath: string, workspacePath: string | undefined): boolean {
+  if (!workspacePath) return true; // No workspace set, allow all
+  const absFile = filePath.startsWith('/') ? filePath : filePath;
+  const normalizedWorkspace = workspacePath.replace(/\\/g, '/').replace(/\/$/, '');
+  return absFile.replace(/\\/g, '/').startsWith(normalizedWorkspace + '/') ||
+         absFile.replace(/\\/g, '/') === normalizedWorkspace;
+}
+
+function checkWorkspace(filePath: string, workspacePath: string | undefined): string | null {
+  if (!isPathInWorkspace(filePath, workspacePath)) {
+    return `Access denied: ${filePath} is outside the workspace directory${workspacePath ? ` (${workspacePath})` : ''}`;
+  }
+  return null;
+}
+
+// ============================================================================
 // Built-in Tools
 // ============================================================================
 
@@ -61,8 +81,10 @@ const builtInTools: Tool[] = [
       },
       required: ["path"],
     },
-    execute: async (args: unknown) => {
+    execute: async (args: unknown, context: ToolContext) => {
       const { path } = args as { path: string };
+      const wsError = checkWorkspace(path, context.workspacePath);
+      if (wsError) return { content: "", error: wsError };
       try {
         const content = readFileSync(path, "utf-8");
         return { content: `[Read ${path}]\n${content}` };
@@ -82,8 +104,10 @@ const builtInTools: Tool[] = [
       },
       required: ["path", "content"],
     },
-    execute: async (args: unknown) => {
+    execute: async (args: unknown, context: ToolContext) => {
       const { path, content } = args as { path: string; content: string };
+      const wsError = checkWorkspace(path, context.workspacePath);
+      if (wsError) return { content: "", error: wsError };
       try {
         writeFileSync(path, content, "utf-8");
         return { content: `[Wrote ${path}]` };
@@ -104,8 +128,10 @@ const builtInTools: Tool[] = [
       },
       required: ["path", "old_string", "new_string"],
     },
-    execute: async (args: unknown) => {
+    execute: async (args: unknown, context: ToolContext) => {
       const { path, old_string, new_string } = args as { path: string; old_string: string; new_string: string };
+      const wsError = checkWorkspace(path, context.workspacePath);
+      if (wsError) return { content: "", error: wsError };
       try {
         const content = readFileSync(path, "utf-8");
         if (!content.includes(old_string)) {

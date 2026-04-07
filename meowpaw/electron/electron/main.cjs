@@ -10,6 +10,9 @@ let agentStdin = null;
 let agentStdout = null;
 let agentStderr = null;
 
+// Workspace path (for file sandboxing)
+let workspacePath = null;
+
 // ACP request tracking
 let requestId = 0;
 const pendingRequests = new Map();
@@ -400,4 +403,27 @@ ipcMain.handle('acp/tools-call', async (event, { name, args }) => {
   } catch (e) {
     return { error: { code: -32603, message: e.message } };
   }
+});
+
+// Workspace IPC handlers
+ipcMain.handle('workspace/set', async (event, { path }) => {
+  workspacePath = path || null;
+  return { success: true, workspacePath };
+});
+
+ipcMain.handle('workspace/get', async () => {
+  return { workspacePath };
+});
+
+ipcMain.handle('workspace/select', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select Workspace Directory'
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, workspacePath };
+  }
+  workspacePath = result.filePaths[0];
+  return { canceled: false, workspacePath };
 });

@@ -50,3 +50,10 @@ contextBridge.exposeInMainWorld('acp', {
     return () => ipcRenderer.removeAllListeners('acp-stream-event');
   }
 });
+
+// Workspace IPC
+contextBridge.exposeInMainWorld('workspace', {
+  set: (path) => ipcRenderer.invoke('workspace/set', { path }),
+  get: () => ipcRenderer.invoke('workspace/get'),
+  select: () => ipcRenderer.invoke('workspace/select'),
+});

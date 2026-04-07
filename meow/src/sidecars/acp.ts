@@ -14,6 +14,7 @@ interface Session { id: string; messages: { role: string; content: string; times
 let cs: Session | null = null;
 let ca: AbortController | null = null;
 let dm = false;
+let workspacePath: string | undefined = undefined;
 
 function out(s: S) { process.stdout.write(JSON.stringify(s) + "\n"); }
 
@@ -24,6 +25,7 @@ function streamOut(event: StreamEvent) {
 
 async function init(p: Record<string, unknown>) {
   if (p.dangerous === true) dm = true;
+  if (typeof p.workspacePath === "string") workspacePath = p.workspacePath;
 
   // Load MCP tools if config exists
   const { registerTool } = await import("./tool-registry.ts");
@@ -76,7 +78,7 @@ async function promptStream(p: Record<string, unknown>) {
   if (!t) throw new Error("prompt required");
   ca = new AbortController();
   const msgs = cs?.messages ?? [];
-  const context: ToolContext = { dangerous: dm, cwd: process.cwd(), abortSignal: ca.signal };
+  const context: ToolContext = { dangerous: dm, cwd: process.cwd(), abortSignal: ca.signal, workspacePath };
 
   try {
     for await (const event of runLeanAgentStream(t, { dangerous: dm, abortSignal: ca.signal, messages: msgs.map(m => ({ role: m.role, content: m.content })) })) {
@@ -117,7 +119,7 @@ async function toolsCall(p: Record<string, unknown>) {
   const name = p.name as string;
   const args = p.args as Record<string, unknown> ?? {};
   if (!name) throw new Error("name required");
-  const context: ToolContext = { dangerous: dm, cwd: process.cwd(), abortSignal: ca?.signal };
+  const context: ToolContext = { dangerous: dm, cwd: process.cwd(), abortSignal: ca?.signal, workspacePath };
   return executeTool(name, args, context);
 }
 
