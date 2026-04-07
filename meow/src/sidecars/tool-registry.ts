@@ -12,10 +12,7 @@
  *   execute: (args: unknown, context: ToolContext) => Promise<ToolResult>
  * }
  */
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync, writeFileSync } from "node:fs";
 
 // ============================================================================
 // Types
@@ -50,7 +47,6 @@ export interface Tool {
 // Built-in Tools
 // ============================================================================
 
-import { readFileSync, writeFileSync } from "node:fs";
 import { exec, type ExecOptions } from "node:child_process";
 
 const builtInTools: Tool[] = [

@@ -399,37 +399,48 @@ async function main() {
     if (startsWithMangledPrefix || splitMangleMatch) {
       // Windows Git Bash mangled the skill command.
       // The first arg contains the full "C:/Program Files/Git/<skill> [args...]".
-      // " /" (space + slash) marks the boundary between skill name and args.
-      // If there's no space after the skill name (just "/mcp"), use last "/" as separator.
-      // For split-mangle (space-split path), use the reassembled path.
+      // Git Bash auto-completes /mcp to C:/Program Files/Git/mcp
       const effectiveFirstArg = splitMangleMatch ? reassembleSplitMangle() : firstArg;
-      const spaceSlashIdx = effectiveFirstArg.indexOf(" /");
-      let skillName: string;
-      let remainingFirstArg: string;
-      if (spaceSlashIdx >= 0) {
-        // Has args: "C:/Program Files/Git/mcp connect..." → skillName="mcp", remaining="connect..."
-        remainingFirstArg = effectiveFirstArg.slice(spaceSlashIdx + 2); // skip " /"
-        const spaceIdx2 = remainingFirstArg.indexOf(" ");
-        skillName = spaceIdx2 >= 0 ? remainingFirstArg.slice(0, spaceIdx2) : remainingFirstArg;
-      } else {
-        // No args: "C:/Program Files/Git/mcp" → skillName="mcp"
-        const lastSlash = effectiveFirstArg.lastIndexOf("/");
-        skillName = lastSlash >= 0 ? effectiveFirstArg.slice(lastSlash + 1) : effectiveFirstArg;
-        remainingFirstArg = "";
+
+      // Strategy: Find known skill by searching for skill name patterns in the mangled string
+      // Skills are: simplify, review, commit, learn, mcp, perms, permissions, help, auto, exec, database
+      const knownSkills = ["simplify", "review", "commit", "learn", "mcp", "perms", "permissions", "help", "auto", "exec", "database"];
+
+      // Look for a known skill followed by space (skill name followed by args)
+      // or at the end of the string (skill name alone)
+      let skillName = "";
+      let remainingFirstArg = "";
+
+      for (const skill of knownSkills) {
+        // Pattern 1: skill followed by space and args - "Git/simplify args"
+        const skillWithSpaceIdx = effectiveFirstArg.indexOf(skill + " ");
+        if (skillWithSpaceIdx >= 0) {
+          skillName = skill;
+          remainingFirstArg = effectiveFirstArg.slice(skillWithSpaceIdx + skill.length + 1).trim();
+          break;
+        }
+        // Pattern 2: skill at end of string or followed by path - "Git/skill"
+        const skillEndIdx = effectiveFirstArg.indexOf(skill);
+        if (skillEndIdx >= 0) {
+          const afterSkill = effectiveFirstArg.slice(skillEndIdx + skill.length);
+          // Skill found, and it's followed by end of string, slash, or space
+          if (afterSkill === "" || afterSkill.startsWith("/") || afterSkill.startsWith(" ")) {
+            skillName = skill;
+            remainingFirstArg = afterSkill.startsWith(" ") ? afterSkill.slice(1).trim() : "";
+            break;
+          }
+        }
       }
-      // Remaining args from firstArg after the skill name, plus extra filteredArgs
-      const afterSkillName = spaceSlashIdx >= 0
-        ? (remainingFirstArg.indexOf(" ") >= 0 ? remainingFirstArg.slice(remainingFirstArg.indexOf(" ") + 1) : "")
-        : "";
-      // For split-mangle, skip the first two args (reassembled path parts) and use the rest
+
+      // Build fullArgs from remainingFirstArg and extra filteredArgs
       const extraArgs = splitMangleMatch
         ? filteredArgs.slice(2).join(" ")
         : filteredArgs.slice(1).join(" ");
-      const fullArgs = [afterSkillName, extraArgs].filter(Boolean).join(" ");
+      const fullArgs = [remainingFirstArg, extraArgs].filter(Boolean).join(" ");
 
       const skill = findSkill(skillName);
       if (skill) {
-        console.log(`${colors.dim}Running skill: /${skill.name} (via Windows path mangle)${colors.reset}`);
+        console.log(`${colors.dim}Running skill: /${skill.name}${colors.reset}`);
         const result = await skill.execute(fullArgs, { cwd: process.cwd(), dangerous });
         if (result.error) {
           console.error(`${colors.red}${result.error}${colors.reset}`);
@@ -439,7 +450,7 @@ async function main() {
         return;
       }
 
-      // Not a skill — try slash commands from mangled path (e.g. /restore → C:/Program Files/Git/restore)
+      // Not a skill — try slash commands from mangled path
       const mangledPrompt = `/${skillName}${fullArgs ? " " + fullArgs : ""}`;
       const cmdResult2 = await parseSlashCommand(mangledPrompt, { cwd: process.cwd(), dangerous });
       if (cmdResult2.handled) {
