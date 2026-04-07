@@ -4,8 +4,8 @@
   "description": "Meow Desktop — AI agent companion",
   "main": "main.cjs",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
+    "start": "set NODE_ENV=development&& electron .",
+    "dev": "set NODE_ENV=development&& electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",

@@ -19,7 +19,7 @@ const pendingRequests = new Map();
 let streamBuffer = '';
 let streamResolve = null;
 
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV !== 'production';
 const isProd = !isDev;
 
 function createWindow() {
@@ -67,7 +67,7 @@ function createWindow() {
 
 function startServer() {
   return new Promise((resolve, reject) => {
-    const serverPath = path.join(__dirname, '../server');
+    const serverPath = path.join(__dirname, '../../server/server');
     if (!fs.existsSync(path.join(serverPath, 'package.json'))) {
       reject(new Error('Server directory not found'));
       return;
@@ -147,7 +147,7 @@ function startProductionServer(serverPath, resolve, reject) {
 
 function startAgent() {
   return new Promise((resolve, reject) => {
-    const agentPath = path.join(__dirname, '..');
+    const agentPath = path.join(__dirname, '../../..');
     if (!fs.existsSync(path.join(agentPath, 'package.json'))) {
       reject(new Error('Agent directory not found'));
       return;
