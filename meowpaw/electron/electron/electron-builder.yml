@@ -1,0 +1,53 @@
+appId: com.meowpaw.app
+productName: Meowpaw
+copyright: Copyright © 2026 Meow
+
+directories:
+  output: dist
+  buildResources: assets
+
+files:
+  - main.cjs
+  - preload.cjs
+  - assets/**/*
+
+extraMetadata:
+  main: main.cjs
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icon.ico
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.icns
+  category: public.app-category.productivity
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: assets
+  category: Utility
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+asar: true
+compression: maximum
