@@ -405,6 +405,14 @@ ipcMain.handle('acp/tools-call', async (event, { name, args }) => {
   }
 });
 
+ipcMain.handle('mcp/reload', async () => {
+  try {
+    return await acpRequest('mcp/reload');
+  } catch (e) {
+    return { error: { code: -32603, message: e.message } };
+  }
+});
+
 // Workspace IPC handlers
 ipcMain.handle('workspace/set', async (event, { path }) => {
   workspacePath = path || null;

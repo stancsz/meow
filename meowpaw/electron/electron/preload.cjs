@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('acp', {
   toolsList: () => ipcRenderer.invoke('acp/tools-list'),
   toolsCall: (name, args) => ipcRenderer.invoke('acp/tools-call', { name, args }),
 
+  // MCP
+  mcpReload: () => ipcRenderer.invoke('mcp/reload'),
+
   // Stream events (from streaming prompts)
   onAcpStream: (callback) => {
     ipcRenderer.on('acp-stream-event', (event, data) => callback(data));

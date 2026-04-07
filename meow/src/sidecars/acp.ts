@@ -123,6 +123,11 @@ async function toolsCall(p: Record<string, unknown>) {
   return executeTool(name, args, context);
 }
 
+async function mcpReload() {
+  const { loadMCPConfig } = await import("./mcp-client.ts");
+  return loadMCPConfig();
+}
+
 async function dispatch(r: R) {
   const { id, method, params = {} } = r;
   try {
@@ -136,6 +141,7 @@ async function dispatch(r: R) {
       case "cancel": result = await cancel(); break;
       case "tools/list": result = await toolsList(); break;
       case "tools/call": result = await toolsCall(params); break;
+      case "mcp/reload": result = await mcpReload(); break;
       default:
         out({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found: " + method } });
         return;
