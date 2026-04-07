@@ -393,6 +393,7 @@ async function main() {
         }
         return;
       }
+      // Skill not found - fall through to agent
     }
 
     if (startsWithMangledPrefix || splitMangleMatch) {

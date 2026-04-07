@@ -409,6 +409,48 @@ Missing/incomplete sidecars:
 
 ---
 
+## BUGS TO FIX (2026-04-07)
+
+### BUG-001: Slash commands broken
+**Problem:** `/exec`, `/simplify` → "Unknown command" but `exec`, `simplify` (no slash) works
+**Root cause:** CLI checks for slash commands before skill lookup, but the check happens after skill registry lookup fails
+**Fix:** Check `findSkill()` first before slash command parsing in cli/index.ts
+
+### BUG-002: Auto-commit message escaping
+**Problem:** `git commit -m 'chore: auto-save'` fails because apostrophe breaks pathspec
+**Root cause:** Message contains single quote that shell interprets as end of string
+**Fix:** Use double quotes or escape apostrophes in auto-agent.ts commit messages
+
+### BUG-003: Network unreachable
+**Problem:** `git push` fails with "Could not resolve host: github.com"
+**Note:** This is an environment issue, not code bug. May need VPN or network fix.
+
+---
+
+## GAPS TO CLOSE (2026-04-07)
+
+### GAP-REAL-001: MCP servers not connected
+**Problem:** Only skill stub exists, no real MCP server connection
+**Fix:** Implement proper MCP client connection using mcp-client.ts
+
+### GAP-REAL-002: Streaming UX incomplete
+**Problem:** No partial renders, no buffered output, spinner flickers
+**Fix:** Add token buffering and partial render support in streaming.ts sidecar
+
+### GAP-REAL-003: Hooks not implemented
+**Problem:** Pre/post execution hooks missing
+**Fix:** Implement hooks.ts sidecar with pre-hook and post-hook execution
+
+### GAP-REAL-004: Workspace trust not implemented
+**Problem:** Security prompts for untrusted directories missing
+**Fix:** Implement workspace-trust.ts sidecar with trust checking
+
+### GAP-REAL-005: Context7 not implemented
+**Problem:** RAG-style doc retrieval not available
+**Fix:** Implement context7.ts as a skill that queries docs
+
+---
+
 ## Principles for Adding Features
 
 1. **Ask first:** Does this need to be in core?

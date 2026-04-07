@@ -178,7 +178,7 @@ async function act(
       try {
         const { execSync } = await import("node:child_process");
         execSync("git add -A", { encoding: "utf-8", timeout: 5000 });
-        const result = execSync("git commit -m 'chore: auto-save'", { encoding: "utf-8", timeout: 5000 });
+        const result = execSync('git commit -m "chore: auto-save"', { encoding: "utf-8", timeout: 5000 });
         return { content: result.toString(), success: true };
       } catch (e: any) {
         return { content: `Commit failed: ${e.message}`, success: false };
