@@ -16,6 +16,10 @@ import { auto } from "./auto.ts";
 import { execSkill } from "./exec.ts";
 import { database } from "./database.ts";
 import { context7 } from "./context7.ts";
+import { pptx } from "./pptx.ts";
+import { docx } from "./docx.ts";
+import { pdf } from "./pdf.ts";
+import { xlsx } from "./xlsx.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -31,6 +35,10 @@ const allSkills: Skill[] = [
   execSkill,
   database,
   context7,
+  pptx,
+  docx,
+  pdf,
+  xlsx,
 ];
 
 // Auto-register on import
