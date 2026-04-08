@@ -16,8 +16,7 @@
 
 - [x] Desktop UI: Electron + Next.js dashboard (2026-04-08)
 - [x] Window management: minimize, maximize, tray icon (2026-04-08)
-- [ ] Window management: minimize, maximize, tray icon
-- [ ] Rich editor view: command palette, sidebar, tabs
+- [x] Rich editor view: command palette, sidebar, tabs (2026-04-08)
 - [ ] Visualization: session timeline, task boards, memory graphs
 - [ ] Settings UI: preferences panel, theme switcher
 - [ ] Notifications: system notifications for long-running tasks
