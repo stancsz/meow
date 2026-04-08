@@ -33,11 +33,16 @@ export interface TUIOptions {
   mode?: "full" | "compact" | "minimal";
   showTimestamps?: boolean;
   maxWidth?: number;
+  showStatusBar?: boolean;
   colors?: {
     userBg?: string; assistantBg?: string; toolColor?: string;
     errorColor?: string; successColor?: string; infoColor?: string; warnColor?: string;
   };
   spinnerFrames?: string[];
+}
+
+export interface StatusInfo {
+  mode?: string; branch?: string; session?: string; tokens?: number; dangerous?: boolean;
 }
 
 export interface TUI {
@@ -54,6 +59,8 @@ export interface TUI {
   startThinking(msg?: string): void;
   stopThinking(finalMsg?: string): void;
   updateStatus(msg: string): void;
+  setStatus(info: StatusInfo): void;
+  printStatusBar(): void;
   printSeparator(label?: string): void;
   startStream(): void;
   appendStream(text: string): void;
@@ -129,6 +136,8 @@ export function createTUI(opts: TUIOptions = {}): TUI {
   let isThinking = false;
   let thinkingMsg = "";
   let streamActive = false;
+  let statusInfo: StatusInfo = {};
+  const showStatusBar = opts.showStatusBar ?? false;
 
   return {
 
@@ -191,6 +200,24 @@ export function createTUI(opts: TUIOptions = {}): TUI {
     updateStatus(msg) {
       if (mode === "minimal") return;
       eraseLine(); write(C.dim + msg + C.reset + "\r");
+    },
+
+    setStatus(info: StatusInfo) {
+      statusInfo = { ...statusInfo, ...info };
+    },
+
+    printStatusBar() {
+      if (!showStatusBar || mode === "minimal") return;
+      const cols = (process.stdout as NodeJS.WriteStream & {columns?: number}).columns || 80;
+      const segs: string[] = [];
+      if (statusInfo.mode) segs.push(C.cyan + statusInfo.mode + C.reset);
+      if (statusInfo.dangerous) segs.push(C.brightRed + "DANGEROUS" + C.reset);
+      if (statusInfo.branch) segs.push(C.brightGreen + statusInfo.branch + C.reset);
+      if (statusInfo.session) segs.push(C.dim + statusInfo.session + C.reset);
+      if (statusInfo.tokens !== undefined) segs.push(C.dim + statusInfo.tokens + " tok" + C.reset);
+      const bar = segs.length > 0 ? "  " + segs.join(C.dim + " \u00b7 " + C.reset) : "";
+      const w = cols - 4 - bar.length;
+      write(C.dim + "\u2514" + "\u2500".repeat(Math.max(0, w)) + bar + " \u2518" + C.reset + "\n");
     },
 
     printSeparator(label) {

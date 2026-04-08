@@ -25,6 +25,7 @@ import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.t
 import { startACPServer } from "../src/sidecars/acp.ts";
 import { parseAndExecute as parseSlashCommand } from "../src/sidecars/slash-commands.ts";
 import { initMemory, setMemory, getMemory, remember, listMemoryKeys, deleteMemory, getMemoryStats, formatMemoryStats, listMemoryStores, autoLearnFromConversation } from "../src/sidecars/memory.ts";
+import { createTUI, type TUI } from "../src/sidecars/tui.ts";
 
 // Initialize i18n
 initI18n();
@@ -68,6 +69,7 @@ const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "
 let abortController: AbortController | null = null;
 let isThinking = false;
 let isStreaming = false;  // Toggle for streaming mode
+let tui: TUI | null = null;
 
 function interrupt(): void {
   if (abortController) {
@@ -627,9 +629,12 @@ async function main() {
     return;
   }
 
-  // Interactive mode
-  console.log(`${colors.blue}${colors.bold}🐱 meow — lean sovereign agent${colors.reset}`);
-  console.log(`${colors.dim}Type /help for commands. Type /exit to quit.${colors.reset}\n`);
+  // Interactive mode — initialize TUI
+  tui = createTUI({ mode: "compact", showStatusBar: true });
+  tui.setStatus({ mode: "interactive", dangerous: false });
+  tui.printHeader();
+  tui.printStatusBar();
+  tui.printInfo("Type /help for commands. Type /exit to quit.");
 
   // Initialize session - auto-resume last session
   if (!currentSessionId) {
@@ -735,17 +740,23 @@ async function main() {
         content: m.content,
       }));
 
+      // Show user message in TUI bubble
+      if (tui) tui.printUser(prompt);
+
       const result = await withSpinner(
         runLeanAgent(prompt, { dangerous, ...options, abortSignal: abortController?.signal, messages: agentMessages }),
         "thinking...",
         () => {
-          console.log(`\n${colors.yellow}⏹️ Stopped thinking${colors.reset}`);
+          if (tui) tui.printWarning("Stopped thinking");
         }
       );
-      console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
-      console.log(`\n--- ---\n${result.content}\n`);
-      console.log(formatUsage(result.usage));
-      if (result.usage) console.log();
+
+      // Show assistant response in TUI bubble
+      if (tui) tui.printAssistant(result.content);
+      if (tui) tui.printSuccess(`Done in ${result.iterations} iteration(s)`);
+      const usageLine = formatUsage(result.usage);
+      if (usageLine && tui) tui.printInfo(usageLine.trim());
+      if (tui) { tui.setStatus({ tokens: result.usage?.totalTokens }); tui.printStatusBar(); }
 
       // Update conversation for next turn
       conversation.push({ role: "user", content: prompt });
@@ -768,10 +779,10 @@ async function main() {
       return result;
     } catch (e: any) {
       if (e.message === "Interrupted") {
-        console.log(`${colors.yellow}⏹️ Cancelled${colors.reset}\n`);
+        if (tui) tui.printWarning("Cancelled");
         return;
       }
-      console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}\n`);
+      if (tui) tui.printError(`Error: ${e.message}`);
       throw e;
     } finally {
       setCursorVisible(true);
@@ -901,6 +912,7 @@ Respond with ONLY the plan.`;
     // Built-in commands
     if (trimmed === "/exit") {
       saveSession();
+      if (tui) { tui.destroy(); tui = null; }
       console.log(`${colors.yellow}${t("goodbye")}${colors.reset}`);
       rl.close();
       return;
@@ -912,8 +924,7 @@ Respond with ONLY the plan.`;
     }
 
     if (trimmed === "/clear") {
-      console.clear();
-      console.log(`${colors.blue}${colors.bold}🐱 meow — lean sovereign agent${colors.reset}\n`);
+      if (tui) tui.clear(); else console.clear();
       conversation.length = 0;
       conversation.push({ role: "system", content: buildSystemPrompt() });
       return;
@@ -924,6 +935,7 @@ Respond with ONLY the plan.`;
       console.log(
         `${dangerous ? colors.red : colors.green}Dangerous mode: ${dangerous ? "ON" : "OFF"}${colors.reset}\n`
       );
+      if (tui) tui.setStatus({ dangerous });
       return;
     }
 
