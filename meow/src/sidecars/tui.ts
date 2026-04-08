@@ -1,20 +1,9 @@
 /**
  * tui.ts - TUI Sidecar for Meow CLI
  *
- * Rich terminal UI primitives: colored bubbles, spinners, status bar,
- * tool call formatting, stream rendering, and separators.
- *
- * Usage:
- *   import { createTUI, C } from "./sidecars/tui.ts";
- *   const ui = createTUI({ mode: "compact" });
- *   ui.printHeader();
- *   ui.startThinking("working...");
- *   ui.stopThinking("done!");
- *   ui.destroy();
+ * Rich terminal UI primitives.
  */
-const ESC = "";
-
-// === Color / ANSI constants ===
+const ESC = "\u001b";
 
 export const C = {
   reset:         ESC + "[0m",
@@ -39,8 +28,6 @@ export const C = {
   cursorShow:    ESC + "[?25h",
   cursorHide:    ESC + "[?25l",
 };
-
-// === Options & public interface ===
 
 export interface TUIOptions {
   mode?: "full" | "compact" | "minimal";
@@ -73,6 +60,7 @@ export interface TUI {
   endStream(): void;
   destroy(): void;
 }
+
 const DEFAULT_SPINNER = [
   "⠋","⠙","⠹","⠸","⠼",
   "⠴","⠦","⠷","⠇","⠏"
@@ -88,8 +76,7 @@ function ts(enabled: boolean): string {
 
 function wrap(text: string, w: number): string[] {
   const lines: string[] = [];
-  for (const para of text.split("
-")) {
+  for (const para of text.split("\n")) {
     if (para.length <= w) { lines.push(para || " "); continue; }
     const words = para.split(" "); let line = "";
     for (const word of words) {
@@ -117,24 +104,17 @@ function bubble(
   const label = role === "user" ? "You" : "Meow";
   const bg = role === "user" ? userBg : asstBg;
   const iw = usableWidth(80);
-  write("
-" + ts(showTs) + C.bold + "  " + label + C.reset + " " + C.dim + "(just now)" + C.reset + "
-");
-  write("  " + bg + " " + C.reset + " ".repeat(iw) + bg + " " + C.reset + "
-");
+  write("\n" + ts(showTs) + C.bold + "  " + label + C.reset + " " + C.dim + "(just now)" + C.reset + "\n");
+  write("  " + bg + " " + C.reset + " ".repeat(iw) + bg + " " + C.reset + "\n");
   for (const l of wrap(text, iw - 4))
-    write("  " + bg + " " + C.white + l.padEnd(iw - 4) + C.reset + bg + " " + C.reset + "
-");
-  write("  " + bg + " " + C.reset + " ".repeat(iw) + bg + " " + C.reset + "
-");
+    write("  " + bg + " " + C.white + l.padEnd(iw - 4) + C.reset + bg + " " + C.reset + "\n");
+  write("  " + bg + " " + C.reset + " ".repeat(iw) + bg + " " + C.reset + "\n");
 }
 
 function line(text: string, prefix: string, maxWidth: number, showTs: boolean): void {
   const iw = usableWidth(maxWidth - prefix.length - 2);
-  for (const l of wrap(text, iw)) write(ts(showTs) + prefix + l + "
-");
+  for (const l of wrap(text, iw)) write(ts(showTs) + prefix + l + "\n");
 }
-// === TUI factory ===
 
 export function createTUI(opts: TUIOptions = {}): TUI {
   const { mode = "compact", showTimestamps = false, maxWidth = 80 } = opts;
@@ -165,12 +145,10 @@ export function createTUI(opts: TUIOptions = {}): TUI {
         C.brightMagenta + "   /  o   o  " + C.reset + "\\" + C.brightMagenta + "/",
         C.brightMagenta + "  ( ==  ^  == )   " + C.brightWhite + "Meow" + C.reset + " " + C.dim + "lean sovereign agent",
         C.brightMagenta + "   " + C.reset + "\\" + C.brightMagenta + " )" + C.reset + "-" + C.brightMagenta + "( /",
-        C.brightMagenta + "    " + C.reset + "\\" + C.dim + """ + C.reset + "" + C.brightMagenta + """ + C.reset + C.dim + "" /" + C.reset,
+        C.brightMagenta + "    " + C.reset + "\\" + C.dim + "`" + C.reset + "_" + C.brightMagenta + "`" + C.reset + C.dim + " /" + C.reset,
       ];
-      for (const row of art) write(row + "
-");
-      write("
-");
+      for (const row of art) write(row + "\n");
+      write("\n");
     },
 
     printUser(text) {
@@ -184,9 +162,7 @@ export function createTUI(opts: TUIOptions = {}): TUI {
     },
 
     printToolCall(tool, args) {
-      write("
-" + ts(showTimestamps) + "  " + C.dim + "[" + toolColor + tool + C.reset + C.dim + "]" + C.reset + " " + C.brightBlack + args.slice(0, maxWidth - 30) + C.dim + C.reset + "
-");
+      write("\n" + ts(showTimestamps) + "  " + C.dim + "[" + toolColor + tool + C.reset + C.dim + "]" + C.reset + " " + C.brightBlack + args.slice(0, maxWidth - 30) + C.dim + C.reset + "\n");
     },
 
     printToolResult(result) { line(result.slice(0, 500), C.green + "  --> " + C.reset, maxWidth, showTimestamps); },
@@ -209,8 +185,7 @@ export function createTUI(opts: TUIOptions = {}): TUI {
       if (!isThinking) return;
       if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
       isThinking = false; eraseLine();
-      if (finalMsg) write("  " + C.green + "OK" + C.reset + " " + finalMsg + "
-");
+      if (finalMsg) write("  " + C.green + "OK" + C.reset + " " + finalMsg + "\n");
     },
 
     updateStatus(msg) {
@@ -221,21 +196,15 @@ export function createTUI(opts: TUIOptions = {}): TUI {
     printSeparator(label) {
       const w = usableWidth(maxWidth);
       if (label) {
-        write("
-  " + C.dim + "--" + C.reset + " " + label + " " + C.dim + "-".repeat(Math.max(0, w - label.length - 4)) + C.reset + "
-");
+        write("\n  " + C.dim + "--" + C.reset + " " + label + " " + C.dim + "-".repeat(Math.max(0, w - label.length - 4)) + C.reset + "\n");
       } else {
-        write("
-  " + C.dim + "---" + C.reset + "
-");
+        write("\n  " + C.dim + "---" + C.reset + "\n");
       }
     },
 
-    startStream()  { streamActive = true; write("
-"); },
+    startStream()  { streamActive = true; write("\n"); },
     appendStream(text) { if (!streamActive) { write(text); return; } write(text); },
-    endStream()    { streamActive = false; write("
-"); },
+    endStream()    { streamActive = false; write("\n"); },
 
     destroy() {
       if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
