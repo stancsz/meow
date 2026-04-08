@@ -385,14 +385,14 @@ if (apiKeyMissing) {
       expect(result.completed).toBe(true);
       expect(result.content.length).toBeGreaterThan(0);
       console.log(`  Response: ${result.content.slice(0, 100)}...`);
-    });
+    }, { timeout: 60000 });
 
     test("Max iterations enforced", async () => {
       const result = await runLeanAgent("Count from 1 to 200", {
         maxIterations: 1,
       });
       expect(result.iterations).toBeLessThanOrEqual(1);
-    });
+    }, { timeout: 60000 });
   });
 
   // ============================================================================
@@ -427,7 +427,7 @@ if (apiKeyMissing) {
       const result = await runLeanAgentSimpleStream("Say exactly: test", { maxIterations: 2 });
       expect(result.content.length).toBeGreaterThan(0);
       expect(result.content.toLowerCase()).toContain("test");
-    });
+    }, { timeout: 60000 });
   });
 
   // ============================================================================
@@ -455,7 +455,7 @@ if (apiKeyMissing) {
       });
       expect(result.content).toBeTruthy();
       console.log(`  Result after abort: ${result.content.slice(0, 50)}...`);
-    });
+    }, { timeout: 120000 });
   });
 
   // ============================================================================
@@ -471,7 +471,7 @@ if (apiKeyMissing) {
       expect(result.completed).toBe(true);
       expect(result.content).toMatch(/42/);
       console.log(`  Memory test result: ${result.content.slice(0, 100)}...`);
-    });
+    }, { timeout: 120000 });
 
     test("Long conversation handled", async () => {
       let conversation = "Count from 1 to 5";
@@ -480,7 +480,7 @@ if (apiKeyMissing) {
         conversation = `The previous count was: ${result.content}. Now count from 6 to 10.`;
       }
       expect(conversation).toContain("10");
-    });
+    }, { timeout: 120000 });
   });
 
   // ============================================================================
