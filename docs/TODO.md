@@ -11,6 +11,7 @@
 - [ ] Onboarding: first-run experience, tutorial walkthrough
 - [x] Session management: named sessions, session preview, easy resume
 - [x] Tool output formatting: pretty-printed JSON, tables, trees (2026-04-09)
+- [ ] Self-improvement loop: learn from hermes-agent (nousresearch/hermes-agent) — autonomous skill creation from experience, periodic nudges, trajectory compression, agent-curated memory with cross-session recall via FTS5 + LLM summarization
 
 ## meowpaw — become as beautiful and capable as tmp/opencowork
 

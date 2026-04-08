@@ -4,9 +4,9 @@
 #   Or:  powershell -ExecutionPolicy Bypass -File setup.ps1
 #
 # Installs 3 scheduled tasks:
-#   1. Meow-KillAgents      — every 30 min (graceful then force kill)
-#   2. Meow-FeatureDevAgent — every hour (:01)
-#   3. Meow-QAUxAgent       — every hour (:31)
+#   1. Meow-KillAgents      — :00 (graceful then force kill if needed)
+#   2. Meow-FeatureDevAgent — :02 (implements top TODO item, commits)
+#   3. Meow-QAUxAgent       — :04 (QA in parallel)
 
 $ErrorActionPreference = "Continue"
 
@@ -50,19 +50,22 @@ schtasks /Delete /TN "Meow-KillAgents" /F 2>$null
 schtasks /Delete /TN "Meow-FeatureDevAgent" /F 2>$null
 schtasks /Delete /TN "Meow-QAUxAgent" /F 2>$null
 
-# Create tasks using schtasks.exe
-Write-Host "Creating Meow-KillAgents..."
+# Create tasks — all at :01 every hour (runs in parallel)
+Write-Host "Creating Meow-KillAgents (hourly at :00)..."
 $killCmd = "powershell.exe -ExecutionPolicy Bypass -File `"$KillScriptPath`""
-schtasks /Create /TN "Meow-KillAgents" /TR $killCmd /SC MINUTE /MO 30 /F
+schtasks /Create /TN "Meow-KillAgents" /TR $killCmd /SC HOURLY /MO 1 /ST 00:00 /F
 
-Write-Host "Creating Meow-FeatureDevAgent..."
-$featureCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `"" + $ProjectDir + "`"; Get-Content `"" + $FeaturePromptPath + "`" | claude --dangerously-skip-permissions --print"
-schtasks /Create /TN "Meow-FeatureDevAgent" /TR $featureCmd /SC HOURLY /MO 1 /ST 00:01 /F
+Write-Host "Creating Meow-FeatureDevAgent (hourly at :02)..."
+$featureCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $ProjectDir + "`'; Get-Content `'" + $FeaturePromptPath + "`' | claude --dangerously-skip-permissions --print"
+schtasks /Create /TN "Meow-FeatureDevAgent" /TR $featureCmd /SC HOURLY /MO 1 /ST 00:02 /F
 
-Write-Host "Creating Meow-QAUxAgent..."
-$qaCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `"" + $ProjectDir + "`"; Get-Content `"" + $QAPromptPath + "`" | claude --dangerously-skip-permissions --print"
-schtasks /Create /TN "Meow-QAUxAgent" /TR $qaCmd /SC HOURLY /MO 1 /ST 00:31 /F
+Write-Host "Creating Meow-QAUxAgent (hourly at :04)..."
+$qaCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $ProjectDir + "`'; Get-Content `'" + $QAPromptPath + "`' | claude --dangerously-skip-permissions --print"
+schtasks /Create /TN "Meow-QAUxAgent" /TR $qaCmd /SC HOURLY /MO 1 /ST 00:04 /F
 
 Write-Host ""
 Write-Host "Installed 3 scheduled tasks:"
-Get-ScheduledTask | Where-Object { $_.TaskName -like "Meow-*" } | Select-Object TaskName, State
+Get-ScheduledTask | Where-Object { $_.TaskName -like "Meow-*" } | ForEach-Object {
+    $info = Get-ScheduledTaskInfo -TaskName $_.TaskName
+    Write-Host "  $($_.TaskName) — NextRun=$($info.NextRunTime)"
+}

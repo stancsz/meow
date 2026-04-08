@@ -75,7 +75,9 @@ docs/research/competitors/
 ├── open-interpreter/          # Open source local agent
 ├── aider/                    # AI pair programming
 ├── clinerules/               # Hooks + rules engine
-└── open-hands/               # Full-stack AI agent
+├── open-hands/               # Full-stack AI agent
+├── mempalace/                # Memory palace — spatial memory system
+└── hermes-agent/             # Self-improving agent with reflection loop
 ```
 
 When Meow encounters a capability it lacks, it can:
