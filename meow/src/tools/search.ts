@@ -39,10 +39,10 @@ export async function glob(args: { pattern: string; cwd?: string }): Promise<Too
       const matched = allFiles.filter((f) => regex.test(f));
       return { content: matched.join("\n") };
     } catch {
-      // Fallback to find command
+      // Fallback to find command - Windows compatible
       const pattern = args.pattern.replace("**/", "*").replace("**", "*");
       const output = execSync(
-        `find . -name "${pattern}" -type f 2>/dev/null | head -100`,
+        `find . -name "${pattern}" -type f 2>NUL | head -100`,
         { cwd, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
       );
       return { content: output.trim() };
@@ -62,23 +62,56 @@ export async function grep(args: {
   recursive?: boolean;
 }): Promise<ToolResult> {
   try {
-    const cwd = args.path || process.cwd();
+    const searchPath = args.path || process.cwd();
     const pattern = args.pattern;
+
+    // Check if path is a file by trying to read it as a directory (will throw if file or not exist)
+    let isFile = false;
+    try {
+      readdirSync(searchPath);
+      // If this succeeds, it's a directory
+      isFile = false;
+    } catch (e: any) {
+      // If ENOTDIR, it's a file; otherwise it might not exist
+      if (e.code === "ENOTDIR") {
+        isFile = true;
+      }
+      // For any other error (ENOENT, etc.), treat as file path and let rg handle it
+      isFile = true;
+    }
 
     // Try ripgrep first
     try {
-      const flags = args.recursive !== false ? "-r" : "";
-      const output = execSync(
-        `rg --line-number --color=never -e "${pattern}" ${flags} "${cwd}" 2>/dev/null | head -100`,
-        { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
-      );
+      let output: string;
+      if (isFile) {
+        // For file paths, search within the file without -r flag
+        output = execSync(
+          `rg --line-number --color=never -e "${pattern}" "${searchPath}" 2>/dev/null | head -100`,
+          { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
+        );
+      } else {
+        // For directories, use recursive search
+        const flags = args.recursive !== false ? "-r" : "";
+        output = execSync(
+          `rg --line-number --color=never -e "${pattern}" ${flags} "${searchPath}" 2>/dev/null | head -100`,
+          { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
+        );
+      }
       return { content: output.trim() };
     } catch {
       // Fallback to grep
-      const output = execSync(
-        `grep -rn --include="*" "${pattern}" "${cwd}" 2>/dev/null | head -100`,
-        { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
-      );
+      let output: string;
+      if (isFile) {
+        output = execSync(
+          `grep -n --color=never -e "${pattern}" "${searchPath}" 2>/dev/null | head -100`,
+          { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
+        );
+      } else {
+        output = execSync(
+          `grep -rn --include="*" "${pattern}" "${searchPath}" 2>/dev/null | head -100`,
+          { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
+        );
+      }
       return { content: output.trim() };
     }
   } catch (e: any) {
