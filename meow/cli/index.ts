@@ -24,6 +24,7 @@ import { initI18n, t } from "../src/sidecars/i18n/index.ts";
 import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.ts";
 import { startACPServer } from "../src/sidecars/acp.ts";
 import { parseAndExecute as parseSlashCommand } from "../src/sidecars/slash-commands.ts";
+import { initMemory, setMemory, getMemory, remember, listMemoryKeys, deleteMemory, getMemoryStats, formatMemoryStats, listMemoryStores, autoLearnFromConversation } from "../src/sidecars/memory.ts";
 
 // Initialize i18n
 initI18n();
@@ -367,6 +368,13 @@ async function main() {
   const tools = getAllTools();
   console.log(`${colors.dim}${t("tools_loaded", { n: tools.length, m: skills.length })}${colors.reset}`);
 
+  // Initialize memory sidecar
+  await initMemory();
+  const memStores = listMemoryStores();
+  if (memStores.length > 0) {
+    console.log(`${colors.dim}Memory: ${memStores.join(", ")}${colors.reset}`);
+  }
+
   // Handle --resume flag
   if (resumeSession) {
     const lastSessionId = getLastSessionId();
@@ -705,6 +713,12 @@ async function main() {
     console.log(`  ${colors.green}/sessions${colors.reset}  List saved sessions`);
     console.log(`  ${colors.green}/resume${colors.reset}    Resume a session (e.g., /resume session_123)`);
     console.log();
+    console.log(`${colors.bold}Memory:${colors.reset}`);
+    console.log(`  ${colors.green}/remember${colors.reset}  Remember a fact (e.g., /remember I use TypeScript)`);
+    console.log(`  ${colors.green}/forget${colors.reset}    Forget a memory key (e.g., /forget key_name)`);
+    console.log(`  ${colors.green}/memory${colors.reset}    Show memory stats`);
+    console.log(`  ${colors.green}/facts${colors.reset}     Show all remembered facts`);
+    console.log();
     console.log(`${colors.bold}Skills:${colors.reset}`);
     for (const skill of skills) {
       console.log(`  ${colors.green}/${skill.name}${colors.reset}   ${skill.description}`);
@@ -743,6 +757,10 @@ async function main() {
         { role: "assistant", content: result.content, timestamp: new Date().toISOString() }
       );
       saveSession();
+
+      // Auto-learn from conversation
+      const conversationSlice = conversation.filter(m => m.role !== "system" && m.role !== "tool");
+      autoLearnFromConversation("user", conversationSlice);
 
       // Check if session needs compaction
       await checkAndCompact();
@@ -800,6 +818,7 @@ async function main() {
         { role: "assistant", content: result.content, timestamp: new Date().toISOString() }
       );
       saveSession();
+      autoLearnFromConversation("user", conversation.filter(m => m.role !== "system" && m.role !== "tool"));
       await checkAndCompact();
 
       return result;
@@ -998,6 +1017,57 @@ Respond with ONLY the plan.`;
         }
       });
       console.log(`${colors.green}Resumed session: ${sessionId}${colors.reset}\n`);
+      return;
+    }
+
+    // Memory commands
+    if (trimmed.startsWith("/remember ")) {
+      const content = trimmed.slice(10);
+      if (!content) {
+        console.log(`${colors.red}Usage: /remember <fact>${colors.reset}\n`);
+        return;
+      }
+      const key = `fact_${Date.now()}`;
+      remember("user", key, content, { source: "user" });
+      console.log(`${colors.green}💡 Remembered: ${content}${colors.reset}\n`);
+      return;
+    }
+
+    if (trimmed.startsWith("/forget ")) {
+      const key = trimmed.slice(8).trim();
+      if (!key) {
+        console.log(`${colors.red}Usage: /forget <key>${colors.reset}\n`);
+        return;
+      }
+      const deleted = deleteMemory("user", key);
+      if (deleted) {
+        console.log(`${colors.yellow}Forgotten: ${key}${colors.reset}\n`);
+      } else {
+        console.log(`${colors.red}Key not found: ${key}${colors.reset}\n`);
+      }
+      return;
+    }
+
+    if (trimmed === "/memory") {
+      for (const store of listMemoryStores()) {
+        console.log(formatMemoryStats(store));
+        console.log();
+      }
+      return;
+    }
+
+    if (trimmed === "/facts") {
+      const keys = listMemoryKeys("user");
+      if (keys.length === 0) {
+        console.log(`${colors.dim}No memories yet. Use /remember to add facts.${colors.reset}\n`);
+        return;
+      }
+      console.log(`${colors.bold}💭 Memories:${colors.reset}`);
+      for (const key of keys.sort()) {
+        const value = getMemory("user", key);
+        console.log(`  ${colors.cyan}${key}${colors.reset}: ${JSON.stringify(value)}`);
+      }
+      console.log();
       return;
     }
 
