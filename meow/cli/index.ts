@@ -27,6 +27,10 @@ import { parseAndExecute as parseSlashCommand } from "../src/sidecars/slash-comm
 import { initMemory, setMemory, getMemory, remember, listMemoryKeys, deleteMemory, getMemoryStats, formatMemoryStats, listMemoryStores, autoLearnFromConversation } from "../src/sidecars/memory.ts";
 import { createTUI, type TUI } from "../src/sidecars/tui.ts";
 import { printError as printBeautifulError, formatError } from "../src/sidecars/error-formatter.ts";
+import {
+  trackSessionStart, trackSessionEnd, trackTokenUsage, trackError, trackToolCall,
+  setCurrentSession, getAggregatedStats, formatAnalyticsReport
+} from "../src/sidecars/analytics.ts";
 
 // Initialize i18n
 initI18n();

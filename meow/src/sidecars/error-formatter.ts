@@ -421,3 +421,33 @@ export function permissionDenied(path: string): FormattedError {
 export function shellError(cmd: string, exitCode: number): FormattedError {
   return formatError(`Shell command failed with exit code ${exitCode}: ${cmd}`);
 }
+
+// ============================================================================
+// Error summary renderer
+// ============================================================================
+
+export function errorSummary(errors: unknown[]): string {
+  const kinds = new Map<ErrorKind, number>();
+  for (const e of errors) {
+    const k = classifyError(e);
+    kinds.set(k, (kinds.get(k) || 0) + 1);
+  }
+  const out: string[] = [];
+  out.push(C.dim + border(true) + C.reset);
+  out.push(
+    C.dim + B.v + " " + C.reset +
+    C.brightRed + pad("  " + errors.length + " error(s) encountered", W - 2) +
+    C.reset + C.dim + B.v + C.reset
+  );
+  out.push(C.dim + B.lt + B.h.repeat(W - 2) + B.rb + C.reset);
+  for (const [kind, count] of [...kinds.entries()].sort((a, b) => b[1] - a[1])) {
+    const meta = ERROR_KIND_META[kind];
+    out.push(
+      C.dim + B.v + " " + C.reset +
+      meta.color + pad(meta.emoji + " " + meta.title + ":  " + count, W - 2) +
+      C.reset + C.dim + B.v + C.reset
+    );
+  }
+  out.push(C.dim + border(false) + C.reset);
+  return out.join("\n");
+}
