@@ -1,12 +1,22 @@
 @import "tailwindcss";
 
-:root {
+:root,
+[data-theme="dark"] {
   --bg-color: #0a0a0a;
   --text-color: #ffffff;
   --accent-color: #2563eb;
   --accent-hover: #1d4ed8;
   --input-bg: #1a1a1a;
   --border-color: #333333;
+}
+
+[data-theme="light"] {
+  --bg-color: #f8fafc;
+  --text-color: #0f172a;
+  --accent-color: #2563eb;
+  --accent-hover: #1d4ed8;
+  --input-bg: #ffffff;
+  --border-color: #e2e8f0;
 }
 
 body {
