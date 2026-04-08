@@ -383,6 +383,15 @@ async function main() {
     console.log(`${colors.dim}Memory: ${memStores.join(", ")}${colors.reset}`);
   }
 
+  // First-run onboarding experience
+  const { checkOnboarding, markOnboardingSeen, printWelcome, isTutorialCompleted } = await import("../src/sidecars/onboarding.ts");
+  const onboarding = checkOnboarding();
+  if (onboarding.showOnboarding && !resumeSession && filteredArgs.length === 0) {
+    printWelcome();
+    markOnboardingSeen();
+    console.log();
+  }
+
   // Handle --resume flag
   if (resumeSession) {
     const lastSessionId = getLastSessionId();
@@ -745,6 +754,9 @@ async function main() {
     console.log(`  ${colors.green}/memory${colors.reset}    Show memory stats`);
     console.log(`  ${colors.green}/facts${colors.reset}     Show all remembered facts`);
     console.log();
+    console.log(`${colors.bold}Getting Started:${colors.reset}`);
+    console.log(`  ${colors.green}/tutorial${colors.reset}   Run the interactive tutorial walkthrough`);
+    console.log();
     console.log(`${colors.bold}Skills:${colors.reset}`);
     for (const skill of skills) {
       console.log(`  ${colors.green}/${skill.name}${colors.reset}   ${skill.description}`);
@@ -987,6 +999,34 @@ Respond with ONLY the plan.`;
       return;
     }
 
+    if (trimmed === "/tutorial" || trimmed.startsWith("/tutorial ")) {
+      const { runTutorial, isTutorialCompleted, getTutorialSteps, formatTutorialStep } = await import("../src/sidecars/onboarding.ts");
+      const isRestart = trimmed.includes("restart");
+      const completed = isTutorialCompleted();
+      const steps = getTutorialSteps();
+
+      if (completed && !isRestart) {
+        console.log(`${colors.dim}Tutorial already completed! Use /tutorial restart to redo it.${colors.reset}\n`);
+        console.log(`${colors.bold}Quick recap:${colors.reset}`);
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          console.log(`  ${colors.cyan}${i + 1}.${colors.reset} ${step.title.split(" ").slice(1).join(" ")}`);
+        }
+        console.log();
+        return;
+      }
+
+      if (isRestart) {
+        const { resetOnboarding, markTutorialCompleted } = await import("../src/sidecars/onboarding.ts");
+        resetOnboarding();
+        markTutorialCompleted();
+        console.log(`${colors.dim}Tutorial reset. Starting...${colors.reset}\n`);
+      }
+
+      await runTutorial(false);
+      return;
+    }
+
     // Task commands
     if (trimmed === "/tasks") {
       const tasks = listTasks();
@@ -1211,7 +1251,7 @@ Respond with ONLY the plan.`;
   function getCompletions(partial: string): string[] {
     if (!partial.startsWith("/")) return [];
     const cmd = partial.slice(1).toLowerCase();
-    const slashCommands = ["/exit", "/clear", "/help", "/plan", "/dangerous", "/stream", "/auto", "/tick", "/tasks", "/add", "/done", "/sessions", "/resume", "/remember", "/forget", "/facts", "/memory", "/clear"];
+    const slashCommands = ["/exit", "/clear", "/help", "/plan", "/dangerous", "/stream", "/auto", "/tick", "/tasks", "/add", "/done", "/sessions", "/resume", "/remember", "/forget", "/facts", "/memory", "/tutorial", "/clear"];
     const matches = slashCommands.filter(c => c.slice(1).startsWith(cmd));
     // Also add skill commands
     for (const skill of skills) {

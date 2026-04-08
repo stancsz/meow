@@ -20,6 +20,7 @@ import { pptx } from "./pptx.ts";
 import { docx } from "./docx.ts";
 import { pdf } from "./pdf.ts";
 import { xlsx } from "./xlsx.ts";
+import { tutorial } from "./tutorial.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -39,6 +40,7 @@ const allSkills: Skill[] = [
   docx,
   pdf,
   xlsx,
+  tutorial,
 ];
 
 // Auto-register on import
