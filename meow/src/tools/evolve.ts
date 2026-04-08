@@ -22,6 +22,7 @@ import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
 import { getToolDefinitions, executeTool } from "../sidecars/tool-registry.ts";
+import { initMemoryFts, storeMemory, searchMemory, formatSearchResults } from "../sidecars/memory-fts.ts";
 
 // ============================================================================
 // Paths
@@ -532,6 +533,15 @@ Evolve loop - autonomous improvement.
 
 async function runLoop(options: { once?: boolean }): Promise<void> {
   const state = loadState();
+
+  // Initialize FTS5 memory for cross-session recall
+  try {
+    initMemoryFts();
+    console.log("  🧠 FTS5 memory initialized for cross-session recall");
+  } catch (e) {
+    console.log("  ⚠️  FTS5 memory unavailable, continuing without it");
+  }
+
   console.log(`
 🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
   MEOW EVOLVE — Self-Evolving Loop
@@ -590,6 +600,17 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
 
     console.log(`\n🎯 Working on: ${gap.id} — ${gap.description}`);
 
+    // Cross-session recall: search for relevant past solutions
+    try {
+      const pastSolutions = searchMemory(gap.description, 3);
+      if (pastSolutions.length > 0) {
+        console.log(`  🧠 Found ${pastSolutions.length} relevant past solutions:`);
+        for (const { snippet } of pastSolutions.slice(0, 2)) {
+          console.log(`     ${snippet.slice(0, 80)}...`);
+        }
+      }
+    } catch {}
+
     // Try auto-implementation first
     if (implementSkill(gap)) {
       gap.status = "solved";
@@ -597,6 +618,14 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
       saveGaps(gaps);
       state.totalSolved++;
       console.log(`\n✅ ${gap.id} SOLVED!`);
+      // Store successful solution in FTS5 memory for cross-session recall
+      try {
+        storeMemory(`gap_${gap.id}`, `Solved gap ${gap.id}: ${gap.description}. What to implement: ${gap.whatToImplement}`, {
+          tags: ["evolve", "gap-solution", gap.priority, gap.id],
+          source: "evolve",
+          importance: gap.priority === "P0" ? 5 : gap.priority === "P1" ? 4 : 3,
+        });
+      } catch {}
       commitChanges(gap);
     } else {
       // Call LLM
@@ -611,6 +640,14 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
         gap.retryAfter = undefined;
         state.totalSolved++;
         console.log(`\n✅ ${gap.id} SOLVED! (via ${result.providerUsed})`);
+        // Store successful solution in FTS5 memory for cross-session recall
+        try {
+          storeMemory(`gap_${gap.id}`, `Solved gap ${gap.id}: ${gap.description}. What to implement: ${gap.whatToImplement}`, {
+            tags: ["evolve", "gap-solution", gap.priority, gap.id],
+            source: "evolve",
+            importance: gap.priority === "P0" ? 5 : gap.priority === "P1" ? 4 : 3,
+          });
+        } catch {}
         commitChanges(gap);
       } else {
         gap.status = "waiting";
