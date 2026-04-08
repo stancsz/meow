@@ -400,14 +400,24 @@ async function main() {
     // Single task mode
     const prompt = filteredArgs.join(" ");
 
+    // Initialize TUI for single task
+    const singleTui = createTUI({ mode: "compact", showStatusBar: true });
+    singleTui.setStatus({ mode: "single-task", dangerous });
+    singleTui.printHeader();
+    singleTui.printUser(prompt);
+    singleTui.startThinking();
+
+    try {
+
     // Handle bare "help" command (no leading slash, e.g. --dangerous "help")
     if (filteredArgs[0].toLowerCase() === "help") {
       const skill = findSkill("help");
       if (skill) {
         const result = await skill.execute(filteredArgs.slice(1).join(" "), { cwd: process.cwd(), dangerous });
         if (result.error) {
-          console.error(`${colors.red}${result.error}${colors.reset}`);
+          singleTui.printError(result.error);
         } else {
+          singleTui.stopThinking("skill complete");
           console.log(`\n${result.content}\n`);
         }
         return;
@@ -445,11 +455,13 @@ async function main() {
 
       const skill = findSkill(skillName);
       if (skill) {
-        console.log(`${colors.dim}Running skill: /${skill.name}${colors.reset}`);
+        singleTui.updateStatus(`Running /${skill.name}...`);
         const result = await skill.execute(skillArgs, { cwd: process.cwd(), dangerous });
+        singleTui.stopThinking("skill complete");
         if (result.error) {
-          console.error(`${colors.red}${result.error}${colors.reset}`);
+          singleTui.printError(result.error);
         } else {
+          singleTui.printSuccess("skill complete");
           console.log(`\n${result.content}\n`);
         }
         return;
@@ -501,11 +513,13 @@ async function main() {
 
       const skill = findSkill(skillName);
       if (skill) {
-        console.log(`${colors.dim}Running skill: /${skill.name}${colors.reset}`);
+        singleTui.updateStatus(`Running /${skill.name}...`);
         const result = await skill.execute(fullArgs, { cwd: process.cwd(), dangerous });
+        singleTui.stopThinking("skill complete");
         if (result.error) {
-          console.error(`${colors.red}${result.error}${colors.reset}`);
+          singleTui.printError(result.error);
         } else {
+          singleTui.printSuccess("skill complete");
           console.log(`\n${result.content}\n`);
         }
         return;
@@ -599,7 +613,7 @@ async function main() {
         if (e.message === "Interrupted") {
           process.exit(130);
         }
-        console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}`);
+        printBeautifulError(e);
         process.exit(1);
       } finally {
         process.off("SIGINT", sigintHandler);
@@ -621,7 +635,7 @@ async function main() {
       if (e.message === "Interrupted") {
         process.exit(130);
       }
-      console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}`);
+      printBeautifulError(e);
       process.exit(1);
     } finally {
       setCursorVisible(true);
@@ -838,7 +852,7 @@ async function main() {
       if (aborted) {
         console.log(`${colors.yellow}⏹️ Cancelled${colors.reset}\n`);
       } else {
-        console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}\n`);
+        printBeautifulError(e);
       }
       throw e;
     } finally {
@@ -899,7 +913,7 @@ Respond with ONLY the plan.`;
         conversation.pop();
       }
     } catch (e: any) {
-      console.error(`\n${colors.red}❌ Error: ${e.message}${colors.reset}\n`);
+      printBeautifulError(e);
     } finally {
       setCursorVisible(true);
     }
@@ -1097,11 +1111,13 @@ Respond with ONLY the plan.`;
 
       const skill = findSkill(skillName);
       if (skill) {
-        console.log(`${colors.dim}Running skill: /${skill.name}${colors.reset}`);
+        singleTui.updateStatus(`Running /${skill.name}...`);
         const result = await skill.execute(skillArgs, { cwd: process.cwd(), dangerous });
+        singleTui.stopThinking("skill complete");
         if (result.error) {
-          console.error(`${colors.red}${result.error}${colors.reset}`);
+          singleTui.printError(result.error);
         } else {
+          singleTui.printSuccess("skill complete");
           console.log(`\n${result.content}\n`);
         }
         return;

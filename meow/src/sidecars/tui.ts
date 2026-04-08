@@ -154,7 +154,7 @@ export function createTUI(opts: TUIOptions = {}): TUI {
         C.brightMagenta + "   /  o   o  " + C.reset + "\\" + C.brightMagenta + "/",
         C.brightMagenta + "  ( ==  ^  == )   " + C.brightWhite + "Meow" + C.reset + " " + C.dim + "lean sovereign agent",
         C.brightMagenta + "   " + C.reset + "\\" + C.brightMagenta + " )" + C.reset + "-" + C.brightMagenta + "( /",
-        C.brightMagenta + "    " + C.reset + "\\" + C.dim + "`" + C.reset + "_" + C.brightMagenta + "`" + C.reset + C.dim + " /" + C.reset,
+        C.brightMagenta + "    " + C.reset + "\\" + C.dim + "`" + C.reset + "_" + C.brightMagenta + "`" + "'" + C.reset + C.dim + " /" + C.reset,
       ];
       for (const row of art) write(row + "\n");
       write("\n");
