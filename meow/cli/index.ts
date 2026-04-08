@@ -1155,6 +1155,25 @@ Respond with ONLY the plan.`;
   const MULTI_LINE_TRIGGERS = [":", "{", "(", "=>", "->"];
   const MULTI_LINE_INDENT = /^\s{2,}/;
 
+  // Tab completion state
+  let tabCompleteIndex = -1;
+  let tabCompletions: string[] = [];
+
+  function getCompletions(partial: string): string[] {
+    if (!partial.startsWith("/")) return [];
+    const cmd = partial.slice(1).toLowerCase();
+    const slashCommands = ["/exit", "/clear", "/help", "/plan", "/dangerous", "/stream", "/auto", "/tick", "/tasks", "/add", "/done", "/sessions", "/resume", "/remember", "/forget", "/facts", "/memory", "/clear"];
+    const matches = slashCommands.filter(c => c.slice(1).startsWith(cmd));
+    // Also add skill commands
+    for (const skill of skills) {
+      const name = "/" + skill.name;
+      if (name.slice(1).startsWith(cmd) && !matches.includes(name)) {
+        matches.push(name);
+      }
+    }
+    return matches.sort();
+  }
+
   const promptUser = () => {
     let line = "";
     let cursorPos = 0;
@@ -1312,6 +1331,42 @@ Respond with ONLY the plan.`;
         if (cursorPos < line.length) {
           process.stdout.write(`\x1B[${line.length - cursorPos}C`);
           cursorPos = line.length;
+        }
+        return;
+      }
+
+      if (key?.name === "tab") {
+        // Tab completion for slash commands
+        const beforeCursor = line.slice(0, cursorPos);
+        const wordMatch = beforeCursor.match(/(\/\S*)$/);
+        if (wordMatch) {
+          const partial = wordMatch[1];
+          const completions = getCompletions(partial);
+          if (completions.length === 0) return;
+          if (completions.length === 1) {
+            // Single match - complete it
+            const afterCursor = line.slice(cursorPos);
+            const completion = completions[0];
+            // Replace the partial with the full completion
+            line = line.slice(0, cursorPos - partial.length) + completion + afterCursor;
+            cursorPos = line.length - afterCursor.length;
+            eraseLine();
+            process.stdout.write((isMultiLineMode ? "│ " : prefix) + line);
+            process.stdout.write(`\x1B[${line.length - cursorPos}D`);
+          } else {
+            // Multiple matches - cycle through
+            if (tabCompleteIndex === -1 || tabCompleteIndex >= completions.length - 1) {
+              tabCompleteIndex = 0;
+            } else {
+              tabCompleteIndex++;
+            }
+            // Show completions
+            eraseLine();
+            process.stdout.write((isMultiLineMode ? "│ " : prefix) + line + "\n");
+            process.stdout.write(`${colors.dim}  completions: ${completions.join(", ")}${colors.reset}\n`);
+            process.stdout.write((isMultiLineMode ? "│ " : prefix));
+          }
+          tabCompletions = completions;
         }
         return;
       }
