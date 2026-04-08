@@ -26,6 +26,7 @@ import { startACPServer } from "../src/sidecars/acp.ts";
 import { parseAndExecute as parseSlashCommand } from "../src/sidecars/slash-commands.ts";
 import { initMemory, setMemory, getMemory, remember, listMemoryKeys, deleteMemory, getMemoryStats, formatMemoryStats, listMemoryStores, autoLearnFromConversation } from "../src/sidecars/memory.ts";
 import { createTUI, type TUI } from "../src/sidecars/tui.ts";
+import { printError as printBeautifulError, formatError } from "../src/sidecars/error-formatter.ts";
 
 // Initialize i18n
 initI18n();
@@ -532,7 +533,7 @@ async function main() {
         return;
       }
       if (cmdResult2.error) {
-        console.error(`${colors.red}${cmdResult2.error}${colors.reset}`);
+        singleTui.printError(cmdResult2.error);
         return;
       }
     }
@@ -542,22 +543,23 @@ async function main() {
       const skill = findSkill("help");
       if (skill) {
         const result = await skill.execute("", { cwd: process.cwd(), dangerous });
+        singleTui.stopThinking("help shown");
         if (result.error) {
-          console.error(`${colors.red}${result.error}${colors.reset}`);
+          singleTui.printError(result.error);
         } else {
+          singleTui.printSuccess("help shown");
           console.log(`\n${result.content}\n`);
         }
         return;
       }
     }
 
-    console.log(`${colors.dim}🐱 meow${colors.reset}\n`);
-    console.log(`${colors.dim}Prompt: ${prompt}${colors.reset}\n`);
+    singleTui.updateStatus(`Running task...`);
 
     // Auto/Tick mode - OODA loop autonomous operation
     if (autoMode || tickMode) {
-      console.log(`${colors.cyan}⚡ Auto mode${tickMode ? " (tick)" : ""} - OODA loop engaged${colors.reset}\n`);
-      console.log(`${colors.dim}Press Ctrl+C or send SIGTERM to interrupt${tickMode ? " after current tick" : ""}${colors.reset}\n`);
+      singleTui.updateStatus(`Auto mode${tickMode ? " (tick)" : ""} — OODA loop engaged`);
+      setCursorVisible(false);
 
       // Register global signal handlers (handles SIGINT + SIGTERM)
       registerSignalHandlers();
@@ -596,19 +598,17 @@ async function main() {
         eraseLine();
 
         if (result.interrupted) {
-          console.log(`${colors.yellow}⏹ Interrupted after ${result.ticks} tick(s) (${Math.round(result.elapsedMs / 1000)}s)${colors.reset}`);
+          singleTui.stopThinking(`interrupted after ${result.ticks} tick(s)`);
         } else {
-          console.log(`${colors.green}✅ Autonomous operation complete${colors.reset}`);
-          console.log(`${colors.dim}Ticks: ${result.ticks} | Iterations: ${result.finalResult.iterations}${colors.reset}`);
-          console.log(formatUsage(result.finalResult.usage));
+          singleTui.stopThinking("autonomous complete");
+          singleTui.printAssistant(result.finalResult.content);
+          singleTui.printSuccess(`Done in ${result.finalResult.iterations} iteration(s), ${result.ticks} tick(s)`);
         }
 
         if (result.actions.length > 0 || result.pauseReason) {
           console.log(`\n${colors.bold}━━━ OODA Loop Summary ━━━${colors.reset}`);
           console.log(formatAutoLoopSummary(result));
         }
-
-        console.log(`\n--- Output ---\n${result.finalResult.content}`);
       } catch (e: any) {
         if (e.message === "Interrupted") {
           process.exit(130);
@@ -628,9 +628,12 @@ async function main() {
         runLeanAgent(prompt, { dangerous }),
         "thinking..."
       );
-      console.log(`\n${colors.green}✅ Done in ${result.iterations} iteration(s)${colors.reset}`);
-      console.log(formatUsage(result.usage));
-      console.log(`\n--- Output ---\n${result.content}`);
+      singleTui.stopThinking("complete");
+      singleTui.printAssistant(result.content);
+      singleTui.printSuccess(`Done in ${result.iterations} iteration(s)`);
+      if (result.usage) singleTui.printInfo(formatUsage(result.usage).trim());
+      singleTui.setStatus({ tokens: result.usage?.totalTokens });
+      singleTui.printStatusBar();
     } catch (e: any) {
       if (e.message === "Interrupted") {
         process.exit(130);
@@ -641,6 +644,9 @@ async function main() {
       setCursorVisible(true);
     }
     return;
+    } finally {
+      singleTui.destroy();
+    }
   }
 
   // Interactive mode — initialize TUI

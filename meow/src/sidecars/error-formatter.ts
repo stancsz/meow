@@ -271,7 +271,8 @@ const ERROR_PATTERNS: ErrorPattern[] = [
 // Core Formatting Logic
 // ============================================================================
 
-function classifyError(message: string): ErrorKind {
+function classifyError(error: unknown): ErrorKind {
+  const message = error instanceof Error ? error.message : String(error);
   for (const pattern of ERROR_PATTERNS) {
     for (const re of pattern.patterns) {
       if (re.test(message)) {
@@ -293,7 +294,7 @@ function findMatchingPattern(message: string): ErrorPattern | undefined {
   return undefined;
 }
 
-export function formatError(error: string | Error | unknown): FormattedError {
+export function formatError(error: unknown): FormattedError {
   const message = error instanceof Error ? error.message : String(error);
   const kind = classifyError(message);
   const meta = ERROR_KIND_META[kind];
