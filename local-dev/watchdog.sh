@@ -2,7 +2,11 @@
 # watchdog.sh — Keeps train.sh running forever
 # Run via cron: */5 * * * * /path/to/watchdog.sh
 
-cd /c/Users/stanc/github/meow
+# Resolve to project root (scripts live in local-dev/, which is next to meow/)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+MEW_DIR="$PROJECT_DIR/meow"
+cd "$PROJECT_DIR"
 
 LOG_FILE="/tmp/train-sh.log"
 PID_FILE="/tmp/train-sh.pid"
@@ -20,15 +24,14 @@ if [[ -f "$PID_FILE" ]]; then
   fi
 fi
 
-# Secondary check: look for bun running evolve.ts (for continuous mode, train.sh
-# runs as bash with bun as child; for --once mode, exec replaces bash with bun)
+# Secondary check: look for bun running evolve.ts
 if ps aux 2>/dev/null | grep -v grep | grep -q "bun.*evolve"; then
   echo "$(date): train.sh is already running (found bun evolve process)"
   exit 0
 fi
 
 echo "$(date): train.sh not running, starting..."
-nohup ./train.sh >> "$LOG_FILE" 2>&1 &
+nohup ./local-dev/train.sh >> "$LOG_FILE" 2>&1 &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 echo "$(date): Started train.sh as PID $NEW_PID"
