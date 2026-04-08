@@ -18,7 +18,7 @@ import { registerSignalHandlers, getInterruptController } from "../src/sidecars/
 import { runAutoLoop, formatAutoLoopSummary, formatTickStatus } from "../src/sidecars/auto-loop.ts";
 import { initializeToolRegistry, getAllTools } from "../src/sidecars/tool-registry.ts";
 import { listTasks, addTask, completeTask, formatTasks } from "../src/core/task-store.ts";
-import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession } from "../src/core/session-store.ts";
+import { createSession, appendToSession, loadSession, listSessions, formatSessions, getLastSessionId, compactSession, nameSession, getSessionName } from "../src/core/session-store.ts";
 import { skills, getAllSkills, findSkill, formatSkillsList } from "../src/skills/index.ts";
 import { initI18n, t } from "../src/sidecars/i18n/index.ts";
 import { setMCPToolRegistrar, loadMCPConfig } from "../src/sidecars/mcp-client.ts";
@@ -737,6 +737,7 @@ async function main() {
     console.log(`${colors.bold}Sessions:${colors.reset}`);
     console.log(`  ${colors.green}/sessions${colors.reset}  List saved sessions`);
     console.log(`  ${colors.green}/resume${colors.reset}    Resume a session (e.g., /resume session_123)`);
+    console.log(`  ${colors.green}/name${colors.reset}      Name this session (e.g., /name my-project)`);
     console.log();
     console.log(`${colors.bold}Memory:${colors.reset}`);
     console.log(`  ${colors.green}/remember${colors.reset}  Remember a fact (e.g., /remember I use TypeScript)`);
@@ -1028,6 +1029,30 @@ Respond with ONLY the plan.`;
       return;
     }
 
+    if (trimmed.startsWith("/name")) {
+      const args = trimmed.slice(5).trim();
+      if (!args) {
+        const currentName = currentSessionId ? getSessionName(currentSessionId) : null;
+        if (currentName) {
+          console.log(`${colors.green}Session name: "${currentName}"${colors.reset}\n`);
+        } else {
+          console.log(`${colors.dim}This session has no name. Use /name <name> to name it.${colors.reset}\n`);
+        }
+        return;
+      }
+      if (!currentSessionId) {
+        console.log(`${colors.red}No active session${colors.reset}\n`);
+        return;
+      }
+      if (args.length > 50) {
+        console.log(`${colors.red}Session name too long (max 50 characters)${colors.reset}\n`);
+        return;
+      }
+      nameSession(currentSessionId, args);
+      console.log(`${colors.green}Session renamed to "${args}"${colors.reset}\n`);
+      return;
+    }
+
     if (trimmed.startsWith("/resume ")) {
       const sessionId = trimmed.slice(8);
       if (!sessionId) {
@@ -1048,7 +1073,9 @@ Respond with ONLY the plan.`;
           conversation.push({ role: m.role as "system" | "user" | "assistant", content: m.content });
         }
       });
-      console.log(`${colors.green}Resumed session: ${sessionId}${colors.reset}\n`);
+      const sessionName = getSessionName(sessionId);
+      const nameStr = sessionName ? ` "${sessionName}"` : "";
+      console.log(`${colors.green}Resumed session: ${sessionId}${nameStr}${colors.reset}\n`);
       return;
     }
 

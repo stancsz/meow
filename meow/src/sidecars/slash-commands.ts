@@ -15,6 +15,7 @@ export interface Command {
 export interface CommandContext {
   cwd: string;
   dangerous: boolean;
+  sessionId?: string;
 }
 
 export interface CommandResult {
@@ -29,7 +30,7 @@ const builtInCommands: Record<string, Command> = {
     name: "help",
     description: "Show available commands",
     execute: async (_, __) => ({
-      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /lang",
+      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /name, /lang",
     }),
   },
   exit: {
@@ -54,6 +55,27 @@ const builtInCommands: Record<string, Command> = {
       content: "",
       handled: true,
     }),
+  },
+  name: {
+    name: "name",
+    description: "Name or rename the current session: /name <name>",
+    execute: async (args, context) => {
+      const { nameSession, getSessionName } = await import("../core/session-store.ts");
+      const sessionId = context.sessionId;
+      if (!sessionId) {
+        return { error: "No active session" };
+      }
+      if (!args.trim()) {
+        const currentName = getSessionName(sessionId);
+        return { content: currentName ? `Session name: "${currentName}"` : "This session has no name yet. Use /name <name> to name it." };
+      }
+      const trimmedName = args.trim();
+      if (trimmedName.length > 50) {
+        return { error: "Session name too long (max 50 characters)" };
+      }
+      nameSession(sessionId, trimmedName);
+      return { content: `Session renamed to "${trimmedName}"` };
+    },
   },
   lang: {
     name: "lang",

@@ -22,6 +22,7 @@ export interface SessionMessage {
 
 export interface SessionInfo {
   id: string;
+  name?: string;
   preview: string;
   timestamp: string;
   forkedFrom?: string;  // Original session ID if this was forked
@@ -62,6 +63,32 @@ function setLastSessionId(id: string): void {
   } catch {
     // Ignore write errors
   }
+}
+
+export function nameSession(sessionId: string, name: string): boolean {
+  ensureDir();
+  const metaFile = join(SESSION_DIR, `${sessionId}.meta.json`);
+  try {
+    const meta = existsSync(metaFile) ? JSON.parse(readFileSync(metaFile, "utf-8")) : {};
+    meta.name = name;
+    writeFileSync(metaFile, JSON.stringify(meta, null, 2), "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getSessionName(sessionId: string): string | null {
+  try {
+    const metaFile = join(SESSION_DIR, `${sessionId}.meta.json`);
+    if (existsSync(metaFile)) {
+      const meta = JSON.parse(readFileSync(metaFile, "utf-8"));
+      return meta.name || null;
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
 }
 
 export function createSession(forkedFrom?: string): string {
@@ -244,8 +271,11 @@ export function listSessions(): SessionInfo[] {
       // Extract numeric timestamp from ID
       const numericPart = id.replace(/^[^\d]*(\d+).*$/, "$1");
       const timestamp = numericPart || id;
+      // Load session name from meta file
+      const name = getSessionName(id);
       return {
         id,
+        name: name || undefined,
         preview: lastUser?.content?.slice(0, 60) || firstUser?.content?.slice(0, 60) || "(empty)",
         timestamp,
         forkedFrom,
@@ -265,7 +295,8 @@ export function formatSessions(sessions: SessionInfo[]): string {
     const ts = parseInt(s.timestamp);
     const date = isNaN(ts) ? "Unknown date" : new Date(ts).toLocaleString();
     const forkNote = s.forkedFrom ? ` (forked from ${s.forkedFrom})` : "";
-    output += `  [${s.id}]${forkNote}\n    ${s.preview}...\n    ${date} · ${s.messageCount} msgs\n`;
+    const nameNote = s.name ? ` "${s.name}"` : "";
+    output += `  [${s.id}]${nameNote}${forkNote}\n    ${s.preview}...\n    ${date} · ${s.messageCount} msgs\n`;
   });
   return output;
 }
