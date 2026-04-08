@@ -2,7 +2,7 @@
 
 ## meow CLI — become as beautiful and capable as Claude Code
 
-- [ ] TUI: Rich terminal UI with colors, borders, status indicators
+- [x] TUI: Rich terminal UI with colors, borders, status indicators (2026-04-08)
 - [ ] Help system: `meow help` with categorized commands, keyboard shortcuts
 - [ ] Interactive REPL: multi-line input, history, auto-complete
 - [ ] Progress indicators: spinners, progress bars for long operations
