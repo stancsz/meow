@@ -18,6 +18,6 @@
 - [x] Window management: minimize, maximize, tray icon (2026-04-08)
 - [x] Rich editor view: command palette, sidebar, tabs (2026-04-08)
 - [ ] Visualization: session timeline, task boards, memory graphs
-- [ ] Settings UI: preferences panel, theme switcher
+- [x] Settings UI: preferences panel, theme switcher (2026-04-08)
 - [ ] Notifications: system notifications for long-running tasks
 - [ ] Internationalization: i18n support for future localization
