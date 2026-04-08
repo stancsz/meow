@@ -18,9 +18,17 @@ import { fileURLToPath } from "node:url";
 // ============================================================================
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MEOW_DIR = join(homedir(), ".meow");
-const SESSIONS_DIR = join(MEOW_DIR, "sessions");
-const CONFIG_FILE = join(MEOW_DIR, "config.json");
+
+// Allow test override via env var - resolved dynamically
+function getMeowDir(): string {
+  return process.env.MEOW_DIR || join(homedir(), ".meow");
+}
+function getSessionsDir(): string {
+  return join(getMeowDir(), "sessions");
+}
+function getConfigFile(): string {
+  return join(getMeowDir(), "config.json");
+}
 
 // ============================================================================
 // Types
@@ -45,18 +53,20 @@ export interface OnboardingResult {
 // ============================================================================
 
 function ensureMeowDir(): void {
-  if (!existsSync(MEOW_DIR)) {
-    mkdirSync(MEOW_DIR, { recursive: true });
+  const dir = getMeowDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
 }
 
 function loadConfig(): OnboardingConfig {
   ensureMeowDir();
-  if (!existsSync(CONFIG_FILE)) {
+  const configFile = getConfigFile();
+  if (!existsSync(configFile)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+    return JSON.parse(readFileSync(configFile, "utf-8"));
   } catch {
     return {};
   }
@@ -64,7 +74,7 @@ function loadConfig(): OnboardingConfig {
 
 function saveConfig(config: OnboardingConfig): void {
   ensureMeowDir();
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  writeFileSync(getConfigFile(), JSON.stringify(config, null, 2));
 }
 
 // ============================================================================
@@ -73,8 +83,9 @@ function saveConfig(config: OnboardingConfig): void {
 
 function hasExistingSessions(): boolean {
   try {
-    if (!existsSync(SESSIONS_DIR)) return false;
-    const files = readdirSync(SESSIONS_DIR).filter(f => f.endsWith(".jsonl"));
+    const sessionsDir = getSessionsDir();
+    if (!existsSync(sessionsDir)) return false;
+    const files = readdirSync(sessionsDir).filter(f => f.endsWith(".jsonl"));
     return files.length > 0;
   } catch {
     return false;

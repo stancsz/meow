@@ -62,15 +62,15 @@ describe("GAP-TRACKING: Core Engine", () => {
    * GAP-CORE-003: Budget Tracking
    * Priority: P1 - HIGH
    * Claude Code: Tracks maxTurns, maxBudgetUSD per session
-   * Meow: No budget tracking
-   * Impact: No cost control, unlimited API usage
+   * Meow: IMPLEMENTED - maxBudgetUSD and budget tracking
+   * Impact: Cost control enabled
    */
-  test("GAP-CORE-003: No budget/turn tracking", () => {
+  test("GAP-CORE-003: Budget/turn tracking implemented", () => {
     const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
-    const hasBudget = leanAgentSrc.includes("budget") ||
-                      leanAgentSrc.includes("maxTurns") ||
+    const hasBudget = leanAgentSrc.includes("maxBudgetUSD") ||
+                      leanAgentSrc.includes("budget") ||
                       leanAgentSrc.includes("totalCost");
-    expect(hasBudget).toBe(false);
+    expect(hasBudget).toBe(true);
   });
 });
 
@@ -282,30 +282,30 @@ describe("GAP-TRACKING: Session Management", () => {
    * GAP-SESS-001: Session Resume
    * Priority: P0 - CRITICAL
    * Claude Code: Auto-resumes last session on startup
-   * Meow: Must specify session ID manually
-   * Impact: Poor UX - can't continue work without explicit resume
+   * Meow: IMPLEMENTED - resume support in session-store
+   * Impact: Session continuity works
    */
-  test("GAP-SESS-001: No auto session resume", () => {
+  test("GAP-SESS-001: Auto session resume implemented", () => {
     const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
     const hasResume = sessionStoreSrc.includes("resume") ||
                       sessionStoreSrc.includes("lastSession") ||
                       sessionStoreSrc.includes("autoResume");
-    expect(hasResume).toBe(false);
+    expect(hasResume).toBe(true);
   });
 
   /**
    * GAP-SESS-002: Session Compaction
    * Priority: P0 - CRITICAL
    * Claude Code: Compacts old messages via summarization
-   * Meow: No compaction - history grows unbounded
-   * Impact: Context window exhaustion, performance degradation
+   * Meow: IMPLEMENTED - session compaction in session-store
+   * Impact: Context window managed properly
    */
-  test("GAP-SESS-002: No session compaction/truncation", () => {
+  test("GAP-SESS-002: Session compaction implemented", () => {
     const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
     const hasCompact = sessionStoreSrc.includes("compact") ||
                        sessionStoreSrc.includes("summarize") ||
                        sessionStoreSrc.includes("truncate");
-    expect(hasCompact).toBe(false);
+    expect(hasCompact).toBe(true);
   });
 
   /**
@@ -652,14 +652,14 @@ describe("GAP-TRACKING: Interrupt/Abort", () => {
    * GAP-ABORT-003: Tool Timeout
    * Priority: P2 - MEDIUM
    * Claude Code: Per-tool timeout configuration
-   * Meow: No timeouts
-   * Impact: Tools can hang indefinitely
+   * Meow: IMPLEMENTED - timeoutMs per call via ToolContext
+   * Impact: Tools no longer hang indefinitely
    */
-  test("GAP-ABORT-003: No tool timeout", () => {
+  test("GAP-ABORT-003: Tool timeout implemented", () => {
     const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
-    const hasTimeout = leanAgentSrc.includes("timeout") ||
-                       leanAgentSrc.includes("setTimeout");
-    expect(hasTimeout).toBe(false);
+    const hasTimeout = leanAgentSrc.includes("timeoutMs") ||
+                       leanAgentSrc.includes("timeout");
+    expect(hasTimeout).toBe(true);
   });
 
   /**
@@ -758,15 +758,15 @@ describe("GAP-TRACKING: LLM Provider", () => {
   /**
    * GAP-LLM-001: Anthropic API Headers
    * Priority: P2 - MEDIUM
-   * Claude Code:anthropic-version header, Claude-specific params
-   * Meow: OpenAI-compatible only
-   * Impact: Can't use Claude API directly
+   * Claude Code: anthropic-version header, Claude-specific params
+   * Meow: IMPLEMENTED - anthropic-version header support
+   * Impact: Claude API compatible
    */
-  test("GAP-LLM-001: No Anthropic-specific API support", () => {
+  test("GAP-LLM-001: Anthropic-specific API support implemented", () => {
     const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
     const hasAnthropic = leanAgentSrc.includes("anthropic-version") ||
                          leanAgentSrc.includes("anthropic");
-    expect(hasAnthropic).toBe(false);
+    expect(hasAnthropic).toBe(true);
   });
 
   /**

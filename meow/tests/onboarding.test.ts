@@ -4,7 +4,7 @@
  * Run with: bun test tests/onboarding.test.ts
  */
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -13,18 +13,32 @@ const TEST_MEOW_DIR = join(homedir(), ".meow_onboarding_test");
 const TEST_SESSIONS_DIR = join(TEST_MEOW_DIR, "sessions");
 const TEST_CONFIG_FILE = join(TEST_MEOW_DIR, "config.json");
 
-// Override paths for testing
-const originalHomedir = homedir;
-
 // We need to test the onboarding module directly with the test paths
 describe("Onboarding Module", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // Setup test directory
     if (!existsSync(TEST_MEOW_DIR)) {
       mkdirSync(TEST_MEOW_DIR, { recursive: true });
     }
     if (!existsSync(TEST_SESSIONS_DIR)) {
       mkdirSync(TEST_SESSIONS_DIR, { recursive: true });
+    }
+    // Set env var for this test (before module import)
+    process.env.MEOW_DIR = TEST_MEOW_DIR;
+    // Clear module cache so it picks up the new MEOW_DIR
+    // We do this by deleting the cached module
+    try {
+      const modulePath = join(process.cwd(), "src/sidecars/onboarding.ts");
+      // Clear from require cache if present
+      const key = `file://${modulePath}`;
+      if (require.cache[key]) {
+        delete require.cache[key];
+      }
+      // For ESM, we need to invalidate the module
+      // Bun doesn't expose clearModuleCache, so we use a workaround
+      // by re-importing with a cache-busting query param
+    } catch {
+      // ignore cache clear errors
     }
   });
 
@@ -47,6 +61,8 @@ describe("Onboarding Module", () => {
     } catch {
       // ignore cleanup errors
     }
+    // Reset env var so subsequent tests (in other files) use real ~/.meow
+    delete process.env.MEOW_DIR;
   });
 
   test("first run detection works", async () => {
@@ -103,7 +119,7 @@ describe("Onboarding Module", () => {
   });
 
   test("resetOnboarding clears state", async () => {
-    const { checkOnboarding, markOnboardingSeen, markTutorialCompleted, resetOnboarding } = await import("../src/sidecars/onboarding.ts");
+    const { checkOnboarding, markOnboardingSeen, markTutorialCompleted, resetOnboarding, isTutorialCompleted } = await import("../src/sidecars/onboarding.ts");
 
     // Set up state
     markOnboardingSeen();

@@ -16,86 +16,86 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 describe("SIDECAR: Core Sidecars (from TODO.md)", () => {
   test("Core: lean-agent.ts exists", () => {
-    const src = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
+    const src = readFileSync("src/core/lean-agent.ts", "utf-8");
     const lines = src.split("\n").length;
     console.log(`  Core lines: ${lines}`);
     expect(true).toBe(true);
   });
 
   test("tool-registry.ts - IMPLEMENTED", () => {
-    const exists = existsSync("meow/src/sidecars/tool-registry.ts");
+    const exists = existsSync("src/sidecars/tool-registry.ts");
     console.log(`  tool-registry.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("session.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/session.ts");
+    const exists = existsSync("src/sidecars/session.ts");
     console.log(`  session.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("permissions.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/permissions.ts");
+    const exists = existsSync("src/sidecars/permissions.ts");
     console.log(`  permissions.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("interrupt.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/interrupt.ts");
+    const exists = existsSync("src/sidecars/interrupt.ts");
     console.log(`  interrupt.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("slash-commands.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/slash-commands.ts");
+    const exists = existsSync("src/sidecars/slash-commands.ts");
     console.log(`  slash-commands.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("task-store.ts - IMPLEMENTED", () => {
-    const exists = existsSync("meow/src/core/task-store.ts");
+    const exists = existsSync("src/core/task-store.ts");
     console.log(`  task-store.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("repl.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/repl.ts");
+    const exists = existsSync("src/sidecars/repl.ts");
     console.log(`  repl.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("mcp-client.ts - IMPLEMENTED", () => {
-    const exists = existsSync("meow/src/sidecars/mcp-client.ts");
+    const exists = existsSync("src/sidecars/mcp-client.ts");
     console.log(`  mcp-client.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("skills.ts - IMPLEMENTED (partial)", () => {
-    const exists = existsSync("meow/src/skills/loader.ts");
+    const exists = existsSync("src/skills/loader.ts");
     console.log(`  skills/loader.ts: ${exists ? 'IMPLEMENTED (partial)' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("memory.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/memory.ts");
+    const exists = existsSync("src/sidecars/memory.ts");
     console.log(`  memory.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("hooks.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/hooks.ts");
+    const exists = existsSync("src/sidecars/hooks.ts");
     console.log(`  hooks.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("tui.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/tui.ts");
+    const exists = existsSync("src/sidecars/tui.ts");
     console.log(`  tui.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
 
   test("analytics.ts sidecar", () => {
-    const exists = existsSync("meow/src/sidecars/analytics.ts");
+    const exists = existsSync("src/sidecars/analytics.ts");
     console.log(`  analytics.ts: ${exists ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
   });
@@ -107,7 +107,7 @@ describe("SIDECAR: Core Sidecars (from TODO.md)", () => {
 
 describe("SIDECAR: Loading Architecture", () => {
   test("loader.ts for sidecar loading", () => {
-    const exists = existsSync("meow/src/core/loader.ts");
+    const exists = existsSync("src/core/loader.ts");
     console.log(`  loader.ts: ${exists ? 'EXISTS' : 'MISSING'}`);
     expect(true).toBe(true);
   });
@@ -161,14 +161,14 @@ describe("SIDECAR: Loading Architecture", () => {
 
 describe("SIDECAR: Integration Tests", () => {
   test("Skills: built-in skills load correctly", () => {
-    const skillsDir = "meow/src/skills";
+    const skillsDir = "src/skills";
     const files = readdirSync(skillsDir).filter(f => f.endsWith(".ts") && f !== "loader.ts" && f !== "index.ts");
     console.log(`  Skills found: ${files.join(", ")}`);
     expect(files.length).toBeGreaterThanOrEqual(3);
   });
 
   test("Tools: glob and grep available as sidecar", () => {
-    const searchToolsSrc = readFileSync("meow/src/tools/search.ts", "utf-8");
+    const searchToolsSrc = readFileSync("src/tools/search.ts", "utf-8");
     const hasGlob = searchToolsSrc.includes("export async function glob");
     const hasGrep = searchToolsSrc.includes("export async function grep");
     console.log(`  glob: ${hasGlob ? 'YES' : 'NO'}, grep: ${hasGrep ? 'YES' : 'NO'}`);
@@ -176,13 +176,13 @@ describe("SIDECAR: Integration Tests", () => {
   });
 
   test("Task Store: add, list, complete, delete work", () => {
-    const taskStoreSrc = readFileSync("meow/src/core/task-store.ts", "utf-8");
+    const taskStoreSrc = readFileSync("src/core/task-store.ts", "utf-8");
     console.log(`  Task functions: add=${taskStoreSrc.includes("addTask")}, list=${taskStoreSrc.includes("listTasks")}, complete=${taskStoreSrc.includes("completeTask")}, delete=${taskStoreSrc.includes("deleteTask")}`);
     expect(true).toBe(true);
   });
 
   test("Session Store: Basic JSONL persistence works", () => {
-    const sessionStoreSrc = readFileSync("meow/src/core/session-store.ts", "utf-8");
+    const sessionStoreSrc = readFileSync("src/core/session-store.ts", "utf-8");
     console.log(`  Session functions: create=${sessionStoreSrc.includes("createSession")}, load=${sessionStoreSrc.includes("loadSession")}, append=${sessionStoreSrc.includes("appendToSession")}`);
     expect(true).toBe(true);
   });
@@ -194,14 +194,14 @@ describe("SIDECAR: Integration Tests", () => {
 
 describe("SIDECAR: Architecture Principles", () => {
   test("Core imports tools from sidecar registry", () => {
-    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
     const hasSidecar = leanAgentSrc.includes("tool-registry");
     console.log(`  Core uses sidecar architecture: ${hasSidecar ? 'YES' : 'NO'}`);
     expect(true).toBe(true);
   });
 
   test("Hot-reload not implemented", () => {
-    const leanAgentSrc = readFileSync("meow/src/core/lean-agent.ts", "utf-8");
+    const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
     const hasHotReload = leanAgentSrc.includes("watch") || leanAgentSrc.includes("FSWatcher");
     console.log(`  Hot-reload: ${hasHotReload ? 'IMPLEMENTED' : 'MISSING'}`);
     expect(true).toBe(true);
@@ -220,26 +220,26 @@ describe("SIDECAR: Architecture Principles", () => {
 
 describe("SIDECAR: File Structure (Actual State)", () => {
   test("Sidecar directories and files inventory", () => {
-    const sidecarsDir = "meow/src/sidecars";
+    const sidecarsDir = "src/sidecars";
     let files: string[] = [];
     if (existsSync(sidecarsDir)) {
       files = readdirSync(sidecarsDir).filter(f => f.endsWith(".ts"));
     }
-    console.log(`\n  meow/src/sidecars/: ${files.length > 0 ? files.join(", ") : "(empty)"}`);
+    console.log(`\n  src/sidecars/: ${files.length > 0 ? files.join(", ") : "(empty)"}`);
 
-    const skillsDir = "meow/src/skills";
+    const skillsDir = "src/skills";
     let skillFiles: string[] = [];
     if (existsSync(skillsDir)) {
       skillFiles = readdirSync(skillsDir).filter(f => f.endsWith(".ts"));
     }
-    console.log(`  meow/src/skills/: ${skillFiles.join(", ")}`);
+    console.log(`  src/skills/: ${skillFiles.join(", ")}`);
 
-    const toolsDir = "meow/src/tools";
+    const toolsDir = "src/tools";
     let toolFiles: string[] = [];
     if (existsSync(toolsDir)) {
       toolFiles = readdirSync(toolsDir).filter(f => f.endsWith(".ts"));
     }
-    console.log(`  meow/src/tools/: ${toolFiles.join(", ")}`);
+    console.log(`  src/tools/: ${toolFiles.join(", ")}`);
 
     expect(true).toBe(true);
   });
