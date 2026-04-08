@@ -9,7 +9,7 @@
 - [x] Error formatting: beautiful error messages with suggestions (2026-04-08)
 - [x] Status bar: show current mode, branch, session info (2026-04-08)
 - [ ] Onboarding: first-run experience, tutorial walkthrough
-- [ ] Session management: named sessions, session preview, easy resume
+- [x] Session management: named sessions, session preview, easy resume
 - [x] Tool output formatting: pretty-printed JSON, tables, trees (2026-04-09)
 
 ## meowpaw — become as beautiful and capable as tmp/opencowork
