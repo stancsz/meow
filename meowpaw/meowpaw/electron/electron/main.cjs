@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -6,6 +6,7 @@ const fs = require('fs');
 let mainWindow = null;
 let serverProcess = null;
 let agentProcess = null;
+let tray = null;
 
 const isDev = process.env.NODE_ENV === 'development';
 const isProd = !isDev;
@@ -51,6 +52,75 @@ function createWindow() {
   });
 
   mainWindow.loadURL(isDev ? 'http://localhost:3000' : 'http://localhost:3001');
+}
+
+function createTray() {
+  // Create a 16x16 tray icon (or use icon.png if available)
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  let trayIcon;
+
+  if (fs.existsSync(iconPath)) {
+    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  } else {
+    // Create a simple colored square as fallback icon
+    trayIcon = nativeImage.createEmpty();
+  }
+
+  tray = new Tray(trayIcon);
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Meow',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    {
+      label: 'Minimize to Tray',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.hide();
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Restart Agent',
+      click: async () => {
+        if (agentProcess) {
+          agentProcess.kill('SIGTERM');
+          agentProcess = null;
+        }
+        try {
+          await startAgent();
+          console.log('Agent restarted via tray');
+        } catch (err) {
+          console.error('Failed to restart agent:', err);
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setToolTip('Meow Desktop');
+  tray.setContextMenu(contextMenu);
+
+  // Double-click to show window
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
 }
 
 function startServer() {
@@ -181,7 +251,11 @@ async function initializeApp() {
     // Create window after server is ready
     createWindow();
     console.log('Window created successfully');
-    
+
+    // Create system tray
+    createTray();
+    console.log('Tray created successfully');
+
     // Start agent in background (non-blocking)
     startAgent().then(() => {
       console.log('Agent started successfully');
@@ -250,4 +324,29 @@ ipcMain.handle('restart-agent', async () => {
 ipcMain.handle('open-external', (event, url) => {
   shell.openExternal(url);
   return { success: true };
+});
+
+ipcMain.handle('window-minimize', () => {
+  if (mainWindow) mainWindow.minimize();
+  return { success: true };
+});
+
+ipcMain.handle('window-maximize', () => {
+  if (mainWindow) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  }
+  return { success: true, isMaximized: mainWindow ? mainWindow.isMaximized() : false };
+});
+
+ipcMain.handle('window-close', () => {
+  if (mainWindow) mainWindow.hide();
+  return { success: true };
+});
+
+ipcMain.handle('window-is-maximized', () => {
+  return { isMaximized: mainWindow ? mainWindow.isMaximized() : false };
 });

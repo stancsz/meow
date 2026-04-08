@@ -14,7 +14,8 @@
 
 ## meowpaw — become as beautiful and capable as tmp/opencowork
 
-- [ ] Desktop UI: Electron + Next.js dashboard
+- [x] Desktop UI: Electron + Next.js dashboard (2026-04-08)
+- [ ] Window management: minimize, maximize, tray icon
 - [ ] Window management: minimize, maximize, tray icon
 - [ ] Rich editor view: command palette, sidebar, tabs
 - [ ] Visualization: session timeline, task boards, memory graphs
