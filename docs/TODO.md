@@ -19,7 +19,7 @@
 - [x] Desktop UI: Electron + Next.js dashboard (2026-04-08)
 - [x] Window management: minimize, maximize, tray icon (2026-04-08)
 - [x] Rich editor view: command palette, sidebar, tabs (2026-04-08)
-- [ ] Visualization: session timeline, task boards, memory graphs
+- [x] Visualization: session timeline, task boards, memory graphs
 - [x] Settings UI: preferences panel, theme switcher (2026-04-08)
 - [x] Notifications: system notifications for long-running tasks (2026-04-08)
 - [ ] Internationalization: i18n support for future localization
