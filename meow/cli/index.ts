@@ -408,8 +408,6 @@ async function main() {
     singleTui.printUser(prompt);
     singleTui.startThinking();
 
-    try {
-
     // Handle bare "help" command (no leading slash, e.g. --dangerous "help")
     if (filteredArgs[0].toLowerCase() === "help") {
       const skill = findSkill("help");
@@ -644,9 +642,6 @@ async function main() {
       setCursorVisible(true);
     }
     return;
-    } finally {
-      singleTui.destroy();
-    }
   }
 
   // Interactive mode — initialize TUI
