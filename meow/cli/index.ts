@@ -27,6 +27,7 @@ import { parseAndExecute as parseSlashCommand } from "../src/sidecars/slash-comm
 import { initMemory, setMemory, getMemory, remember, listMemoryKeys, deleteMemory, getMemoryStats, formatMemoryStats, listMemoryStores, autoLearnFromConversation } from "../src/sidecars/memory.ts";
 import { createTUI, type TUI } from "../src/sidecars/tui.ts";
 import { printError as printBeautifulError, formatError } from "../src/sidecars/error-formatter.ts";
+import { formatToolOutput } from "../src/sidecars/tool-output-formatter.ts";
 import {
   trackSessionStart, trackSessionEnd, trackTokenUsage, trackError, trackToolCall,
   setCurrentSession, getAggregatedStats, formatAnalyticsReport
@@ -421,7 +422,7 @@ async function main() {
           singleTui.printError(result.error);
         } else {
           singleTui.stopThinking("skill complete");
-          console.log(`\n${result.content}\n`);
+          console.log(`\n${formatToolOutput(result)}\n`);
         }
         return;
       }
@@ -465,7 +466,7 @@ async function main() {
           singleTui.printError(result.error);
         } else {
           singleTui.printSuccess("skill complete");
-          console.log(`\n${result.content}\n`);
+          console.log(`\n${formatToolOutput(result)}\n`);
         }
         return;
       }
@@ -523,7 +524,7 @@ async function main() {
           singleTui.printError(result.error);
         } else {
           singleTui.printSuccess("skill complete");
-          console.log(`\n${result.content}\n`);
+          console.log(`\n${formatToolOutput(result)}\n`);
         }
         return;
       }
@@ -550,7 +551,7 @@ async function main() {
           singleTui.printError(result.error);
         } else {
           singleTui.printSuccess("help shown");
-          console.log(`\n${result.content}\n`);
+          console.log(`\n${formatToolOutput(result)}\n`);
         }
         return;
       }
@@ -631,7 +632,7 @@ async function main() {
         "thinking..."
       );
       singleTui.stopThinking("complete");
-      singleTui.printAssistant(result.content);
+      singleTui.printAssistant(formatToolOutput(result));
       singleTui.printSuccess(`Done in ${result.iterations} iteration(s)`);
       if (result.usage) singleTui.printInfo(formatUsage(result.usage).trim());
       singleTui.setStatus({ tokens: result.usage?.totalTokens });
@@ -771,7 +772,7 @@ async function main() {
       );
 
       // Show assistant response in TUI bubble
-      if (tui) tui.printAssistant(result.content);
+      if (tui) tui.printAssistant(formatToolOutput(result));
       if (tui) tui.printSuccess(`Done in ${result.iterations} iteration(s)`);
       const usageLine = formatUsage(result.usage);
       if (usageLine && tui) tui.printInfo(usageLine.trim());
@@ -779,12 +780,12 @@ async function main() {
 
       // Update conversation for next turn
       conversation.push({ role: "user", content: prompt });
-      conversation.push({ role: "assistant", content: result.content });
+      conversation.push({ role: "assistant", content: formatToolOutput(result) });
 
       // Save to session
       currentSessionMessages.push(
         { role: "user", content: prompt, timestamp: new Date().toISOString() },
-        { role: "assistant", content: result.content, timestamp: new Date().toISOString() }
+        { role: "assistant", content: formatToolOutput(result), timestamp: new Date().toISOString() }
       );
       saveSession();
 
@@ -845,7 +846,7 @@ async function main() {
 
       currentSessionMessages.push(
         { role: "user", content: prompt, timestamp: new Date().toISOString() },
-        { role: "assistant", content: result.content, timestamp: new Date().toISOString() }
+        { role: "assistant", content: formatToolOutput(result), timestamp: new Date().toISOString() }
       );
       saveSession();
       autoLearnFromConversation("user", conversation.filter(m => m.role !== "system" && m.role !== "tool"));
@@ -892,7 +893,7 @@ Respond with ONLY the plan.`;
       );
 
       console.log(`\n${colors.bold}${colors.yellow}━━━ Plan ━━━${colors.reset}\n`);
-      console.log(result.content);
+      console.log(formatToolOutput(result));
       console.log();
 
       // Ask for confirmation
@@ -1123,7 +1124,7 @@ Respond with ONLY the plan.`;
           singleTui.printError(result.error);
         } else {
           singleTui.printSuccess("skill complete");
-          console.log(`\n${result.content}\n`);
+          console.log(`\n${formatToolOutput(result)}\n`);
         }
         return;
       }
