@@ -602,6 +602,14 @@ Evolve loop - autonomous improvement.
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"`);
 
       console.log(`  ✅ Committed: ${commitTitle}`);
+
+      // Push to origin
+      try {
+        runCmd("git push origin main");
+        console.log(`  ✅ Pushed to origin`);
+      } catch (e) {
+        console.log(`  ⚠️ Push failed: ${e}`);
+      }
     }
   } catch (e) {
     console.log(`  ⚠️ Commit failed: ${e}`);
