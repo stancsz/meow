@@ -50,7 +50,7 @@ variable "github_username" {
 variable "minimax_base_url" {
   description = "MiniMax API Base URL"
   type        = string
-  default     = "https://api.minimaxi.com/anthropic"
+  default     = "https://api.minimax.io/anthropic"
 }
 
 # Static IP (IPv4)
