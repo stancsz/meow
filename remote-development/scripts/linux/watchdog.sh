@@ -2,36 +2,36 @@
 # watchdog.sh — Keeps train.sh running forever
 # Run via cron: */5 * * * * /path/to/watchdog.sh
 
-# Resolve to project root (scripts live in local-dev/, which is next to meow/)
+# watchdog.sh — Keeps train.sh running forever
+# Run via cron: */5 * * * * /path/to/watchdog.sh
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-MEW_DIR="$PROJECT_DIR/meow"
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 cd "$PROJECT_DIR"
 
 LOG_FILE="/tmp/train-sh.log"
 PID_FILE="/tmp/train-sh.pid"
 
-# Check if train.sh is already running (by PID file) - most reliable method
+# Check if train.sh is already running (by PID file)
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE")
-  # Check if that PID is actually running (kill -0 returns 0 if process exists)
   if kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "$(date): train.sh already running as PID $OLD_PID"
+    echo "$(date): train.sh running as PID $OLD_PID"
     exit 0
   else
-    echo "$(date): Stale PID file (PID $OLD_PID is dead), cleaning up..."
+    echo "$(date): Stale PID $OLD_PID, cleaning..."
     rm -f "$PID_FILE"
   fi
 fi
 
-# Secondary check: look for bun running evolve.ts
-if ps aux 2>/dev/null | grep -v grep | grep -q "bun.*evolve"; then
-  echo "$(date): train.sh is already running (found bun evolve process)"
+# Check if evolve is running
+if pgrep -f "bun.*evolve" > /dev/null 2>&1; then
+  echo "$(date): bun evolve running"
   exit 0
 fi
 
-echo "$(date): train.sh not running, starting..."
-nohup ./local-dev/train.sh >> "$LOG_FILE" 2>&1 &
+echo "$(date): Not running, starting..."
+nohup ./remote-development/scripts/linux/train.sh >> "$LOG_FILE" 2>&1 &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
-echo "$(date): Started train.sh as PID $NEW_PID"
+echo "$(date): Started as PID $NEW_PID"
