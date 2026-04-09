@@ -26,6 +26,11 @@ if [[ -z "$AWS_ACCESS_KEY_ID" ]] || [[ -z "$AWS_SECRET_ACCESS_KEY" ]]; then
   exit 1
 fi
 
+if [[ -z "$GITHUB_PAT" ]]; then
+  echo "ERROR: GITHUB_PAT not found in ~/.env"
+  exit 1
+fi
+
 # Prompt for Anthropic API key if not set
 if [[ -z "$ANTHROPIC_API_KEY" ]]; then
   echo -n "Enter your Anthropic API key (or set ANTHROPIC_API_KEY in ~/.env): "
@@ -48,6 +53,7 @@ terraform apply \
   -var "aws_access_key=$AWS_ACCESS_KEY_ID" \
   -var "aws_secret_key=$AWS_SECRET_ACCESS_KEY" \
   -var "anthropic_api_key=$ANTHROPIC_API_KEY" \
+  -var "github_pat=$GITHUB_PAT" \
   -auto-approve
 
 echo ""

@@ -46,6 +46,8 @@ _override.tf.json
 .terraformrc
 terraform.rc
 *.tar
+**.lock.hcl
+remote-development/DEPLOYED.md
 
 # Legacy archived directories (see Git history for reference)
 /.agents/
