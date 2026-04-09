@@ -109,6 +109,12 @@ interface TopicRepo {
   harvestedAt?: number; // timestamp when we last processed
   decision?: "harvest" | "integrate" | "skip";
   notes?: string;
+  // Deep study tracking
+  studyDepth?: "shallow" | "deep" | "full";
+  studyCount?: number;
+  lastStudiedAt?: number;
+  consumedAt?: number; // when fully digested and offboarded
+  offboard?: boolean; // true if removed from active study
 }
 
 function loadTopicRepos(): TopicRepo[] {
@@ -118,6 +124,53 @@ function loadTopicRepos(): TopicRepo[] {
 function saveTopicRepos(repos: TopicRepo[]): void {
   ensureDir(WISDOM_DIR);
   writeJson(TOPIC_STATE_FILE, repos);
+}
+
+function updateTopicRepoStudy(gap: Gap, depth: "shallow" | "deep" | "full", increment: number = 1): void {
+  const repos = loadTopicRepos();
+  // Extract repo from gap id: GAP-TOPIC-AI-openclaw_openclaw -> openclaw/openclaw
+  const match = gap.id.match(/^GAP-TOPIC-(\w+)-(.+)$/);
+  if (!match) return;
+
+  const topic = match[1].toLowerCase();
+  const repoKey = match[2].replace(/_/g, "/");
+
+  for (const repo of repos) {
+    if (repo.topic === topic && repo.repo.replace(/\//g, "_") === repoKey) {
+      repo.lastStudiedAt = Date.now();
+      repo.studyCount = (repo.studyCount || 0) + increment;
+      repo.studyDepth = depth;
+      repo.harvestedAt = repo.harvestedAt || Date.now();
+      console.log(`  📚 Updated study for ${repo.repo}: ${depth}, count=${repo.studyCount}`);
+      break;
+    }
+  }
+  saveTopicRepos(repos);
+}
+
+function updateTopicRepoFromResponse(gap: Gap): void {
+  const repos = loadTopicRepos();
+  // Extract repo from GAP-RESTUDY-AI-openclaw_openclaw -> openclaw/openclaw
+  const match = gap.id.match(/^GAP-RESTUDY-(\w+)-(.+)$/);
+  if (!match) return;
+
+  const topic = match[1].toLowerCase();
+  const repoKey = match[2].replace(/_/g, "/");
+
+  for (const repo of repos) {
+    if (repo.topic === topic && repo.repo.replace(/\//g, "_") === repoKey) {
+      repo.lastStudiedAt = Date.now();
+      repo.studyCount = (repo.studyCount || 0) + 1;
+      // If this was a re-study and the gap is now solved, it means we decided to keep studying
+      // Check if we should escalate or offboard based on study count
+      if (repo.studyCount >= 5 && repo.studyDepth !== "full") {
+        // After 5 studies, mark as full consumption candidate
+        console.log(`  🍽️ ${repo.repo} studied ${repo.studyCount}x - candidate for offboarding`);
+      }
+      break;
+    }
+  }
+  saveTopicRepos(repos);
 }
 
 // ============================================================================
@@ -400,7 +453,35 @@ async function discoverGaps(): Promise<void> {
     }
   }
 
-  // 4. Fallback skill gaps if nothing else to do
+  // 4. Re-study previously harvested repos (assess if fully consumed)
+  const studiedRepos = loadTopicRepos();
+  for (const repo of studiedRepos) {
+    if (repo.offboard || repo.consumedAt) continue; // Already offboarded
+    if (!repo.studyCount || repo.studyCount < 1) continue; // Not yet studied
+
+    // Re-study repos after 7 days if not fully consumed
+    const daysSinceStudy = repo.lastStudiedAt
+      ? (Date.now() - repo.lastStudiedAt) / (1000 * 60 * 60 * 24)
+      : 7;
+
+    if (daysSinceStudy >= 7) {
+      const studyGapId = `GAP-RESTUDY-${repo.topic.toUpperCase()}-${repo.repo.replace(/[\/-]/g, "_")}`;
+      if (!existingIds.has(studyGapId)) {
+        gaps.push({
+          id: studyGapId,
+          description: `[Re-study ${repo.studyDepth || "shallow"}] ${repo.repo}: ${repo.description}`,
+          priority: repo.stars > 5000 ? "P1" : "P2",
+          status: "open",
+          whatToImplement: `Re-assess ${repo.repo} (studied ${repo.studyCount}x, last ${Math.round(daysSinceStudy)}d ago). Decide: escalate to deep study, mark fully consumed & offboard, or keep in shallow rotation.`,
+        });
+        existingIds.add(studyGapId);
+        added = true;
+        console.log(`  🔄 Re-study: ${repo.repo} (${Math.round(daysSinceStudy)}d since last study, ${repo.studyCount}x total)`);
+      }
+    }
+  }
+
+  // 5. Fallback skill gaps if nothing else to do
   if (!added) {
     const skillGaps = [
       { id: "GAP-SKILL-EXEC", name: "exec", desc: "Shell command execution skill" },
@@ -869,6 +950,14 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
           });
         } catch {}
         commitChanges(gap);
+
+        // Track topic repo study progress
+        if (gap.id.startsWith("GAP-TOPIC-")) {
+          updateTopicRepoStudy(gap, "shallow", 1);
+        } else if (gap.id.startsWith("GAP-RESTUDY-")) {
+          // Parse the LLM response to determine next action
+          updateTopicRepoFromResponse(gap);
+        }
       } else {
         gap.status = "waiting";
         console.log(`\n❌ ${gap.id} FAILED - scheduled for retry`);
