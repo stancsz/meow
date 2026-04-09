@@ -72,7 +72,7 @@ Write-Host "Creating Meow-KillAgents (hourly at :00)..."
 schtasks /Create /TN "Meow-KillAgents" /TR $killCmd /SC HOURLY /MO 1 /ST 00:00 /F
 
 # FeatureDev - :00
-$featureCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $featurePromptPath + "`' | claude --dangerously-skip-permissions --continue"
+$featureCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $featurePromptPath + "`' | claude --dangerously-skip-permissions --continue --input-format text"
 Write-Host "Creating Meow-FeatureDevAgent (hourly at :00)..."
 schtasks /Create /TN "Meow-FeatureDevAgent" /TR $featureCmd /SC HOURLY /MO 1 /ST 00:00 /F
 
@@ -81,17 +81,17 @@ Write-Host "Creating Meow-FeatureDevAgent2 (hourly at :30)..."
 schtasks /Create /TN "Meow-FeatureDevAgent2" /TR $featureCmd /SC HOURLY /MO 1 /ST 00:30 /F
 
 # QA - :15
-$qaCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $qaPromptPath + "`' | claude --dangerously-skip-permissions --continue"
+$qaCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $qaPromptPath + "`' | claude --dangerously-skip-permissions --continue --input-format text"
 Write-Host "Creating Meow-QAUxAgent (hourly at :15)..."
 schtasks /Create /TN "Meow-QAUxAgent" /TR $qaCmd /SC HOURLY /MO 1 /ST 00:15 /F
 
 # Cleanup - :30
-$cleanupCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $cleanupPromptPath + "`' | claude --dangerously-skip-permissions --continue"
+$cleanupCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $cleanupPromptPath + "`' | claude --dangerously-skip-permissions --continue --input-format text"
 Write-Host "Creating Meow-CleanupAgent (hourly at :30)..."
 schtasks /Create /TN "Meow-CleanupAgent" /TR $cleanupCmd /SC HOURLY /MO 1 /ST 00:30 /F
 
 # TODOUpdater - :45
-$todoCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $todoPromptPath + "`' | claude --dangerously-skip-permissions --continue"
+$todoCmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command cd `'" + $projectDir + "`'; Get-Content `'" + $todoPromptPath + "`' | claude --dangerously-skip-permissions --continue --input-format text"
 Write-Host "Creating Meow-TodoUpdaterAgent (hourly at :45)..."
 schtasks /Create /TN "Meow-TodoUpdaterAgent" /TR $todoCmd /SC HOURLY /MO 1 /ST 00:45 /F
 
