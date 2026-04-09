@@ -506,10 +506,12 @@ Report SUCCESS when the gap is fully closed, or FAILED if you could not complete
   } catch (e: any) {
     const errorMsg = e.message || "";
     const isRateLimit = errorMsg.includes("2062") ||
+                        errorMsg.includes("2061") ||
                         errorMsg.includes("rate limit") ||
                         errorMsg.includes("Traffic is currently high") ||
                         errorMsg.includes("429") ||
-                        errorMsg.includes("Connection error");
+                        errorMsg.includes("Connection error") ||
+                        errorMsg.includes("500"); // Internal server errors may be temporary
 
     return { success: false, error: errorMsg, isRateLimit };
   }
