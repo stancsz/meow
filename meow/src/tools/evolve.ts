@@ -24,7 +24,19 @@ import OpenAI from "openai";
 import { getToolDefinitions, executeTool } from "../sidecars/tool-registry.ts";
 import { initMemoryFts, storeMemory, searchMemory, formatSearchResults } from "../sidecars/memory-fts.ts";
 
-// Load .env if present
+// ============================================================================
+// Paths (needed early for .env loading)
+// ============================================================================
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "../..");  // meow/src/tools -> meow/
+const REPO_ROOT = join(ROOT, "..");     // meow/ -> repo root
+const DOGFOOD = join(ROOT, "dogfood");
+const WISDOM_DIR = join(DOGFOOD, "wisdom");
+const GAP_LIST_FILE = join(WISDOM_DIR, "gap-list-v2.json");
+const STATE_FILE = join(WISDOM_DIR, "state-v2.json");
+
+// Load .env if present (before any API calls)
 try {
   const envPath = join(REPO_ROOT, ".env");
   if (existsSync(envPath)) {
@@ -41,24 +53,12 @@ try {
         }
       }
     }
-    // Alias LLM_API_KEY -> ANTHROPIC_API_KEY for compatibility
+    // Alias ANTHROPIC_API_KEY -> LLM_API_KEY for compatibility
     if (process.env.ANTHROPIC_API_KEY && !process.env.LLM_API_KEY) {
       process.env.LLM_API_KEY = process.env.ANTHROPIC_API_KEY;
     }
   }
 } catch {}
-
-// ============================================================================
-// Paths
-// ============================================================================
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "../..");  // meow/src/tools -> meow/
-const REPO_ROOT = join(ROOT, "..");     // meow/ -> repo root
-const DOGFOOD = join(ROOT, "dogfood");
-const WISDOM_DIR = join(DOGFOOD, "wisdom");
-const GAP_LIST_FILE = join(WISDOM_DIR, "gap-list-v2.json");
-const STATE_FILE = join(WISDOM_DIR, "state-v2.json");
 
 // ============================================================================
 // Types
@@ -100,8 +100,8 @@ const PROVIDERS: LLMProvider[] = [
   {
     name: "minimax",
     apiKeyEnv: "LLM_API_KEY",
-    baseURL: process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic",
-    model: process.env.LLM_MODEL || "MiniMax-M2.7",
+    baseURL: "https://api.minimax.io/v1",
+    model: "MiniMax-M2.7",
     priority: 1,
   },
   {
