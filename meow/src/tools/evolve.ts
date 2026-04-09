@@ -24,6 +24,30 @@ import OpenAI from "openai";
 import { getToolDefinitions, executeTool } from "../sidecars/tool-registry.ts";
 import { initMemoryFts, storeMemory, searchMemory, formatSearchResults } from "../sidecars/memory-fts.ts";
 
+// Load .env if present
+try {
+  const envPath = join(REPO_ROOT, ".env");
+  if (existsSync(envPath)) {
+    const envContent = readFileSync(envPath, "utf-8");
+    for (const line of envContent.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const value = trimmed.slice(eqIdx + 1).trim();
+        if (key && !process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    }
+    // Alias LLM_API_KEY -> ANTHROPIC_API_KEY for compatibility
+    if (process.env.ANTHROPIC_API_KEY && !process.env.LLM_API_KEY) {
+      process.env.LLM_API_KEY = process.env.ANTHROPIC_API_KEY;
+    }
+  }
+} catch {}
+
 // ============================================================================
 // Paths
 // ============================================================================
@@ -75,9 +99,9 @@ interface LLMProvider {
 const PROVIDERS: LLMProvider[] = [
   {
     name: "minimax",
-    apiKeyEnv: "ANTHROPIC_API_KEY", // MiniMax via OpenAI-compatible endpoint
-    baseURL: process.env.ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
-    model: process.env.ANTHROPIC_MODEL || "MiniMax-M2.7",
+    apiKeyEnv: "LLM_API_KEY",
+    baseURL: process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic",
+    model: process.env.LLM_MODEL || "MiniMax-M2.7",
     priority: 1,
   },
   {
