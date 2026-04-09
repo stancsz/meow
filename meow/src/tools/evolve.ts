@@ -83,6 +83,10 @@ interface State {
   consecutiveRateLimitHits: number; // For 2^n backoff
   lastProvider: string;
   lastTopicScan: number; // Timestamp of last GitHub topic scan
+  // Dogfood and internalization tracking
+  skillsUsed: Record<string, number>; // skill name -> use count
+  selfImprovements: number; // times we improved our own harness
+  internalizationFails: number; // skills learned but never used
 }
 
 // ============================================================================
@@ -328,6 +332,9 @@ function loadState(): State {
     consecutiveFailures: 0,
     consecutiveRateLimitHits: 0,
     lastProvider: "",
+    skillsUsed: {},
+    selfImprovements: 0,
+    internalizationFails: 0,
   });
   return state;
 }
@@ -500,6 +507,64 @@ async function discoverGaps(): Promise<void> {
         console.log(`  📝 Discovered: ${sg.id}`);
         break;
       }
+    }
+  }
+
+  // 6. Dogfood verification gaps - ensure new skills are actually used
+  const state = loadState();
+  for (const [skillName, useCount] of Object.entries(state.skillsUsed)) {
+    // If a skill was learned but never used (count === 0), flag for review
+    if (useCount === 0 && skillName.startsWith("harvested_")) {
+      const dogfoodGapId = `GAP-DOGFOOD-${skillName.toUpperCase().replace(/-/g, "_")}`;
+      if (!existingIds.has(dogfoodGapId)) {
+        gaps.push({
+          id: dogfoodGapId,
+          description: `Skill ${skillName} was harvested but never used — dogfood required`,
+          priority: "P1",
+          status: "open",
+          whatToImplement: `Use skill ${skillName} in a real task OR integrate it into meow core loop OR offboard it if not useful.`,
+        });
+        existingIds.add(dogfoodGapId);
+        added = true;
+        console.log(`  🍖 Dogfood gap: ${skillName} needs verification`);
+      }
+    }
+  }
+
+  // 7. Self-improvement gaps - optimize the harness itself
+  // If we have low success rate or high fail rate, look at improving evolve.ts
+  if (state.totalSolved > 10) {
+    const failRate = state.totalFailed / (state.totalSolved + state.totalFailed);
+    if (failRate > 0.3) {
+      const harnessGapId = "GAP-SELF-OPTIMIZE-HARNESS";
+      if (!existingIds.has(harnessGapId)) {
+        gaps.push({
+          id: harnessGapId,
+          description: `High failure rate detected: ${Math.round(failRate * 100)}% fail rate`,
+          priority: "P0",
+          status: "open",
+          whatToImplement: `Analyze evolve.ts failures. Improve error handling, provider fallback, gap discovery, or LLM prompting. Self-optimize the self-evolver.`,
+        });
+        existingIds.add(harnessGapId);
+        added = true;
+        console.log(`  🔧 Self-optimization gap: fail rate ${Math.round(failRate * 100)}%`);
+      }
+    }
+  }
+
+  // 8. Internalization check - ensure concepts become capabilities, not just trivia
+  if (state.internalizationFails > 3) {
+    const internalizeGapId = "GAP-INTERNALIZE-CONCEPTS";
+    if (!existingIds.has(internalizeGapId)) {
+      gaps.push({
+        id: internalizeGapId,
+        description: `${state.internalizationFails} skills were learned but not internalized`,
+        priority: "P1",
+        status: "open",
+        whatToImplement: `Review skills that were marked as "learned" but not used. Either: (1) Integrate them into core loop so they're actually invoked, (2) Remove them if truly useless. Meow must internalize, not just memorize.`,
+      });
+      existingIds.add(internalizeGapId);
+      console.log(`  🧠 Internalization gap: ${state.internalizationFails} uninternalized skills`);
     }
   }
 
@@ -958,9 +1023,26 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
           // Parse the LLM response to determine next action
           updateTopicRepoFromResponse(gap);
         }
+
+        // Track self-improvement
+        if (gap.id.startsWith("GAP-SELF-") || gap.id.startsWith("GAP-DOGFOOD-")) {
+          state.selfImprovements++;
+          console.log(`  🔧 Self-improvement count: ${state.selfImprovements}`);
+        }
+
+        // Track internalization
+        if (gap.id.startsWith("GAP-INTERNALIZE-")) {
+          // If we solved this, it means we addressed uninternalized skills
+          console.log(`  🧠 Internalization addressed`);
+        }
       } else {
         gap.status = "waiting";
         console.log(`\n❌ ${gap.id} FAILED - scheduled for retry`);
+
+        // Track internalization fails
+        if (gap.id.startsWith("GAP-DOGFOOD-")) {
+          state.internalizationFails++;
+        }
       }
       saveGaps(gaps);
     }
@@ -985,6 +1067,10 @@ function showStatus(): void {
   const gaps = loadGaps();
   const state = loadState();
 
+  const failRate = state.totalSolved + state.totalFailed > 0
+    ? Math.round((state.totalFailed / (state.totalSolved + state.totalFailed)) * 100)
+    : 0;
+
   console.log(`
 🐱 EVOLVE STATUS
 ═══════════════════════════════════════════════
@@ -992,8 +1078,10 @@ function showStatus(): void {
   Total solved: ${state.totalSolved}
   Total failed: ${state.totalFailed}
   Last provider: ${state.lastProvider || "none"}
-  Rate limit until: ${state.rateLimitUntil > Date.now() ? new Date(state.rateLimitUntil).toISOString() : "none"}
-  Backoff level: ${state.consecutiveRateLimitHits} (${Math.min(60, Math.pow(2, state.consecutiveRateLimitHits - 1) || 1)}min)
+  Fail rate: ${failRate}%
+  Self-improvements: ${state.selfImprovements}
+  Internalization fails: ${state.internalizationFails}
+  Skills used: ${Object.keys(state.skillsUsed || {}).length}
 ═══════════════════════════════════════════════
 
   GAPS (${gaps.length} total)
