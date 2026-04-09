@@ -29,7 +29,8 @@ import { initMemoryFts, storeMemory, searchMemory, formatSearchResults } from ".
 // ============================================================================
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "../..");
+const ROOT = join(__dirname, "../..");  // meow/src/tools -> meow/
+const REPO_ROOT = join(ROOT, "..");     // meow/ -> repo root
 const DOGFOOD = join(ROOT, "dogfood");
 const WISDOM_DIR = join(DOGFOOD, "wisdom");
 const GAP_LIST_FILE = join(WISDOM_DIR, "gap-list-v2.json");
@@ -183,7 +184,7 @@ function discoverGaps(): void {
   let added = false;
 
   // 1. Discover from docs/harvest/ (external capabilities)
-  const harvestDir = join(ROOT, "docs/harvest");
+  const harvestDir = join(REPO_ROOT, "docs/harvest");
   if (existsSync(harvestDir)) {
     const files = readdirSync(harvestDir).filter(f => f.endsWith(".md"));
     for (const file of files) {
@@ -207,7 +208,7 @@ function discoverGaps(): void {
   }
 
   // 2. Discover from docs/TODO.md (unchecked items)
-  const todoPath = join(ROOT, "docs/TODO.md");
+  const todoPath = join(REPO_ROOT, "docs/TODO.md");
   if (existsSync(todoPath)) {
     const todoContent = readFileSync(todoPath, "utf-8");
     const lines = todoContent.split("\n");
