@@ -1,19 +1,10 @@
 #!/bin/bash
 # train.sh — Thin wrapper that delegates to evolve.ts
-#
-# All the heavy logic lives in meow/src/tools/evolve.ts (OODA loop).
-# This script just handles retries and the infinite loop.
-#
-# Usage:
-#   ./train.sh              # Run forever with retries
-#   ./train.sh --once       # Single iteration (no retry)
-#   ./train.sh --status     # Show current gap status
-
 set -e
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-cd "$PROJECT_DIR"
+BUN=/home/ubuntu/.bun/bin/bun
+cd /home/ubuntu/meow
+# Source .env if present
+if [[ -f .env ]]; then set -a; source .env; set +a; fi
 
 # Retry loop for continuous mode (runs forever)
 if [[ "$*" == "" ]]; then
