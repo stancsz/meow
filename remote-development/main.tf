@@ -41,6 +41,18 @@ variable "github_pat" {
   sensitive   = true
 }
 
+variable "github_username" {
+  description = "GitHub Username"
+  type        = string
+  default     = "stancsz"
+}
+
+variable "minimax_base_url" {
+  description = "MiniMax API Base URL"
+  type        = string
+  default     = "https://api.minimaxi.com/anthropic"
+}
+
 # Static IP (IPv4)
 resource "aws_lightsail_static_ip" "meow" {
   name = "meow-remote-dev-01"
@@ -61,6 +73,8 @@ resource "aws_lightsail_instance" "meow" {
   user_data         = templatefile("${path.module}/user_data.tftpl", {
     anthropic_api_key = var.anthropic_api_key
     github_pat        = var.github_pat
+    github_username   = var.github_username
+    minimax_base_url  = var.minimax_base_url
   })
 }
 

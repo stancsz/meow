@@ -19,8 +19,8 @@ fi
 
 # Clone meow repo
 cd /home/meow
-git clone https://${github_pat}@github.com/stancsz/meow.git /home/meow/meow 2>/dev/null || \
-  (mkdir -p /home/meow/meow && cd /home/meow/meow && git init && git remote add origin https://${github_pat}@github.com/stancsz/meow.git)
+git clone https://${github_pat}@github.com/${github_username}/meow.git /home/meow/meow 2>/dev/null || \
+  (mkdir -p /home/meow/meow && cd /home/meow/meow && git init && git remote add origin https://${github_pat}@github.com/${github_username}/meow.git)
 
 chown -R meow:meow /home/meow
 
@@ -36,7 +36,7 @@ User=meow
 WorkingDirectory=/home/meow/meow
 Environment="PATH=/home/meow/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
 Environment="ANTHROPIC_API_KEY=${anthropic_api_key}"
-Environment="ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic"
+Environment="ANTHROPIC_BASE_URL=${minimax_base_url}"
 Environment="ANTHROPIC_AUTH_TOKEN=${anthropic_api_key}"
 Environment="API_TIMEOUT_MS=3000000"
 Environment="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"

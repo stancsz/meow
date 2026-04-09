@@ -54,6 +54,8 @@ terraform apply \
   -var "aws_secret_key=$AWS_SECRET_ACCESS_KEY" \
   -var "anthropic_api_key=$ANTHROPIC_API_KEY" \
   -var "github_pat=$GITHUB_PAT" \
+  -var "github_username=${GITHUB_USERNAME:-stancsz}" \
+  -var "minimax_base_url=${ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic}" \
   -auto-approve
 
 echo ""
