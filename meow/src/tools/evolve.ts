@@ -342,7 +342,7 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
 
     const [, fullName, fileName] = match;
     const skillName = fullName.toLowerCase();
-    const docPath = join(ROOT, "docs", "harvest", `${fileName}.md`);
+    const docPath = join(REPO_ROOT, "docs", "harvest", `${fileName}.md`);
 
     if (!existsSync(docPath)) {
       console.log(`  ⚠️ Harvest doc not found: ${docPath}`);
