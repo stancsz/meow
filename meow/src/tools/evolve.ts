@@ -82,6 +82,111 @@ interface State {
   consecutiveFailures: number;
   consecutiveRateLimitHits: number; // For 2^n backoff
   lastProvider: string;
+  lastTopicScan: number; // Timestamp of last GitHub topic scan
+}
+
+// ============================================================================
+// GitHub Topics Configuration
+// ============================================================================
+
+const GITHUB_TOPICS = [
+  "ai",
+  "mcp",
+  "claude-code",
+  "openclaw",
+  "agent",
+  "skills",
+];
+
+const TOPIC_STATE_FILE = join(WISDOM_DIR, "topic-repos-v1.json");
+
+interface TopicRepo {
+  topic: string;
+  repo: string; // "owner/repo"
+  stars: number;
+  description: string;
+  url: string;
+  harvestedAt?: number; // timestamp when we last processed
+  decision?: "harvest" | "integrate" | "skip";
+  notes?: string;
+}
+
+function loadTopicRepos(): TopicRepo[] {
+  return readJson<TopicRepo[]>(TOPIC_STATE_FILE, []);
+}
+
+function saveTopicRepos(repos: TopicRepo[]): void {
+  ensureDir(WISDOM_DIR);
+  writeJson(TOPIC_STATE_FILE, repos);
+}
+
+// ============================================================================
+// GitHub Topic Scanning
+// ============================================================================
+
+async function fetchGitHubTopicRepos(topic: string): Promise<TopicRepo[]> {
+  console.log(`\n🔍 Scanning GitHub topic: ${topic}`);
+  const repos: TopicRepo[] = [];
+
+  try {
+    // Get top repos by stars for this topic
+    const cmd = `curl -s "https://api.github.com/search/repositories?q=topic:${topic}&sort=stars&order=desc&per_page=10" -H "Accept: application/vnd.github.v3+json"`;
+    const result = runCmd(cmd);
+    if (result.code !== 0) {
+      console.log(`  ⚠️ Failed to fetch topic ${topic}: ${result.stderr}`);
+      return repos;
+    }
+
+    const data = JSON.parse(result.stdout);
+    if (data.items) {
+      for (const repo of data.items.slice(0, 5)) { // Top 5 per topic
+        repos.push({
+          topic,
+          repo: repo.full_name,
+          stars: repo.stargazers_count,
+          description: repo.description || "",
+          url: repo.html_url,
+        });
+        console.log(`  ⭐ ${repo.full_name} (${repo.stargazers_count} stars)`);
+      }
+    }
+  } catch (e: any) {
+    console.log(`  ⚠️ Error parsing GitHub response for ${topic}: ${e.message}`);
+  }
+
+  return repos;
+}
+
+async function scanGitHubTopics(): Promise<void> {
+  const state = loadState();
+  const now = Date.now();
+
+  // Only scan once per day
+  if (state.lastTopicScan && now - state.lastTopicScan < 24 * 60 * 60 * 1000) {
+    console.log(`\n⏳ GitHub topic scan already done today, skipping...`);
+    return;
+  }
+
+  console.log(`\n🔍🌐 Scanning GitHub topics for new repos...`);
+  const existingRepos = loadTopicRepos();
+  const existingKeys = new Set(existingRepos.map(r => `${r.topic}:${r.repo}`));
+
+  for (const topic of GITHUB_TOPICS) {
+    const newRepos = await fetchGitHubTopicRepos(topic);
+    for (const repo of newRepos) {
+      if (!existingKeys.has(`${repo.topic}:${repo.repo}`)) {
+        existingRepos.push(repo);
+        existingKeys.add(`${repo.topic}:${repo.repo}`);
+      }
+    }
+    // Small delay to avoid rate limiting
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  saveTopicRepos(existingRepos);
+  state.lastTopicScan = now;
+  saveState(state);
+  console.log(`\n📊 Total repos tracked: ${existingRepos.length}`);
 }
 
 // ============================================================================
@@ -204,7 +309,10 @@ function slugify(text: string): string {
     .slice(0, 50);
 }
 
-function discoverGaps(): void {
+async function discoverGaps(): Promise<void> {
+  // Scan GitHub topics for new repos (once per day)
+  await scanGitHubTopics();
+
   const gaps = loadGaps();
   const existingIds = new Set(gaps.map(g => g.id));
   let added = false;
@@ -272,7 +380,27 @@ function discoverGaps(): void {
     }
   }
 
-  // 3. Fallback skill gaps if nothing else to do
+  // 3. Discover from GitHub Topics (unprocessed repos)
+  const topicRepos = loadTopicRepos();
+  for (const repo of topicRepos) {
+    if (repo.decision) continue; // Already processed
+
+    const repoKey = `GAP-TOPIC-${repo.topic.toUpperCase()}-${repo.repo.replace(/[\/-]/g, "_")}`;
+    if (!existingIds.has(repoKey)) {
+      gaps.push({
+        id: repoKey,
+        description: `[${repo.topic}] ${repo.repo}: ${repo.description}`,
+        priority: repo.stars > 1000 ? "P1" : "P2",
+        status: "open",
+        whatToImplement: `Evaluate ${repo.repo} for ${repo.topic} — ${repo.stars} stars. Decide: harvest, integrate as core capability, or skip.`,
+      });
+      existingIds.add(repoKey);
+      added = true;
+      console.log(`  📊 Discovered topic repo: ${repo.repo} (${repo.topic}, ${repo.stars} stars)`);
+    }
+  }
+
+  // 4. Fallback skill gaps if nothing else to do
   if (!added) {
     const skillGaps = [
       { id: "GAP-SKILL-EXEC", name: "exec", desc: "Shell command execution skill" },
@@ -637,6 +765,9 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
   Total solved: ${state.totalSolved} | Failed: ${state.totalFailed}
 🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
 `);
+
+  // Scan GitHub topics for new repos
+  await scanGitHubTopics();
 
   while (true) {
     const now = Date.now();
