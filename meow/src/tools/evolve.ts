@@ -169,11 +169,20 @@ function saveGaps(gaps: Gap[]): void {
 // Gap Discovery
 // ============================================================================
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 50);
+}
+
 function discoverGaps(): void {
   const gaps = loadGaps();
   const existingIds = new Set(gaps.map(g => g.id));
   let added = false;
 
+  // 1. Discover from docs/harvest/ (external capabilities)
   const harvestDir = join(ROOT, "docs/harvest");
   if (existsSync(harvestDir)) {
     const files = readdirSync(harvestDir).filter(f => f.endsWith(".md"));
@@ -197,6 +206,46 @@ function discoverGaps(): void {
     }
   }
 
+  // 2. Discover from docs/TODO.md (unchecked items)
+  const todoPath = join(ROOT, "docs/TODO.md");
+  if (existsSync(todoPath)) {
+    const todoContent = readFileSync(todoPath, "utf-8");
+    const lines = todoContent.split("\n");
+    let currentSection = "";
+
+    for (const line of lines) {
+      // Track current section header
+      const sectionMatch = line.match(/^##\s+(.+)/);
+      if (sectionMatch) {
+        currentSection = slugify(sectionMatch[1]);
+      }
+
+      // Find unchecked TODO items: - [ ]
+      const uncheckedMatch = line.match(/^- \[ \]\s*\*\*(.+?)\*\*[:\s]*(.*)/);
+      if (uncheckedMatch) {
+        const title = uncheckedMatch[1].trim();
+        const description = uncheckedMatch[2].trim();
+        const gapId = `GAP-TODO-${currentSection}-${slugify(title)}`.toUpperCase().slice(0, 60);
+
+        if (!existingIds.has(gapId)) {
+          gaps.push({
+            id: gapId,
+            description: description || title,
+            priority: "P2",
+            status: "open",
+            whatToImplement: description
+              ? `TODO: ${title} — ${description}`
+              : `TODO: ${title}`
+          });
+          existingIds.add(gapId);
+          added = true;
+          console.log(`  📋 Discovered TODO: ${gapId} — ${title}`);
+        }
+      }
+    }
+  }
+
+  // 3. Fallback skill gaps if nothing else to do
   if (!added) {
     const skillGaps = [
       { id: "GAP-SKILL-EXEC", name: "exec", desc: "Shell command execution skill" },
