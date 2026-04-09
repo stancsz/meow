@@ -56,6 +56,7 @@ interface State {
   lastClaudeCall: number;
   rateLimitUntil: number; // Timestamp when rate limit ends
   consecutiveFailures: number;
+  consecutiveRateLimitHits: number; // For 2^n backoff
   lastProvider: string;
 }
 
@@ -143,6 +144,7 @@ function loadState(): State {
     lastClaudeCall: 0,
     rateLimitUntil: 0,
     consecutiveFailures: 0,
+    consecutiveRateLimitHits: 0,
     lastProvider: "",
   });
   return state;
@@ -500,17 +502,20 @@ async function callClaude(gap: Gap, state: State): Promise<{ success: boolean; p
 
     if (result.success) {
       state.consecutiveFailures = 0;
+      state.consecutiveRateLimitHits = 0;
       state.lastProvider = provider.name;
       return { success: true, providerUsed: provider.name };
     }
 
     if (result.isRateLimit) {
       console.log(`  ⏳ [${provider.name}] Rate limited: ${result.error}`);
-      // Mark gap for later retry
+      // Track consecutive rate limit hits for exponential backoff
+      state.consecutiveRateLimitHits++;
+      // 2^n backoff: 1min, 2min, 4min, 8min, 16min, 32min, max 60min
+      const backoffMinutes = Math.min(60, Math.pow(2, state.consecutiveRateLimitHits - 1));
       gap.status = "waiting";
-      // Schedule retry in 10-30 minutes (randomized)
-      gap.retryAfter = Date.now() + (10 + Math.random() * 20) * 60 * 1000;
-      state.rateLimitUntil = Date.now() + 5 * 60 * 1000; // Global rate limit 5 min
+      gap.retryAfter = Date.now() + backoffMinutes * 60 * 1000;
+      state.rateLimitUntil = Date.now() + backoffMinutes * 60 * 1000;
       state.consecutiveFailures++;
       return { success: false };
     }
@@ -734,6 +739,7 @@ function showStatus(): void {
   Total failed: ${state.totalFailed}
   Last provider: ${state.lastProvider || "none"}
   Rate limit until: ${state.rateLimitUntil > Date.now() ? new Date(state.rateLimitUntil).toISOString() : "none"}
+  Backoff level: ${state.consecutiveRateLimitHits} (${Math.min(60, Math.pow(2, state.consecutiveRateLimitHits - 1) || 1)}min)
 ═══════════════════════════════════════════════
 
   GAPS (${gaps.length} total)
