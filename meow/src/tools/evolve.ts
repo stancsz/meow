@@ -75,9 +75,9 @@ interface LLMProvider {
 const PROVIDERS: LLMProvider[] = [
   {
     name: "minimax",
-    apiKeyEnv: "LLM_API_KEY",
-    baseURL: process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic",
-    model: process.env.LLM_MODEL || "MiniMax-M2.7",
+    apiKeyEnv: "ANTHROPIC_API_KEY", // MiniMax via OpenAI-compatible endpoint
+    baseURL: process.env.ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
+    model: process.env.ANTHROPIC_MODEL || "MiniMax-M2.7",
     priority: 1,
   },
   {
