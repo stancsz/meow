@@ -36,37 +36,31 @@ interface ResearchHypothesis {
 
 async function webSearch(query: string, maxResults = 5): Promise<SearchResult[]> {
   try {
-    // Use Node's native https module
     const { execSync } = await import("node:child_process");
-    const https = await import("node:https");
 
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${query.replace(/"/g, "%22").replace(/ /g, "+")}`;
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
+    // Build search URL manually to avoid double-encoding
+    const q = query.replace(/ /g, "+").replace(/"/g, "");
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${q}`;
+    const proxyUrl = `https://api.allorigins.win/raw?url=${searchUrl}`;
 
-    const html = await new Promise<string>((resolve, reject) => {
-      const req = https.get(proxyUrl, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
-        let data = "";
-        res.on("data", (chunk) => data += chunk);
-        res.on("end", () => resolve(data));
-      });
-      req.on("error", reject);
-      req.setTimeout(10000, () => {
-        req.destroy();
-        reject(new Error("Request timeout"));
-      });
-    });
+    // Use curl which works in this environment
+    const html = execSync(
+      `curl -s -L --max-time 10 --user-agent "Mozilla/5.0" "${proxyUrl}"`,
+      { encoding: "utf-8", maxBuffer: 1024 * 1024 }
+    );
 
     // Parse DDG HTML results
     const results: SearchResult[] = [];
 
-    // Extract result blocks
-    const resultBlockRegex = /<div class="result[^"]*"[\s\S]*?<a class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([^<]+)<\/a>/g;
+    // Extract result blocks - DDG uses uddg param for redirect URLs
+    const resultBlockRegex = /<a class="result__a"[^>]*href="[^"]*uddg=([^"&]+)[^"]*"[^>]*>([^<]+)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([^<]+)<\/a>/g;
 
     let match;
     let count = 0;
     while ((match = resultBlockRegex.exec(html)) !== null && count < maxResults) {
+      const decodedUrl = decodeURIComponent(match[1].replace(/%2F/gi, "/").replace(/%3A/gi, ":"));
       results.push({
-        url: match[1],
+        url: decodedUrl,
         title: match[2].replace(/<[^>]+>/g, "").trim(),
         snippet: match[3].replace(/<[^>]+>/g, "").trim(),
       });
@@ -75,13 +69,16 @@ async function webSearch(query: string, maxResults = 5): Promise<SearchResult[]>
 
     // Fallback: simple regex if block regex fails
     if (results.length === 0) {
-      const resultRegex = /<a class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+      // Handle DDG redirect URLs (uddg parameter)
+      const resultRegex = /<a class="result__a"[^>]*href="[^"]*uddg=([^"&]+)[^"]*"[^>]*>([^<]+)<\/a>/g;
       const snippetRegex = /<a class="result__snippet"[^>]*>([^<]+)<\/a>/g;
 
       const matches: { url: string; title: string }[] = [];
       while ((match = resultRegex.exec(html)) !== null && matches.length < maxResults) {
+        // Decode URL-encoded redirect target
+        const decodedUrl = decodeURIComponent(match[1].replace(/%2F/gi, "/").replace(/%3A/gi, ":"));
         matches.push({
-          url: match[1],
+          url: decodedUrl,
           title: match[2].replace(/<[^>]+>/g, "").trim(),
         });
       }
