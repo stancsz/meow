@@ -624,24 +624,25 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
     }
 
     const skillPath = join(ROOT, "src", "skills", `${skillName}.ts`);
-    if (existsSync(skillPath)) return true;
 
-    try {
-      const docContent = readFileSync(docPath, "utf-8");
-      const frontmatterMatch = docContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-      let repo = "", why = "", minimalSlice = "", description = "";
+    // If skill doesn't exist yet, create stub (LLM will be called to implement)
+    if (!existsSync(skillPath)) {
+      try {
+        const docContent = readFileSync(docPath, "utf-8");
+        const frontmatterMatch = docContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+        let repo = "", why = "", minimalSlice = "", description = "";
 
-      if (frontmatterMatch) {
-        const fm = frontmatterMatch[1];
-        repo = (fm.match(/repo:\s*(.+)/) || [])[1] || "";
-        why = (fm.match(/why:\s*(.+)/) || [])[1] || "";
-        minimalSlice = (fm.match(/minimalSlice:\s*"(.+?)"/) || [])[1] || "";
-        description = frontmatterMatch[2].replace(/^#.*\n/, "").trim();
-      } else {
-        description = docContent.replace(/^#.*\n/, "").trim();
-      }
+        if (frontmatterMatch) {
+          const fm = frontmatterMatch[1];
+          repo = (fm.match(/repo:\s*(.+)/) || [])[1] || "";
+          why = (fm.match(/why:\s*(.+)/) || [])[1] || "";
+          minimalSlice = (fm.match(/minimalSlice:\s*"(.+?)"/) || [])[1] || "";
+          description = frontmatterMatch[2].replace(/^#.*\n/, "").trim();
+        } else {
+          description = docContent.replace(/^#.*\n/, "").trim();
+        }
 
-      const content = `/**
+        const content = `/**
  * ${skillName}.ts
  * ${description || gap.description}
  *
@@ -663,13 +664,19 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
 };
 `;
 
-      writeFileSync(skillPath, content);
-      console.log(`  ✅ Harvested skill: ${skillPath}`);
-      return true;
-    } catch (e) {
-      console.log(`  ❌ Failed to harvest: ${e}`);
-      return false;
+        writeFileSync(skillPath, content);
+        console.log(`  ✅ Created harvest stub: ${skillPath}`);
+        return false; // Return false so LLM implements the actual capability
+      } catch (e) {
+        console.log(`  ❌ Failed to create stub: ${e}`);
+        return false;
+      }
     }
+
+    // Skill exists - but harvest skills need real implementation + dogfooding
+    // Don't auto-solve - let LLM verify and dogfood
+    console.log(`  📋 Skill ${skillName} exists - triggering LLM for dogfood verification`);
+    return false;
   }
 
   return false;
@@ -707,7 +714,7 @@ Report SUCCESS when the gap is fully closed, or FAILED if you could not complete
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: `Close gap ${gap.id}: ${gap.description}\n\n${gap.whatToImplement}\n\nWork in src/. Create skills or sidecars.\nTest: bun run cli/index.ts --dangerous "help"\n\nReport: SUCCESS or FAILED` },
+    { role: "user", content: `Close gap ${gap.id}: ${gap.description}\n\n${gap.whatToImplement}\n\nWork in src/. Create skills or sidecars.\n\nIMPORTANT - DOGFOOD REQUIRED:\n1. Implement the capability fully (not just stubs)\n2. If you create/modify a skill, ACTUALLY INVOKE IT to verify it works\n3. Run the skill with a real test case, not just syntax checks\n4. Only report SUCCESS if the dogfood PASSES\n\nTest: bun run cli/index.ts --dangerous "help"\n\nReport: SUCCESS or FAILED + brief dogfood notes` },
   ];
 
   try {
