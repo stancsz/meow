@@ -939,7 +939,7 @@ Evolve loop - autonomous improvement.
 // ============================================================================
 
 async function runLoop(options: { once?: boolean }): Promise<void> {
-  const state = loadState();
+  let state = loadState();
 
   // Initialize FTS5 memory for cross-session recall
   try {
@@ -962,6 +962,7 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
 
   while (true) {
     const now = Date.now();
+    state = loadState(); // Reload state each iteration to pick up changes
     let gaps = loadGaps();
 
     // Filter to actionable gaps (not waiting for rate limit)
