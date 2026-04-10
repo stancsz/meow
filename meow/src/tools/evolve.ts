@@ -87,6 +87,11 @@ interface State {
   skillsUsed: Record<string, number>; // skill name -> use count
   selfImprovements: number; // times we improved our own harness
   internalizationFails: number; // skills learned but never used
+  // Token usage tracking
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  totalCostUSD: number;
 }
 
 // ============================================================================
@@ -335,6 +340,10 @@ function loadState(): State {
     skillsUsed: {},
     selfImprovements: 0,
     internalizationFails: 0,
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalTokens: 0,
+    totalCostUSD: 0,
   });
   return state;
 }
@@ -689,7 +698,7 @@ export const ${skillName.replace(/-/g, "_")}: Skill = {
 async function callClaudeWithProvider(
   provider: LLMProvider,
   gap: Gap
-): Promise<{ success: boolean; error?: string; isRateLimit?: boolean }> {
+): Promise<{ success: boolean; error?: string; isRateLimit?: boolean; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
   const apiKey = process.env[provider.apiKeyEnv];
   if (!apiKey) {
     return { success: false, error: `${provider.name}: No API key` };
@@ -733,6 +742,7 @@ Report SUCCESS when the gap is fully closed, or FAILED if you could not complete
       });
 
       let finishReason = "";
+      let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
@@ -743,8 +753,20 @@ Report SUCCESS when the gap is fully closed, or FAILED if you could not complete
         if (chunk.choices[0]?.finish_reason) {
           finishReason = chunk.choices[0].finish_reason;
         }
+        // Capture usage from last chunk (include_usage: true sends it in final chunk)
+        if (chunk.usage) {
+          usage = chunk.usage;
+        }
       }
       console.log("");
+
+      // Log token usage
+      if (usage) {
+        const costPer1M = provider.name === "minimax" ? 0.5 : provider.name === "anthropic" ? 3.0 : 0.01;
+        const cost = ((usage.prompt_tokens || 0) * costPer1M / 1e6 + (usage.completion_tokens || 0) * costPer1M / 1e6 * 3);
+        console.log(`  💰 [${provider.name}] Tokens: ${usage.prompt_tokens} prompt + ${usage.completion_tokens} completion = ${usage.total_tokens} total (~${
+          cost.toFixed(4)})`);
+      }
 
       if (finishReason === "tool_calls") {
         toolCallsHandled++;
@@ -782,7 +804,7 @@ Report SUCCESS when the gap is fully closed, or FAILED if you could not complete
     console.log(`  📝 [${provider.name}] Response (${fullResponse.length} chars)`);
 
     const success = fullResponse.includes("SUCCESS") || fullResponse.includes("success");
-    return { success };
+    return { success, usage: usage || undefined };
 
   } catch (e: any) {
     const errorMsg = e.message || "";
@@ -811,6 +833,14 @@ async function callClaude(gap: Gap, state: State): Promise<{ success: boolean; p
       state.consecutiveFailures = 0;
       state.consecutiveRateLimitHits = 0;
       state.lastProvider = provider.name;
+      // Accumulate token usage
+      if (result.usage) {
+        state.totalPromptTokens += result.usage.prompt_tokens;
+        state.totalCompletionTokens += result.usage.completion_tokens;
+        state.totalTokens += result.usage.total_tokens;
+        const costPer1M = provider.name === "minimax" ? 0.5 : provider.name === "anthropic" ? 3.0 : 0.01;
+        state.totalCostUSD += result.usage.total_tokens * costPer1M / 1e6;
+      }
       return { success: true, providerUsed: provider.name };
     }
 
@@ -916,6 +946,7 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
 🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
   MEOW EVOLVE — Self-Evolving Loop
   Total solved: ${state.totalSolved} | Failed: ${state.totalFailed}
+  Tokens: ${state.totalTokens.toLocaleString()} | Cost: $${state.totalCostUSD.toFixed(4)}
 🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
 `);
 
@@ -1089,6 +1120,7 @@ function showStatus(): void {
   Self-improvements: ${state.selfImprovements}
   Internalization fails: ${state.internalizationFails}
   Skills used: ${Object.keys(state.skillsUsed || {}).length}
+  Tokens: ${state.totalTokens.toLocaleString()} ($${state.totalCostUSD.toFixed(4)})
 ═══════════════════════════════════════════════
 
   GAPS (${gaps.length} total)
