@@ -36,48 +36,68 @@ interface ResearchHypothesis {
 
 async function webSearch(query: string, maxResults = 5): Promise<SearchResult[]> {
   try {
-    // Use DuckDuckGo HTML via allorigins to avoid CORS issues
-    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; Meow/1.0)",
-      },
+    // Use Node's native https module
+    const { execSync } = await import("node:child_process");
+    const https = await import("node:https");
+
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${query.replace(/"/g, "%22").replace(/ /g, "+")}`;
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
+
+    const html = await new Promise<string>((resolve, reject) => {
+      const req = https.get(proxyUrl, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
+        let data = "";
+        res.on("data", (chunk) => data += chunk);
+        res.on("end", () => resolve(data));
+      });
+      req.on("error", reject);
+      req.setTimeout(10000, () => {
+        req.destroy();
+        reject(new Error("Request timeout"));
+      });
     });
-
-    if (!response.ok) {
-      throw new Error(`Search failed: ${response.status}`);
-    }
-
-    const html = await response.text();
 
     // Parse DDG HTML results
     const results: SearchResult[] = [];
-    const resultRegex = /<a class="result__a" href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-    const snippetRegex = /<a class="result__snippet"[^>]*>([^<]+)<\/a>/g;
+
+    // Extract result blocks
+    const resultBlockRegex = /<div class="result[^"]*"[\s\S]*?<a class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([^<]+)<\/a>/g;
 
     let match;
     let count = 0;
-
-    // Extract titles and URLs
-    const matches: { url: string; title: string }[] = [];
-    while ((match = resultRegex.exec(html)) !== null && count < maxResults) {
-      matches.push({ url: match[1], title: match[2].replace(/<[^>]+>/g, "") });
+    while ((match = resultBlockRegex.exec(html)) !== null && count < maxResults) {
+      results.push({
+        url: match[1],
+        title: match[2].replace(/<[^>]+>/g, "").trim(),
+        snippet: match[3].replace(/<[^>]+>/g, "").trim(),
+      });
       count++;
     }
 
-    // Extract snippets
-    const snippets: string[] = [];
-    while ((match = snippetRegex.exec(html)) !== null && snippets.length < maxResults) {
-      snippets.push(match[1].replace(/<[^>]+>/g, ""));
-    }
+    // Fallback: simple regex if block regex fails
+    if (results.length === 0) {
+      const resultRegex = /<a class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+      const snippetRegex = /<a class="result__snippet"[^>]*>([^<]+)<\/a>/g;
 
-    // Combine
-    for (let i = 0; i < Math.min(matches.length, maxResults); i++) {
-      results.push({
-        title: matches[i].title,
-        url: matches[i].url,
-        snippet: snippets[i] || "",
-      });
+      const matches: { url: string; title: string }[] = [];
+      while ((match = resultRegex.exec(html)) !== null && matches.length < maxResults) {
+        matches.push({
+          url: match[1],
+          title: match[2].replace(/<[^>]+>/g, "").trim(),
+        });
+      }
+
+      const snippets: string[] = [];
+      while ((match = snippetRegex.exec(html)) !== null && snippets.length < maxResults) {
+        snippets.push(match[1].replace(/<[^>]+>/g, "").trim());
+      }
+
+      for (let i = 0; i < Math.min(matches.length, maxResults); i++) {
+        results.push({
+          title: matches[i].title,
+          url: matches[i].url,
+          snippet: snippets[i] || "",
+        });
+      }
     }
 
     return results;
@@ -85,6 +105,21 @@ async function webSearch(query: string, maxResults = 5): Promise<SearchResult[]>
     console.error(`Search error: ${e.message}`);
     return [];
   }
+}
+
+function generateHypothesisFromQuestion(question: string): ResearchHypothesis {
+  // Fallback: generate a hypothesis based on the question structure
+  // This demonstrates the OODA loop even without web search
+  const topic = question.split(" ").slice(0, 3).join(" ");
+  return {
+    id: 1,
+    text: `Hypothesis on "${topic}": Based on the research question "${question}", ` +
+      `this topic involves analyzing key concepts, relationships, and practical applications. ` +
+      `Without live web search, a deeper investigation would require accessing ` +
+      `current documentation or expert sources.`,
+    evidence: [],
+    validated: false,
+  };
 }
 
 // ============================================================================
@@ -152,6 +187,12 @@ async function runResearchLoop(
   }
 
   // Format findings
+  // If no hypotheses generated (network unavailable), use fallback
+  if (hypotheses.length === 0) {
+    const fallback = generateHypothesisFromQuestion(question);
+    hypotheses.push(fallback);
+  }
+
   const findings = hypotheses
     .map(
       (h) =>
