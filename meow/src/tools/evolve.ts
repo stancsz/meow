@@ -1041,6 +1041,40 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
       const result = await callClaude(gap, state);
 
       if (result.success) {
+        // Verify dogfood: check if implementation actually works
+        const isSkillGap = gap.id.includes("HARVEST") || gap.whatToImplement.includes("skill");
+        let dogfoodPassed = true;
+
+        if (isSkillGap) {
+          // Extract skill name from gap ID or whatToImplement
+          const skillName = gap.whatToImplement.match(/implement (\S+) from|/)?.[1] ||
+                           gap.id.replace("GAP-HARVEST-", "").replace("-01", "").replace(/-/g, "_");
+          if (skillName) {
+            const skillPath = join(ROOT, "src/skills", `${skillName}.ts`);
+            if (existsSync(skillPath)) {
+              const content = readFileSync(skillPath, "utf-8");
+              // Check if it's still a stub
+              if (content.includes("TODO: Implement") || content.includes("return { success: true, message:")) {
+                console.log(`  ⚠️  Dogfood check: ${skillName} is still a stub - marking as failed`);
+                dogfoodPassed = false;
+              } else {
+                console.log(`  ✅ Dogfood check passed: ${skillName} has real implementation`);
+              }
+            } else {
+              console.log(`  ⚠️  Dogfood check: ${skillPath} not found - marking as failed`);
+              dogfoodPassed = false;
+            }
+          }
+        }
+
+        if (!dogfoodPassed) {
+          gap.status = "waiting";
+          gap.retryAfter = Date.now() + 5 * 60 * 1000; // Retry in 5 min
+          console.log(`\n❌ ${gap.id} FAILED dogfood - scheduled for retry`);
+          saveGaps(gaps);
+          continue;
+        }
+
         gap.status = "solved";
         gap.retryAfter = undefined;
         state.totalSolved++;
