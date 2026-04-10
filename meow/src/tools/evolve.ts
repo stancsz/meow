@@ -328,7 +328,7 @@ function runCmd(cmd: string, cwd: string = ROOT): { stdout: string; stderr: stri
 // ============================================================================
 
 function loadState(): State {
-  const state = readJson<State>(STATE_FILE, {
+  const defaults: State = {
     totalSolved: 0,
     totalFailed: 0,
     sessionStart: timestamp(),
@@ -344,8 +344,9 @@ function loadState(): State {
     totalCompletionTokens: 0,
     totalTokens: 0,
     totalCostUSD: 0,
-  });
-  return state;
+  };
+  const existing = readJson<Partial<State>>(STATE_FILE, {});
+  return { ...defaults, ...existing };
 }
 
 function saveState(state: State): void {
@@ -730,6 +731,7 @@ Report SUCCESS when the gap is fully closed, or FAILED if you could not complete
     let fullResponse = "";
     let toolCallsHandled = 0;
     const maxToolCalls = 30;
+    let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
 
     while (toolCallsHandled < maxToolCalls) {
       const stream = await client.chat.completions.create({
@@ -742,7 +744,6 @@ Report SUCCESS when the gap is fully closed, or FAILED if you could not complete
       });
 
       let finishReason = "";
-      let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
