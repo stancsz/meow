@@ -1047,12 +1047,17 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
 
         if (isSkillGap) {
           // Extract skill name from gap ID or whatToImplement
-          const skillName = gap.whatToImplement.match(/implement (\S+) from|/)?.[1] ||
-                           gap.id.replace("GAP-HARVEST-", "").replace("-01", "").replace(/-/g, "_");
-          if (skillName) {
-            const skillPath = join(ROOT, "src/skills", `${skillName}.ts`);
-            if (existsSync(skillPath)) {
+          const skillNameRaw = gap.whatToImplement.match(/implement (\S+) from|/)?.[1] ||
+                           gap.id.replace("GAP-HARVEST-", "").replace("-01", "");
+          if (skillNameRaw) {
+            // Try both dash and underscore naming conventions
+            const skillPathDash = join(ROOT, "src/skills", `${skillNameRaw}.ts`);
+            const skillPathUnderscore = join(ROOT, "src/skills", `${skillNameRaw.replace(/-/g, "_")}.ts`);
+            const skillPath = existsSync(skillPathDash) ? skillPathDash : existsSync(skillPathUnderscore) ? skillPathUnderscore : null;
+
+            if (skillPath) {
               const content = readFileSync(skillPath, "utf-8");
+              const skillName = skillNameRaw.replace(/-/g, "_");
               // Check if it's still a stub
               if (content.includes("TODO: Implement") || content.includes("return { success: true, message:")) {
                 console.log(`  ⚠️  Dogfood check: ${skillName} is still a stub - marking as failed`);
@@ -1061,7 +1066,7 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
                 console.log(`  ✅ Dogfood check passed: ${skillName} has real implementation`);
               }
             } else {
-              console.log(`  ⚠️  Dogfood check: ${skillPath} not found - marking as failed`);
+              console.log(`  ⚠️  Dogfood check: skill file not found (tried ${skillPathDash} and ${skillPathUnderscore}) - marking as failed`);
               dogfoodPassed = false;
             }
           }
