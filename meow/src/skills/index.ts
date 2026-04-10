@@ -21,6 +21,7 @@ import { docx } from "./docx.ts";
 import { pdf } from "./pdf.ts";
 import { xlsx } from "./xlsx.ts";
 import { tutorial } from "./tutorial.ts";
+import { autoresearch } from "./autoresearch.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -41,6 +42,7 @@ const allSkills: Skill[] = [
   pdf,
   xlsx,
   tutorial,
+  autoresearch,
 ];
 
 // Auto-register on import
