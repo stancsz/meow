@@ -1068,14 +1068,15 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
           const skillNameRaw = gap.whatToImplement.match(/implement (\S+) from|/)?.[1] ||
                            gap.id.replace("GAP-HARVEST-", "").replace("-01", "");
           if (skillNameRaw) {
-            // Try both dash and underscore naming conventions
-            const skillPathDash = join(ROOT, "src/skills", `${skillNameRaw}.ts`);
-            const skillPathUnderscore = join(ROOT, "src/skills", `${skillNameRaw.replace(/-/g, "_")}.ts`);
+            // Normalize to lowercase and try dash and underscore variants
+            const normalized = skillNameRaw.toLowerCase().replace(/_/g, "-");
+            const skillPathDash = join(ROOT, "src/skills", `${normalized}.ts`);
+            const skillPathUnderscore = join(ROOT, "src/skills", `${normalized.replace(/-/g, "_")}.ts`);
             const skillPath = existsSync(skillPathDash) ? skillPathDash : existsSync(skillPathUnderscore) ? skillPathUnderscore : null;
 
             if (skillPath) {
               const content = readFileSync(skillPath, "utf-8");
-              const skillName = skillNameRaw.replace(/-/g, "_");
+              const skillName = normalized.replace(/-/g, "_");
               // Check if it's still a stub
               if (content.includes("TODO: Implement") || content.includes("return { success: true, message:")) {
                 console.log(`  ⚠️  Dogfood check: ${skillName} is still a stub - marking as failed`);
