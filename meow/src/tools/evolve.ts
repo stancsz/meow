@@ -61,6 +61,12 @@ try {
 } catch {}
 
 // ============================================================================
+// Budget Limits
+// ============================================================================
+
+const MAX_BUDGET_USD = parseFloat(process.env.EVOLVE_MAX_BUDGET_USD || "0.50"); // Default $0.50 per session
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -947,7 +953,7 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
 🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
   MEOW EVOLVE — Self-Evolving Loop
   Total solved: ${state.totalSolved} | Failed: ${state.totalFailed}
-  Tokens: ${state.totalTokens.toLocaleString()} | Cost: $${state.totalCostUSD.toFixed(4)}
+  Tokens: ${state.totalTokens.toLocaleString()} | Cost: $${state.totalCostUSD.toFixed(4)} / $${MAX_BUDGET_USD.toFixed(2)} budget
 🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱
 `);
 
@@ -1033,11 +1039,22 @@ async function runLoop(options: { once?: boolean }): Promise<void> {
       } catch {}
       commitChanges(gap);
     } else {
+      // Check budget before LLM call
+      if (MAX_BUDGET_USD > 0 && state.totalCostUSD >= MAX_BUDGET_USD) {
+        console.log(`\n💸 Budget limit reached: $${state.totalCostUSD.toFixed(4)} >= $${MAX_BUDGET_USD.toFixed(4)}`);
+        console.log(`   Set EVOLVE_MAX_BUDGET_USD to increase limit (current: $${MAX_BUDGET_USD.toFixed(4)})`);
+        console.log(`\n📊 Session Summary:`);
+        console.log(`   Solved: ${state.totalSolved} | Failed: ${state.totalFailed}`);
+        console.log(`   Tokens: ${state.totalTokens.toLocaleString()} | Cost: $${state.totalCostUSD.toFixed(4)}`);
+        console.log(`\n✅ Evolve loop complete. Exiting.`);
+        return;
+      }
+
       // Call LLM
       state.lastClaudeCall = now;
       saveState(state);
 
-      console.log(`  🤖 Calling LLM...`);
+      console.log(`  🤖 Calling LLM (budget: $${(MAX_BUDGET_USD - state.totalCostUSD).toFixed(4)} remaining)...`);
       const result = await callClaude(gap, state);
 
       if (result.success) {
