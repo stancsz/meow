@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 /**
  * CLI entry point for Meow
  *
@@ -12,7 +13,9 @@
 import * as readline from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, dirname } from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { runLeanAgent, runLeanAgentSimpleStream, type LeanAgentOptions } from "../src/core/lean-agent.ts";
 import { registerSignalHandlers, getInterruptController } from "../src/sidecars/auto-mode.ts";
 import { runAutoLoop, formatAutoLoopSummary, formatTickStatus } from "../src/sidecars/auto-loop.ts";
@@ -271,6 +274,52 @@ Respond directly unless tool use is clearly necessary.`;
 // Main
 // ============================================================================
 
+// ============================================================================
+// Meow-Chan: plugin relay equivalent of `claude --channels`
+// ============================================================================
+
+async function startMeowChanRelay(relayArgs: string[]): Promise<void> {
+  // Resolve the meow-channels relay.ts relative to this CLI's location
+  // cli/index.ts → ../../../meow-channels/relay.ts (from meow/cli/)
+  const cliDir = dirname(fileURLToPath(import.meta.url));
+  const relayPath = resolve(cliDir, "..", "..", "meow-channels", "relay.ts");
+
+  if (!existsSync(relayPath)) {
+    console.error(`${colors.red}[meow-chan] relay.ts not found at: ${relayPath}${colors.reset}`);
+    console.error(`${colors.dim}Ensure meow-channels/ exists alongside the meow/ directory.${colors.reset}`);
+    process.exit(1);
+  }
+
+  console.log(`${colors.cyan}${colors.bold}🐱 meow-chan${colors.reset} ${colors.dim}— Discord relay (equiv. claude --channels)${colors.reset}`);
+  console.log(`${colors.dim}Relay: ${relayPath}${colors.reset}`);
+  if (relayArgs.length > 0) {
+    console.log(`${colors.dim}Args: ${relayArgs.join(" ")}${colors.reset}`);
+  }
+  console.log();
+
+  const relay = spawn("bun", ["run", relayPath, ...relayArgs], {
+    stdio: "inherit",
+    env: { ...process.env },
+  });
+
+  relay.on("error", (err) => {
+    console.error(`${colors.red}[meow-chan] Failed to start relay: ${err.message}${colors.reset}`);
+    process.exit(1);
+  });
+
+  relay.on("close", (code) => {
+    process.exit(code ?? 0);
+  });
+
+  // Forward signals to child
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.on(sig, () => relay.kill(sig));
+  }
+
+  // Wait indefinitely — relay runs until killed
+  await new Promise<void>(() => {});
+}
+
 async function main() {
   const args = process.argv.slice(2);
   let dangerous = false;
@@ -278,6 +327,7 @@ async function main() {
   let autoMode = false;
   let tickMode = false;
   let acpMode = false;
+  let meowChanMode = false;
 
   // Parse flags
   const filteredArgs = args.filter((arg) => {
@@ -301,8 +351,27 @@ async function main() {
       acpMode = true;
       return false;
     }
+    if (arg === "--meow-chan") {
+      meowChanMode = true;
+      return false;
+    }
+    // --meow-chan-mention shorthand: mention-only mode
+    if (arg === "--meow-chan-mention") {
+      meowChanMode = true;
+      // inject --mention-only into relay args (collected from remaining filteredArgs below)
+      args.push("--mention-only");
+      return false;
+    }
     return true;
   });
+
+  // meow-chan mode: spawn the Discord relay (equiv. of `claude --channels`)
+  if (meowChanMode) {
+    // Any remaining filteredArgs are passed through to relay.ts
+    // e.g.  meow --meow-chan --channel 123 --prefix "meow:"
+    await startMeowChanRelay(filteredArgs);
+    return;
+  }
 
   // ACP mode: start JSON-RPC stdio server
   if (acpMode) {

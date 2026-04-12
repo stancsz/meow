@@ -1,0 +1,20 @@
+{
+  "name": "@meow/meow-channels",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts",
+    "meow-chan": "bun run relay.ts",
+    "meow-chan:mention": "bun run relay.ts --mention-only",
+    "relay": "bun run relay.ts",
+    "relay:mention": "bun run relay.ts --mention-only",
+    "build": "bun build index.ts --outdir=dist --format=esm --target=node"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "bun-types": "^1.1.0"
+  }
+}
