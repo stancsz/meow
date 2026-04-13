@@ -98,7 +98,7 @@ const RELAY_TYPING = process.env.RELAY_TYPING !== "0"; // default true
 // ============================================================================
 
 class ClaudeCodeClient {
-  private claudeArgs = ["-p", "--output-format", "text"];
+  private claudeArgs = ["-p", "--output-format", "text", "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")];
 
   async prompt(text: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -106,6 +106,7 @@ class ClaudeCodeClient {
         cwd: CLAUDE_CWD,
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env },
+        shell: true, // Required for Windows .cmd/.ps1 resolution
       });
 
       let stdout = "";
@@ -188,6 +189,61 @@ function chunkMessage(text: string, maxLen = 1900): string[] {
 // Main Relay Loop
 // ============================================================================
 
+// Detect permission/auth errors that should not be re-reported to Discord
+function isAuthError(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("permission") ||
+    lower.includes("authorize") ||
+    lower.includes("discord mcp needs") ||
+    lower.includes("no discord") ||
+    lower.includes("run /discord") ||
+    lower.includes("grant access") ||
+    lower.includes("needs permission") ||
+    lower.includes("don't have discord") ||
+    lower.includes("discord access") ||
+    lower.includes("reply permissions") ||
+    lower.includes("pending permission") ||
+    lower.includes("approve") ||
+    lower.includes("/discord:access")
+  );
+}
+
+// Check if the reply is just Claude complaining about not having permission (not useful to send)
+function isPermissionBloat(text: string): boolean {
+  const lower = text.toLowerCase();
+  const permissionPhrases = [
+    "don't have discord",
+    "don't have permission",
+    "don't have discord reply",
+    "hasn't been approved",
+    "needs to be approved",
+    "plugin needs to be approved",
+    "plugin needs approval",
+    "haven't approved",
+    "haven't granted",
+    "hasn't been granted",
+    "permission to reply",
+    "reply tool is pending",
+    "reply tool needs",
+    "mcp plugin needs",
+    "discord plugin needs",
+    "run /discord",
+    "grant it so i can",
+    "want me to reply",
+    "want to grant",
+    "you can approve",
+    "approve it with",
+    "can i reply",
+  ];
+  // If reply is short and is mostly permission-related blurb, skip it
+  const firstLine = lower.split('\n')[0];
+  const isShort = text.length < 200;
+  const hasPermissionPhrase = permissionPhrases.some(p => lower.includes(p));
+  const hasSelfReference = lower.includes("i tried") || lower.includes("i'm unable") || lower.includes("i don't have");
+  return isShort && hasPermissionPhrase && hasSelfReference;
+}
+
 async function main() {
   console.log("[relay] Starting Meow Channels Relay (Claude Code)...");
   console.log(`[relay] CWD: ${CLAUDE_CWD}`);
@@ -257,7 +313,10 @@ async function main() {
     }
 
     // Add author context so the agent knows who's talking
-    const fullPrompt = `[Discord message from ${message.author.username} in #${(message.channel as TextChannel).name ?? message.channelId}]: ${promptText}`;
+    // We start with a label to prevent the CLI from intercepting slash commands
+    const fullPrompt = `[Discord message from ${message.author.username}]: ${promptText}
+
+(Context: You are a stateless Discord relay. Respond with ONLY the text of your reply. DO NOT USE TOOLS. DO NOT post to Discord yourself.)`;
 
     console.log(`[relay] → ${message.author.username}: ${promptText.slice(0, 80)}${promptText.length > 80 ? "..." : ""}`);
 
@@ -267,8 +326,15 @@ async function main() {
         await (message.channel as TextChannel).sendTyping();
       }
 
-      const reply = await claude.prompt(fullPrompt);
+      let reply = await claude.prompt(fullPrompt);
       markReplied(message.channelId);
+
+      // Detect auth/permission errors — don't spam the channel with them
+      if (isAuthError(reply) || isPermissionBloat(reply)) {
+        console.log(`[relay] ! Auth/bloat detected, skipping reply: ${reply.slice(0, 80)}...`);
+        processing.delete(message.id);
+        return;
+      }
 
       console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
 
@@ -278,6 +344,12 @@ async function main() {
         await message.reply(chunk);
       }
     } catch (e: any) {
+      // Don't forward auth errors to Discord
+      if (isAuthError(e.message)) {
+        console.error(`[relay] ! Auth error: ${e.message}`);
+        processing.delete(message.id);
+        return;
+      }
       console.error("[relay] Error processing message:", e.message);
       try {
         await message.reply(`❌ Error: ${e.message}`);
