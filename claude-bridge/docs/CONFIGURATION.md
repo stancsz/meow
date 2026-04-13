@@ -1,6 +1,6 @@
-# Configuring Meow-Chan
+# Configuring Claude Bridge
 
-Follow these steps to set up your own instance of the Meow-Chan Discord relay.
+Follow these steps to set up your own instance of the Claude Bridge Discord relay.
 
 ## 1. Environment Setup
 Create a `.env` file in the root directory:
@@ -10,7 +10,7 @@ CLAUDE_CWD=C:\path\to\your\workspace
 ```
 
 ## 2. Global Tool Path
-Ensure the `relay.ts` points to the correct absolute path of your Claude Code installation. 
+Ensure the `relay.ts` points to the correct absolute path of your Claude Code installation.
 On Windows, check:
 `C:\Users\<user>\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js`
 
@@ -25,7 +25,7 @@ The relay requires a file named `mcp-null.json` in the project root to isolate t
 ## 4. Launching
 You can launch the relay using Bun:
 ```bash
-bun run meow-channels/relay.ts --channel <channel_id>
+bun run claude-bridge/relay.ts --channel <channel_id>
 ```
 
 Or using the built-in watcher:

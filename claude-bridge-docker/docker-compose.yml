@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  claude-bridge-docker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - HOME=/home/appuser
+      - ANTHROPIC_AUTH_TOKEN=sk-cp-fXkdLqY0kRatdf7Xa7pjMlWus64Kh8O4p3uv-uHvkptMDBvvE_4mAqE-zGUcUsKe2MPpC1K2m6LLH1PmRqmf1XcuYRFCzk-euxSwL-lMaF-gXv9wY3TUosk
+      - ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic
+    restart: unless-stopped
+    volumes:
+      - ./mcp-null.json:/app/mcp-null.json:ro

@@ -1,0 +1,17 @@
+{
+  "name": "@meow/claude-bridge-docker",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run relay.ts",
+    "relay": "bun run relay.ts",
+    "build": "bun build relay.ts --outdir=dist --format=esm --target=node"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "bun-types": "^1.1.0"
+  }
+}

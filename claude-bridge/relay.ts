@@ -2,7 +2,7 @@
 /**
  * relay.ts
  *
- * Meow Channels Relay — the plugin-equivalent of `claude --channels`.
+ * Claude Bridge Relay — bridges Discord to Claude Code and back.
  * Bridges Discord → Claude Code → Discord reply.
  *
  * Architecture:

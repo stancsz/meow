@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "meow-mcp": {
-      "command": "bun",
-      "args": ["C:/Users/stanc/github/meow-1/meow-channels/index.ts"]
-    }
-  }
-}

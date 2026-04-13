@@ -1,6 +1,0 @@
-{
-  "name": "meow-channels",
-  "description": "Discord MCP server for Meow — bridges Discord → Claude Code → Discord reply",
-  "version": "0.0.1",
-  "keywords": ["discord", "messaging", "mcp", "meow"]
-}

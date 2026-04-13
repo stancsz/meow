@@ -1,0 +1,6 @@
+{
+  "name": "claude-bridge",
+  "description": "Discord MCP server for Claude — bridges Discord → Claude Code → Discord reply",
+  "version": "0.0.1",
+  "keywords": ["discord", "messaging", "mcp", "claude"]
+}

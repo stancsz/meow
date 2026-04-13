@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude-bridge": {
+      "command": "bun",
+      "args": ["C:/Users/stanc/github/meow-1/claude-bridge/index.ts"]
+    }
+  }
+}

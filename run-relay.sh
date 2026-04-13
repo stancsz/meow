@@ -18,7 +18,7 @@ restart_relay() {
   fi
 
   echo "[run-relay] $(date) — Starting relay with args: $*" >> "$LOGFILE"
-  bun run meow-channels/relay.ts "$@" >> "$LOGFILE" 2>&1 &
+  bun run claude-bridge/relay.ts "$@" >> "$LOGFILE" 2>&1 &
   echo $! > "$PIDFILE"
   echo "[run-relay] Relay started PID $(cat $PIDFILE)"
 }
@@ -29,7 +29,7 @@ watch_and_restart() {
       PID=$(cat "$PIDFILE")
       if ! kill -0 "$PID" 2>/dev/null; then
         echo "[run-relay] $(date) — Relay crashed, restarting..." >> "$LOGFILE"
-        bun run meow-channels/relay.ts "$@" >> "$LOGFILE" 2>&1 &
+        bun run claude-bridge/relay.ts "$@" >> "$LOGFILE" 2>&1 &
         echo $! > "$PIDFILE"
         echo "[run-relay] Restarted with PID $(cat $PIDFILE)"
       fi
@@ -67,7 +67,7 @@ case "${1:-}" in
     ;;
   --watch)
     echo "[run-relay] Starting relay with auto-restart..."
-    bun run meow-channels/relay.ts "${@:2}" >> "$LOGFILE" 2>&1 &
+    bun run claude-bridge/relay.ts "${@:2}" >> "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
     echo "[run-relay] Relay started with PID $(cat $PIDFILE), watching for crashes..."
     watch_and_restart "${@:2}"
