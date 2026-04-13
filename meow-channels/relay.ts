@@ -98,15 +98,16 @@ const RELAY_TYPING = process.env.RELAY_TYPING !== "0"; // default true
 // ============================================================================
 
 class ClaudeCodeClient {
-  private claudeArgs = ["-p", "--output-format", "text", "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")];
+  private claudeArgs = ["--output-format", "text", "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")];
 
   async prompt(text: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const proc = spawn("claude", this.claudeArgs, {
+      const claudeJsPath = "C:\\Users\\stanc\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js";
+      const proc = spawn("node", [claudeJsPath, ...this.claudeArgs, "-p", text], {
         cwd: CLAUDE_CWD,
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },
-        shell: true, // Required for Windows .cmd/.ps1 resolution
+        shell: false, 
       });
 
       let stdout = "";
@@ -123,7 +124,9 @@ class ClaudeCodeClient {
       proc.on("error", reject);
 
       proc.on("close", (code) => {
+        clearTimeout(timeout);
         if (code === 0) {
+          if (stderr.trim()) console.warn(`[claude] Warning: ${stderr.trim()}`);
           resolve(stdout.trim());
         } else {
           // Fall back to stderr as error message
@@ -134,9 +137,11 @@ class ClaudeCodeClient {
         }
       });
 
-      // Write the prompt to stdin and close it
-      proc.stdin?.write(text);
-      proc.stdin?.end();
+      // 60s timeout
+      const timeout = setTimeout(() => {
+        proc.kill();
+        reject(new Error("Claude prompt timed out after 60s"));
+      }, 60000);
     });
   }
 
@@ -313,10 +318,10 @@ async function main() {
     }
 
     // Add author context so the agent knows who's talking
-    // We start with a label to prevent the CLI from intercepting slash commands
-    const fullPrompt = `[Discord message from ${message.author.username}]: ${promptText}
+    // We use a safe neutral label and put metadata at the end
+    const fullPrompt = `User Message: ${promptText}
 
-(Context: You are a stateless Discord relay. Respond with ONLY the text of your reply. DO NOT USE TOOLS. DO NOT post to Discord yourself.)`;
+(Sent by ${message.author.username} in Discord. Respond only with your reply.)`;
 
     console.log(`[relay] → ${message.author.username}: ${promptText.slice(0, 80)}${promptText.length > 80 ? "..." : ""}`);
 
@@ -329,9 +334,8 @@ async function main() {
       let reply = await claude.prompt(fullPrompt);
       markReplied(message.channelId);
 
-      // Detect auth/permission errors — don't spam the channel with them
-      if (isAuthError(reply) || isPermissionBloat(reply)) {
-        console.log(`[relay] ! Auth/bloat detected, skipping reply: ${reply.slice(0, 80)}...`);
+      if (!reply) {
+        console.log("[relay] ! Empty reply, skipping");
         processing.delete(message.id);
         return;
       }
@@ -344,13 +348,7 @@ async function main() {
         await message.reply(chunk);
       }
     } catch (e: any) {
-      // Don't forward auth errors to Discord
-      if (isAuthError(e.message)) {
-        console.error(`[relay] ! Auth error: ${e.message}`);
-        processing.delete(message.id);
-        return;
-      }
-      console.error("[relay] Error processing message:", e.message);
+      console.error(`[relay] Error processing ${message.id}:`, e.message);
       try {
         await message.reply(`❌ Error: ${e.message}`);
       } catch {
