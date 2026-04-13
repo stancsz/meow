@@ -3,10 +3,10 @@
  * relay.ts
  *
  * Meow Channels Relay — the plugin-equivalent of `claude --channels`.
- * Bridges Discord → meow agent (ACP) → Discord reply.
+ * Bridges Discord → Claude Code → Discord reply.
  *
  * Architecture:
- *   Discord message → relay.ts → meow --acp (JSON-RPC stdio) → AI → Discord reply
+ *   Discord message → relay.ts → claude -p (print mode) → AI → Discord reply
  *
  * Canonical invocation (equivalent of `claude --channels`):
  *   meow --meow-chan                          # all channels, all messages
@@ -26,8 +26,8 @@
  *
  * Environment variables (from .env or shell):
  *   DISCORD_TOKEN        - Bot token (required)
- *   MEOW_CWD            - Working directory for meow (default: process.cwd())
- *   MEOW_DANGEROUS      - Set to "1" to enable dangerous mode
+ *   CLAUDE_CWD          - Working directory for claude (default: process.cwd())
+ *   CLAUDE_MODEL        - Model to use (default: from Claude Code config)
  *   RELAY_CHANNELS      - Comma-separated channel IDs to watch (optional)
  *   RELAY_PREFIX        - Message prefix to trigger relay (e.g. "meow:"), optional
  *   RELAY_MENTION_ONLY  - Only respond to @bot mentions (set to "1")
@@ -84,8 +84,7 @@ if (!DISCORD_TOKEN) {
   process.exit(1);
 }
 
-const MEOW_CWD = process.env.MEOW_CWD || join(import.meta.dir, "..", "meow");
-const MEOW_DANGEROUS = process.env.MEOW_DANGEROUS === "1";
+const CLAUDE_CWD = process.env.CLAUDE_CWD || process.cwd();
 const RELAY_CHANNELS = [
   ...argChannels,
   ...(process.env.RELAY_CHANNELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? []),
@@ -95,120 +94,58 @@ const RELAY_MENTION_ONLY = argMentionOnly || process.env.RELAY_MENTION_ONLY === 
 const RELAY_TYPING = process.env.RELAY_TYPING !== "0"; // default true
 
 // ============================================================================
-// Meow ACP Client — JSON-RPC 2.0 over stdio
+// Claude Code Client — spawns `claude -p "<prompt>"` for each message
 // ============================================================================
 
-interface ACPResponse {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  result?: unknown;
-  error?: { code: number; message: string };
-}
+class ClaudeCodeClient {
+  private claudeArgs = ["-p", "--output-format", "text"];
 
-class MeowACPClient {
-  private proc: ChildProcess | null = null;
-  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-  private msgId = 0;
-  private buf = "";
-  private sessionId: string | null = null;
-  private initialized = false;
-
-  async start(): Promise<void> {
+  async prompt(text: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      // Start meow in ACP mode
-      this.proc = spawn("bun", ["run", "cli/index.ts", "--acp"], {
-        cwd: MEOW_CWD,
+      const proc = spawn("claude", this.claudeArgs, {
+        cwd: CLAUDE_CWD,
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env },
       });
 
-      this.proc.stdout?.on("data", (chunk: Buffer) => {
-        this.buf += chunk.toString();
-        this.processLines();
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout?.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString();
       });
 
-      this.proc.stderr?.on("data", (chunk: Buffer) => {
-        const msg = chunk.toString().trim();
-        if (msg) console.error("[meow]", msg);
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
       });
 
-      this.proc.on("error", reject);
-      this.proc.on("close", (code) => {
-        console.log(`[relay] meow exited with code ${code}`);
-        this.proc = null;
-        this.initialized = false;
-      });
+      proc.on("error", reject);
 
-      // Initialize and create session
-      this.initialize().then(resolve).catch(reject);
-
-      setTimeout(() => {
-        if (!this.initialized) reject(new Error("meow ACP init timed out"));
-      }, 15000);
-    });
-  }
-
-  private processLines() {
-    const lines = this.buf.split("\n");
-    for (let i = 0; i < lines.length - 1; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      try {
-        const msg: ACPResponse = JSON.parse(line);
-        // StreamEvent pass-through (no id)
-        if (msg.id === undefined || msg.id === null) continue;
-        const pending = this.pending.get(msg.id as number);
-        if (pending) {
-          this.pending.delete(msg.id as number);
-          if (msg.error) {
-            pending.reject(new Error(msg.error.message));
-          } else {
-            pending.resolve(msg.result);
-          }
+      proc.on("close", (code) => {
+        if (code === 0) {
+          resolve(stdout.trim());
+        } else {
+          // Fall back to stderr as error message
+          const errMsg = stderr.trim() || `claude exited with code ${code}`;
+          // Strip ANSI codes if any
+          const clean = errMsg.replace(/\x1b\[[0-9;]*m/g, "");
+          reject(new Error(clean));
         }
-      } catch {
-        // ignore parse errors
-      }
-    }
-    this.buf = lines[lines.length - 1];
-  }
+      });
 
-  private send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-      const id = ++this.msgId;
-      this.pending.set(id, { resolve, reject });
-      const msg = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
-      this.proc?.stdin?.write(msg);
+      // Write the prompt to stdin and close it
+      proc.stdin?.write(text);
+      proc.stdin?.end();
     });
-  }
-
-  private async initialize(): Promise<void> {
-    await this.send("initialize", {
-      dangerous: MEOW_DANGEROUS,
-      workspacePath: MEOW_CWD,
-    });
-    const newSess = await this.send("newSession") as { sessionId: string };
-    this.sessionId = newSess.sessionId;
-    this.initialized = true;
-    console.log(`[relay] meow ACP ready, session: ${this.sessionId}`);
-  }
-
-  async prompt(text: string): Promise<string> {
-    if (!this.initialized || !this.proc) {
-      throw new Error("meow ACP not initialized");
-    }
-    const result = await this.send("prompt", { prompt: text }) as { content: string };
-    return result?.content ?? "(no response)";
   }
 
   isAlive(): boolean {
-    return this.initialized && this.proc !== null && !this.proc.killed;
+    // Claude Code is spawned per-message, so always "alive" in the relay sense
+    return true;
   }
 
   stop(): void {
-    this.proc?.kill();
-    this.proc = null;
-    this.initialized = false;
+    // Nothing to stop for per-message spawn model
   }
 }
 
@@ -252,21 +189,14 @@ function chunkMessage(text: string, maxLen = 1900): string[] {
 // ============================================================================
 
 async function main() {
-  console.log("[relay] Starting Meow Channels Relay...");
-  console.log(`[relay] CWD: ${MEOW_CWD}`);
+  console.log("[relay] Starting Meow Channels Relay (Claude Code)...");
+  console.log(`[relay] CWD: ${CLAUDE_CWD}`);
   console.log(`[relay] Watching channels: ${RELAY_CHANNELS.length > 0 ? RELAY_CHANNELS.join(", ") : "ALL"}`);
   if (RELAY_PREFIX) console.log(`[relay] Prefix filter: "${RELAY_PREFIX}"`);
   if (RELAY_MENTION_ONLY) console.log("[relay] Mode: mention-only");
-  if (MEOW_DANGEROUS) console.log("[relay] ⚠️  Dangerous mode enabled");
 
-  // Start meow ACP backend
-  const meow = new MeowACPClient();
-  try {
-    await meow.start();
-  } catch (e: any) {
-    console.error("[relay] Failed to start meow ACP:", e.message);
-    process.exit(1);
-  }
+  // Claude Code client
+  const claude = new ClaudeCodeClient();
 
   // Connect to Discord
   const discord = new Client({
@@ -337,7 +267,7 @@ async function main() {
         await (message.channel as TextChannel).sendTyping();
       }
 
-      const reply = await meow.prompt(fullPrompt);
+      const reply = await claude.prompt(fullPrompt);
       markReplied(message.channelId);
 
       console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
@@ -359,25 +289,13 @@ async function main() {
     }
   });
 
-  // Auto-restart meow if it dies
-  setInterval(async () => {
-    if (!meow.isAlive()) {
-      console.log("[relay] meow died, restarting...");
-      try {
-        await meow.start();
-      } catch (e: any) {
-        console.error("[relay] Restart failed:", e.message);
-      }
-    }
-  }, 5000);
-
   await discord.login(DISCORD_TOKEN);
 
   // Graceful shutdown
   for (const sig of ["SIGINT", "SIGTERM"]) {
     process.on(sig, () => {
       console.log("\n[relay] Shutting down...");
-      meow.stop();
+      claude.stop();
       discord.destroy();
       process.exit(0);
     });

@@ -55,10 +55,10 @@ function sendNotification(method: string, params?: unknown) {
 // Discord Client Setup
 // ============================================================================
 
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
 
 if (!DISCORD_TOKEN) {
-  console.error("[Discord MCP] DISCORD_TOKEN environment variable is required");
+  console.error("[Discord MCP] DISCORD_TOKEN or DISCORD_BOT_TOKEN environment variable is required");
   process.exit(1);
 }
 
