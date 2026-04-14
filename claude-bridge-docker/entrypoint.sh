@@ -3,6 +3,13 @@ set -e
 
 echo "[entrypoint] Starting Claude Bridge Docker..."
 
+# Ensure .claude/skills directory exists with correct ownership
+if [ ! -d "/app/.claude/skills" ]; then
+    mkdir -p /app/.claude/skills
+    chown -R appuser:appgroup /app/.claude
+    echo "[entrypoint] Created /app/.claude/skills"
+fi
+
 # Authenticate gh CLI if GH_PAT is provided
 if [ -n "$GH_PAT" ]; then
     echo "[entrypoint] Authenticating gh CLI with GitHub..."

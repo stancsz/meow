@@ -288,6 +288,93 @@ function isPermissionBloat(text: string): boolean {
 }
 
 // ============================================================================
+// Skill installation executor
+// ============================================================================
+
+interface SkillInstallResult {
+  success: boolean;
+  output: string;
+}
+
+function execCommand(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, args, { shell: true });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    proc.on("close", (code) => resolve({ stdout, stderr, code: code ?? 0 }));
+    proc.on("error", (err) => resolve({ stdout, stderr: err.message, code: 1 }));
+    setTimeout(() => { proc.kill(); resolve({ stdout, stderr: "timeout", code: 124 }); }, 60000);
+  });
+}
+
+async function executeSkillInstallCommands(claudeReply: string): Promise<SkillInstallResult | null> {
+  const lower = claudeReply.toLowerCase();
+
+  // Check if this reply is about skill installation
+  if (!lower.includes("git clone") && !lower.includes("mkdir") && !lower.includes(".claude/skills")) {
+    return null;
+  }
+
+  // Extract git clone URL
+  const cloneMatch = claudeReply.match(/git clone\s+(https?:\/\/[^\s]+)/i);
+  // Extract skill name from path
+  const skillPathMatch = claudeReply.match(/\.claude\/skills\/([^\/\s]+)/i);
+
+  if (!cloneMatch || !skillPathMatch) {
+    return null;
+  }
+
+  const repoUrl = cloneMatch[1];
+  const skillName = skillPathMatch[1];
+
+  console.log(`[relay] Installing skill "${skillName}" from ${repoUrl}`);
+
+  // Clone to temp directory
+  const tmpPath = `/tmp/skill-repo-${Date.now()}`;
+  const cloneResult = await execCommand("git", ["clone", "--depth", "1", repoUrl, tmpPath]);
+
+  if (cloneResult.code !== 0) {
+    return { success: false, output: `Clone failed: ${cloneResult.stderr}` };
+  }
+
+  // Check if SKILL.md exists
+  const sourceSkillPath = `${tmpPath}/.claude/skills/${skillName}/SKILL.md`;
+  const checkResult = await execCommand("test", ["-f", sourceSkillPath]);
+
+  if (checkResult.code !== 0) {
+    // Try alternate location
+    const altPath = `${tmpPath}/SKILL.md`;
+    const altResult = await execCommand("test", ["-f", altPath]);
+    if (altResult.code !== 0) {
+      await execCommand("rm", ["-rf", tmpPath]);
+      return { success: false, output: `SKILL.md not found for skill "${skillName}"` };
+    }
+    // Install from alternate path
+    const { installSkillFromPath } = await import("./skill-manager.js");
+    const installed = installSkillFromPath(tmpPath, skillName, CLAUDE_CWD);
+    await execCommand("rm", ["-rf", tmpPath]);
+    return { success, output: installed ? `Skill "${skillName}" installed successfully!` : `Install failed` };
+  }
+
+  // Install the skill
+  try {
+    const { installSkillFromPath } = await import("./skill-manager.js");
+    const sourcePath = `${tmpPath}/.claude/skills/${skillName}`;
+    const success = installSkillFromPath(sourcePath, skillName, CLAUDE_CWD);
+    await execCommand("rm", ["-rf", tmpPath]);
+    return {
+      success,
+      output: success ? `Skill "${skillName}" installed successfully!` : `Install failed`
+    };
+  } catch (e: any) {
+    await execCommand("rm", ["-rf", tmpPath]);
+    return { success: false, output: `Install error: ${e.message}` };
+  }
+}
+
+// ============================================================================
 // Claude Code Client
 // ============================================================================
 
@@ -455,6 +542,13 @@ async function main() {
         console.log("[relay] ! Permission error in reply, skipping");
         processing.delete(message.id);
         return;
+      }
+
+      // Try to execute skill installation commands from Claude's reply
+      const installResult = await executeSkillInstallCommands(reply);
+      if (installResult) {
+        console.log(`[relay] Skill install: ${installResult.output}`);
+        reply = reply.trim() + "\n\n✅ " + installResult.output;
       }
 
       // Add assistant reply to history and memory
