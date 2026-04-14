@@ -5,7 +5,7 @@
  * Skills are installed to .claude/skills/ in CLAUDE_CWD
  */
 
-import { existsSync, readFileSync, cpSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, cpSync, rmSync, mkdirSync, chownSync } from "node:fs";
 import { join } from "node:path";
 
 const SKILLS_DIR = ".claude/skills";

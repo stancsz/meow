@@ -375,6 +375,131 @@ async function executeSkillInstallCommands(claudeReply: string): Promise<SkillIn
 }
 
 // ============================================================================
+// Backup command executor
+// ============================================================================
+
+interface BackupResult {
+  success: boolean;
+  output: string;
+}
+
+const SETTINGS_FILE = join(CLAUDE_CWD, "data", "settings.json");
+
+function loadSettings(): Record<string, string> {
+  try {
+    if (existsSync(SETTINGS_FILE)) {
+      return JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
+    }
+  } catch {}
+  return {};
+}
+
+function saveSettings(settings: Record<string, string>) {
+  try {
+    const dataDir = join(CLAUDE_CWD, "data");
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
+    }
+    writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } catch (e) {
+    console.error("[relay] Failed to save settings:", e);
+  }
+}
+
+async function executeBackupCommands(promptText: string, reply: string): Promise<BackupResult | null> {
+  const lowerPrompt = promptText.toLowerCase();
+  const lowerReply = reply.toLowerCase();
+
+  // Check if this is a backup request
+  const isBackupRequest = lowerPrompt.includes("backup yourself") ||
+                          lowerPrompt.includes("backup me") ||
+                          lowerPrompt.includes("backup my");
+  const isRestoreRequest = lowerPrompt.includes("restore");
+
+  if (!isBackupRequest && !isRestoreRequest) {
+    return null;
+  }
+
+  // Load current settings
+  const settings = loadSettings();
+  const backupRepo = process.env.BACKUP_REPO || settings.backupRepo;
+
+  // Check if user provided a repo URL in their message
+  const repoUrlMatch = promptText.match(/https?:\/\/github\.com\/[^\s\/]+\/[^\s\/]+/i);
+  if (repoUrlMatch) {
+    const providedUrl = repoUrlMatch[0].replace(/\.git$/i, "");
+    settings.backupRepo = providedUrl;
+    saveSettings(settings);
+    console.log(`[relay] Saved backup repo: ${providedUrl}`);
+  }
+
+  // For restore, need BACKUP_REPO
+  if (isRestoreRequest && !backupRepo && !repoUrlMatch) {
+    return { success: false, output: "No backup repo configured. Please provide a backup repo URL first." };
+  }
+
+  // Execute backup
+  if (isBackupRequest) {
+    const repo = backupRepo || settings.backupRepo;
+    if (!repo) {
+      return { success: false, output: "I don't have a backup repo configured yet! Please provide your backup repo URL (e.g., https://github.com/username/meow-backup)" };
+    }
+
+    console.log(`[relay] Starting backup to ${repo}`);
+
+    const tmpPath = `/tmp/meow-backup-${Date.now()}`;
+
+    // Clone or init backup repo
+    const cloneResult = await execCommand("git", ["clone", "--depth", "1", repo, tmpPath]);
+    if (cloneResult.code !== 0) {
+      // Repo might be empty or not exist - init fresh
+      await execCommand("mkdir", ["-p", tmpPath]);
+      await execCommand("sh", ["-c", `cd ${tmpPath} && git init && git remote add origin ${repo}`]);
+    }
+
+    // Sync data (exclude large files)
+    const rsyncExcludes = "--exclude='.relay_history.json' --exclude='threads.backup.json' --exclude='*.log'";
+    await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} /app/data/ ${tmpPath}/data/`]);
+    await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} /app/.claude/skills/ ${tmpPath}/.claude/skills/`]);
+
+    // Copy .gitignore
+    await execCommand("sh", ["-c", `cp /app/.gitignore ${tmpPath}/ 2>/dev/null || true`]);
+
+    // Commit and push
+    const commitResult = await execCommand("sh", ["-c", `cd ${tmpPath} && git add -A && git commit -m "Backup $(date -u '+%Y-%m-%d %H:%M UTC')" && git push origin main || git push -u origin main`]);
+
+    await execCommand("rm", ["-rf", tmpPath]);
+
+    if (commitResult.code !== 0) {
+      return { success: false, output: `Backup failed: ${commitResult.stderr}` };
+    }
+
+    return { success: true, output: `✅ Backup complete! Pushed to ${repo}` };
+  }
+
+  // Execute restore
+  if (isRestoreRequest) {
+    const repo = backupRepo || settings.backupRepo;
+    console.log(`[relay] Starting restore from ${repo}`);
+
+    const tmpPath = `/tmp/meow-restore-${Date.now()}`;
+    const cloneResult = await execCommand("git", ["clone", repo, tmpPath]);
+
+    if (cloneResult.code !== 0) {
+      return { success: false, output: `Restore failed: could not clone ${repo}` };
+    }
+
+    await execCommand("sh", ["-c", `rsync -a ${tmpPath}/data/ /app/data/`]);
+    await execCommand("sh", ["-c", `rsync -a ${tmpPath}/.claude/skills/ /app/.claude/skills/ 2>/dev/null || true`]);
+    await execCommand("rm", ["-rf", tmpPath]);
+
+    return { success: true, output: `✅ Restore complete! Memory and skills restored from ${repo}` };
+  }
+
+  return null;
+}
+
+// ============================================================================
 // Claude Code Client
 // ============================================================================
 
@@ -549,6 +674,13 @@ async function main() {
       if (installResult) {
         console.log(`[relay] Skill install: ${installResult.output}`);
         reply = reply.trim() + "\n\n✅ " + installResult.output;
+      }
+
+      // Try to execute backup/restore commands
+      const backupResult = await executeBackupCommands(promptText, reply);
+      if (backupResult) {
+        console.log(`[relay] Backup: ${backupResult.output}`);
+        reply = reply.trim() + "\n\n" + backupResult.output;
       }
 
       // Add assistant reply to history and memory

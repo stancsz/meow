@@ -12,7 +12,9 @@ services:
       - HOME=/home/appuser
       - SHELL=/bin/bash
       - GH_PAT=${GH_PAT}
+      - BACKUP_REPO=${BACKUP_REPO:-}
     restart: unless-stopped
     volumes:
       - ./mcp-null.json:/app/mcp-null.json:ro
       - ./data:/app/data
+      - ./.claude:/app/.claude

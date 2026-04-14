@@ -4,8 +4,8 @@ FROM node:22-alpine
 # Install Bun for fast package management
 RUN npm install -g bun
 
-# Install git, bash, curl, and github CLI
-RUN apk add --no-cache git bash curl
+# Install git, bash, curl, rsync, and github CLI
+RUN apk add --no-cache git bash curl rsync
 
 # Install GitHub CLI (gh)
 RUN curl -fsSL https://github.com/cli/cli/releases/download/v2.65.0/gh_2.65.0_linux_amd64.tar.gz -o /tmp/gh.tar.gz && \
@@ -54,6 +54,16 @@ COPY --chown=appuser:appgroup memory.ts ./
 COPY --chown=appuser:appgroup skill-manager.ts ./
 COPY --chown=appuser:appgroup mcp-null.json ./
 COPY --chown=appuser:appgroup SYSTEM_PROMPT.md ./
+
+# Copy default skills to skel (hidden by volume mount at /app/.claude)
+COPY --chown=appuser:appgroup .claude/skills/ /app/.claude/skills.skel/
+
+# Create .gitignore for backup repo
+RUN echo ".env" > .gitignore && \
+    echo "data/.relay_history.json" >> .gitignore && \
+    echo "data/threads.backup.json" >> .gitignore && \
+    echo "*.log" >> .gitignore && \
+    echo "node_modules/" >> .gitignore
 
 # Build relay for production
 RUN bun build relay.ts --outdir=dist --format=esm --target=node
