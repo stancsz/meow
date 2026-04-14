@@ -29,7 +29,7 @@ RUN bun install
 
 # Create non-root user with proper home directory
 RUN addgroup -g 1001 -S appgroup && \
-    adduser -S appuser -u 1001 -D -h /home/appuser && \
+    adduser -S appuser -u 1001 -D -h /home/appuser -G appgroup && \
     chown -R appuser:appgroup /app
 
 # Create .claude/skills directory for skill management

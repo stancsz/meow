@@ -351,22 +351,22 @@ async function executeSkillInstallCommands(claudeReply: string): Promise<SkillIn
       await execCommand("rm", ["-rf", tmpPath]);
       return { success: false, output: `SKILL.md not found for skill "${skillName}"` };
     }
-    // Install from alternate path
-    const { installSkillFromPath } = await import("./skill-manager.js");
-    const installed = installSkillFromPath(tmpPath, skillName, CLAUDE_CWD);
-    await execCommand("rm", ["-rf", tmpPath]);
-    return { success, output: installed ? `Skill "${skillName}" installed successfully!` : `Install failed` };
+    // Install from alternate path using bash with sg appgroup for correct group
+    const installCmd = `sg appgroup -c "mkdir -p /app/.claude/skills/${skillName} && cp ${tmpPath}/SKILL.md /app/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
+    const installResult = await execCommand("bash", ["-c", installCmd]);
+    return {
+      success: installResult.code === 0,
+      output: installResult.code === 0 ? `Skill "${skillName}" installed successfully!` : `Install failed: ${installResult.stderr}`
+    };
   }
 
-  // Install the skill
+  // Install using bash with sg appgroup for correct group ownership
   try {
-    const { installSkillFromPath } = await import("./skill-manager.js");
-    const sourcePath = `${tmpPath}/.claude/skills/${skillName}`;
-    const success = installSkillFromPath(sourcePath, skillName, CLAUDE_CWD);
-    await execCommand("rm", ["-rf", tmpPath]);
+    const installCmd = `sg appgroup -c "mkdir -p /app/.claude/skills/${skillName} && cp ${tmpPath}/.claude/skills/${skillName}/SKILL.md /app/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
+    const installResult = await execCommand("bash", ["-c", installCmd]);
     return {
-      success,
-      output: success ? `Skill "${skillName}" installed successfully!` : `Install failed`
+      success: installResult.code === 0,
+      output: installResult.code === 0 ? `Skill "${skillName}" installed successfully!` : `Install failed: ${installResult.stderr}`
     };
   } catch (e: any) {
     await execCommand("rm", ["-rf", tmpPath]);
