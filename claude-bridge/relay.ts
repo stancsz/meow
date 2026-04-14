@@ -1,43 +1,22 @@
 #!/usr/bin/env bun
 /**
- * relay.ts
+ * relay.ts - Claude Bridge Docker Relay
  *
- * Claude Bridge Relay — bridges Discord to Claude Code and back.
+ * Docker-ready version of claude-bridge relay.
  * Bridges Discord → Claude Code → Discord reply.
  *
- * Architecture:
- *   Discord message → relay.ts → claude -p (print mode) → AI → Discord reply
- *
- * Canonical invocation (equivalent of `claude --channels`):
- *   meow --meow-chan                          # all channels, all messages
- *   meow --meow-chan-mention                  # only @bot mentions
- *   meow --meow-chan --channel 123 --prefix "meow:"
- *
- * Direct invocation:
- *   bun run relay.ts
- *   bun run relay.ts --channel 123456789  # Only watch specific channel(s)
- *   bun run relay.ts --prefix "meow:"    # Only respond to messages starting with prefix
- *   bun run relay.ts --mention-only       # Only respond when bot is @mentioned
- *
- * npm scripts (from repo root):
- *   npm run meow-chan               # full relay mode
- *   npm run meow-chan:mention       # mention-only mode
- *   npm run channels                # alias: direct relay
- *
- * Environment variables (from .env or shell):
- *   DISCORD_TOKEN        - Bot token (required)
- *   CLAUDE_CWD          - Working directory for claude (default: process.cwd())
- *   CLAUDE_MODEL        - Model to use (default: from Claude Code config)
- *   RELAY_CHANNELS      - Comma-separated channel IDs to watch (optional)
- *   RELAY_PREFIX        - Message prefix to trigger relay (e.g. "meow:"), optional
- *   RELAY_MENTION_ONLY  - Only respond to @bot mentions (set to "1")
- *   RELAY_TYPING        - Show "typing..." while processing (default: "1")
+ * Features:
+ * - Real-time streaming output to Discord (updates status as it runs)
+ * - Smart background task detection
+ * - Long-running task support (git clone, build, etc.)
+ * - Human-like memory system (remembers users, goals, relationships)
  */
 
 import { Client, GatewayIntentBits, ChannelType, type TextChannel, type Message } from "discord.js";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { MemoryStore } from "./memory.js";
 
 // ============================================================================
 // Config
@@ -91,23 +70,245 @@ const RELAY_CHANNELS = [
 ];
 const RELAY_PREFIX = argPrefix || process.env.RELAY_PREFIX || "";
 const RELAY_MENTION_ONLY = argMentionOnly || process.env.RELAY_MENTION_ONLY === "1";
-const RELAY_TYPING = process.env.RELAY_TYPING !== "0"; // default true
+const RELAY_TYPING = process.env.RELAY_TYPING !== "0";
+const CLAUDE_TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS || "3600000");
 
 // ============================================================================
-// Claude Code Client — spawns `claude -p "<prompt>"` for each message
+// Memory Store - Human-like memory system
+// ============================================================================
+
+const MEMORY_DATA_DIR = join(CLAUDE_CWD, "data");
+if (!existsSync(MEMORY_DATA_DIR)) {
+  mkdirSync(MEMORY_DATA_DIR, { recursive: true });
+}
+const memory = new MemoryStore(MEMORY_DATA_DIR);
+
+// Save memory periodically
+setInterval(() => memory.save(), 30000);
+process.on("SIGINT", () => { memory.save(); process.exit(0); });
+process.on("SIGTERM", () => { memory.save(); process.exit(0); });
+
+// ============================================================================
+// Background task detection
+// ============================================================================
+
+// Only long-running operations that genuinely need progress feedback
+const BG_KEYWORDS = [
+  "git clone", "clone repository", "clone repo",
+  "npm install", "pip install", "pip3 install", "cargo build", "cargo install",
+  "apt install", "apk add", "yum install", "brew install",
+  "make build", "make compile", "gradle build", "mvn build",
+  "download ", "wget ", "curl -O", "curl -L",
+  "deploy ", "scp ", "rsync",
+  "archive ", "extract ", "unzip", "tar -",
+];
+
+function needsBackgroundProcessing(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return BG_KEYWORDS.some(k => lower.includes(k));
+}
+
+// ============================================================================
+// Rate limiter
+// ============================================================================
+
+const lastReplyTime = new Map<string, number>();
+const RATE_LIMIT_MS = 1000;
+
+function isRateLimited(channelId: string): boolean {
+  const last = lastReplyTime.get(channelId) ?? 0;
+  return Date.now() - last < RATE_LIMIT_MS;
+}
+
+function markReplied(channelId: string) {
+  lastReplyTime.set(channelId, Date.now());
+}
+
+// ============================================================================
+// Conversation history (persistent)
+// ============================================================================
+
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+
+const CONVERSATION_HISTORY_LIMIT = 10;
+const HISTORY_FILE = join(CLAUDE_CWD, "data", ".relay_history.json");
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+// Per-channel conversation history
+const channelHistory = new Map<string, ChatMessage[]>();
+
+// Load history from disk on startup
+function loadHistory() {
+  try {
+    // Ensure data directory exists
+    const dataDir = join(CLAUDE_CWD, "data");
+    if (!existsSync(dataDir)) {
+      // Will be created when saving
+      return;
+    }
+    if (existsSync(HISTORY_FILE)) {
+      const data = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
+      for (const [channelId, messages] of Object.entries(data)) {
+        channelHistory.set(channelId, messages);
+      }
+      console.log(`[relay] Loaded history for ${channelHistory.size} channels`);
+    }
+  } catch (e) {
+    console.warn("[relay] Could not load history:", e);
+  }
+}
+
+// Save history to disk
+function saveHistory() {
+  try {
+    const dataDir = join(CLAUDE_CWD, "data");
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
+    }
+    const data: Record<string, ChatMessage[]> = {};
+    for (const [channelId, messages] of channelHistory) {
+      data[channelId] = messages;
+    }
+    writeFileSync(HISTORY_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn("[relay] Could not save history:", e);
+  }
+}
+
+// Load history on startup
+loadHistory();
+
+// Save history periodically and on shutdown
+setInterval(saveHistory, 30000); // Save every 30 seconds
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    saveHistory();
+    process.exit(0);
+  });
+}
+
+function addToHistory(channelId: string, role: "user" | "assistant", content: string) {
+  let history = channelHistory.get(channelId) ?? [];
+  history.push({ role, content, timestamp: Date.now() });
+  // Keep only last N messages
+  if (history.length > CONVERSATION_HISTORY_LIMIT) {
+    history = history.slice(-CONVERSATION_HISTORY_LIMIT);
+  }
+  channelHistory.set(channelId, history);
+  saveHistory(); // Persist after each change
+}
+
+// Load system prompt
+let SYSTEM_PROMPT = "";
+try {
+  SYSTEM_PROMPT = readFileSync(join(process.cwd(), "SYSTEM_PROMPT.md"), "utf-8");
+} catch {
+  SYSTEM_PROMPT = "You are Meow, a helpful Discord relay bot.";
+}
+
+function buildContextPrompt(channelId: string, currentPrompt: string, username: string, userId: string): string {
+  let contextPrompt = SYSTEM_PROMPT + "\n\n";
+
+  // Add bond tone guidance
+  const bondTone = memory.getBondTone(userId);
+  contextPrompt += `## Your Relationship with This User\n`;
+  contextPrompt += `Bond strength: ${Math.round(memory.getBondStrength(userId) * 100)}%\n`;
+  contextPrompt += `Your tone should be: ${bondTone}\n`;
+  const greeting = memory.getBondGreeting(userId, username);
+  if (greeting) {
+    contextPrompt += `Greeting to use: "${greeting}" (use naturally if appropriate)\n`;
+  }
+  contextPrompt += "\n";
+
+  // Add human-like memory context (profile facts, goals, relationships)
+  const userContext = memory.buildUserContext(userId, username);
+  if (userContext) {
+    contextPrompt += "## Memory of This Person\n";
+    contextPrompt += userContext + "\n";
+  }
+
+  // Use hierarchical memory: compressed summaries + recent messages
+  const threadContext = memory.getThreadContext(channelId, username);
+  if (threadContext) {
+    contextPrompt += threadContext;
+  }
+
+  contextPrompt += `User Message: ${currentPrompt}\n\n(Sent by ${username} in Discord.)`;
+
+  return contextPrompt;
+}
+
+// ============================================================================
+// Message chunker
+// ============================================================================
+
+function chunkMessage(text: string, maxLen = 1900): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    let cut = maxLen;
+    const nl = remaining.lastIndexOf("\n", maxLen);
+    if (nl > maxLen * 0.5) cut = nl + 1;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut);
+  }
+  return chunks;
+}
+
+// ============================================================================
+// Permission bloat filter
+// ============================================================================
+
+function isPermissionBloat(text: string): boolean {
+  const lower = text.toLowerCase();
+  const permissionPhrases = [
+    "don't have discord", "don't have permission", "don't have discord reply",
+    "hasn't been approved", "needs to be approved", "plugin needs to be approved",
+    "plugin needs approval", "haven't approved", "haven't granted",
+    "hasn't been granted", "permission to reply", "reply tool is pending",
+    "reply tool needs", "mcp plugin needs", "discord plugin needs",
+    "run /discord", "grant it so i can", "want me to reply",
+    "want to grant", "you can approve", "approve it with", "can i reply",
+  ];
+  const isShort = text.length < 200;
+  const hasPermissionPhrase = permissionPhrases.some(p => lower.includes(p));
+  const hasSelfReference = lower.includes("i tried") || lower.includes("i'm unable") || lower.includes("i don't have");
+  return isShort && hasPermissionPhrase && hasSelfReference;
+}
+
+// ============================================================================
+// Claude Code Client
 // ============================================================================
 
 class ClaudeCodeClient {
-  private claudeArgs = ["--output-format", "text", "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")];
+  private claudeArgs = [
+    "--output-format", "text",
+    "--dangerously-skip-permissions",
+    "--strict-mcp-config",
+    "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")
+  ];
 
   async prompt(text: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const claudeJsPath = "C:\\Users\\stanc\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js";
-      const proc = spawn("node", [claudeJsPath, ...this.claudeArgs, "-p", text], {
+      const cliPath = process.env.CLAUDE_CLI_PATH ||
+        (process.platform === "win32"
+          ? "C:\\Users\\stanc\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js"
+          : "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js");
+
+      const execPath = "node";
+      const execArgs = [cliPath, ...this.claudeArgs, "-p", text];
+
+      const proc = spawn(execPath, execArgs, {
         cwd: CLAUDE_CWD,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },
-        shell: false, 
+        shell: false,
       });
 
       let stdout = "";
@@ -129,137 +330,41 @@ class ClaudeCodeClient {
           if (stderr.trim()) console.warn(`[claude] Warning: ${stderr.trim()}`);
           resolve(stdout.trim());
         } else {
-          // Fall back to stderr as error message
           const errMsg = stderr.trim() || `claude exited with code ${code}`;
-          // Strip ANSI codes if any
           const clean = errMsg.replace(/\x1b\[[0-9;]*m/g, "");
           reject(new Error(clean));
         }
       });
 
-      // 60s timeout
       const timeout = setTimeout(() => {
         proc.kill();
-        reject(new Error("Claude prompt timed out after 60s"));
-      }, 60000);
+        reject(new Error(`Claude timed out after ${CLAUDE_TIMEOUT_MS/1000}s`));
+      }, CLAUDE_TIMEOUT_MS);
     });
   }
 
   isAlive(): boolean {
-    // Claude Code is spawned per-message, so always "alive" in the relay sense
     return true;
   }
 
   stop(): void {
-    // Nothing to stop for per-message spawn model
+    // Nothing to stop
   }
-}
-
-// ============================================================================
-// Rate limiter — avoid spam
-// ============================================================================
-
-const lastReplyTime = new Map<string, number>(); // channelId → timestamp
-const RATE_LIMIT_MS = 1000; // min 1s between replies per channel
-
-function isRateLimited(channelId: string): boolean {
-  const last = lastReplyTime.get(channelId) ?? 0;
-  return Date.now() - last < RATE_LIMIT_MS;
-}
-
-function markReplied(channelId: string) {
-  lastReplyTime.set(channelId, Date.now());
-}
-
-// ============================================================================
-// Message chunker — Discord's 2000 char limit
-// ============================================================================
-
-function chunkMessage(text: string, maxLen = 1900): string[] {
-  if (text.length <= maxLen) return [text];
-  const chunks: string[] = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    // Try to split at a newline near the limit
-    let cut = maxLen;
-    const nl = remaining.lastIndexOf("\n", maxLen);
-    if (nl > maxLen * 0.5) cut = nl + 1;
-    chunks.push(remaining.slice(0, cut));
-    remaining = remaining.slice(cut);
-  }
-  return chunks;
 }
 
 // ============================================================================
 // Main Relay Loop
 // ============================================================================
 
-// Detect permission/auth errors that should not be re-reported to Discord
-function isAuthError(text: string): boolean {
-  const lower = text.toLowerCase();
-  return (
-    lower.includes("permission") ||
-    lower.includes("authorize") ||
-    lower.includes("discord mcp needs") ||
-    lower.includes("no discord") ||
-    lower.includes("run /discord") ||
-    lower.includes("grant access") ||
-    lower.includes("needs permission") ||
-    lower.includes("don't have discord") ||
-    lower.includes("discord access") ||
-    lower.includes("reply permissions") ||
-    lower.includes("pending permission") ||
-    lower.includes("approve") ||
-    lower.includes("/discord:access")
-  );
-}
-
-// Check if the reply is just Claude complaining about not having permission (not useful to send)
-function isPermissionBloat(text: string): boolean {
-  const lower = text.toLowerCase();
-  const permissionPhrases = [
-    "don't have discord",
-    "don't have permission",
-    "don't have discord reply",
-    "hasn't been approved",
-    "needs to be approved",
-    "plugin needs to be approved",
-    "plugin needs approval",
-    "haven't approved",
-    "haven't granted",
-    "hasn't been granted",
-    "permission to reply",
-    "reply tool is pending",
-    "reply tool needs",
-    "mcp plugin needs",
-    "discord plugin needs",
-    "run /discord",
-    "grant it so i can",
-    "want me to reply",
-    "want to grant",
-    "you can approve",
-    "approve it with",
-    "can i reply",
-  ];
-  // If reply is short and is mostly permission-related blurb, skip it
-  const firstLine = lower.split('\n')[0];
-  const isShort = text.length < 200;
-  const hasPermissionPhrase = permissionPhrases.some(p => lower.includes(p));
-  const hasSelfReference = lower.includes("i tried") || lower.includes("i'm unable") || lower.includes("i don't have");
-  return isShort && hasPermissionPhrase && hasSelfReference;
-}
-
 async function main() {
-  console.log("[relay] Starting Meow Channels Relay (Claude Code)...");
+  console.log("[relay] Starting Claude Bridge Docker Relay...");
   console.log(`[relay] CWD: ${CLAUDE_CWD}`);
   console.log(`[relay] Watching channels: ${RELAY_CHANNELS.length > 0 ? RELAY_CHANNELS.join(", ") : "ALL"}`);
   if (RELAY_PREFIX) console.log(`[relay] Prefix filter: "${RELAY_PREFIX}"`);
   if (RELAY_MENTION_ONLY) console.log("[relay] Mode: mention-only");
 
-  // Claude Code client
   const claude = new ClaudeCodeClient();
 
-  // Connect to Discord
   const discord = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -274,40 +379,26 @@ async function main() {
     console.log(`[relay] Ready! Listening for messages...`);
   });
 
-  // Track messages currently being processed to avoid duplicates
   const processing = new Set<string>();
 
   discord.on("messageCreate", async (message: Message) => {
-    // Ignore bots (including self)
     if (message.author.bot) return;
 
-    // Channel filter
     if (RELAY_CHANNELS.length > 0 && !RELAY_CHANNELS.includes(message.channelId)) return;
-
-    // Mention-only filter
     if (RELAY_MENTION_ONLY && !message.mentions.has(discord.user!)) return;
-
-    // Prefix filter
     if (RELAY_PREFIX && !message.content.startsWith(RELAY_PREFIX)) return;
-
-    // Rate limit
     if (isRateLimited(message.channelId)) return;
-
-    // Deduplicate
     if (processing.has(message.id)) return;
     processing.add(message.id);
 
-    // Extract the actual prompt text
     let promptText = message.content;
 
-    // Strip bot mention from start
     if (discord.user) {
       promptText = promptText
         .replace(new RegExp(`^<@!?${discord.user.id}>\\s*`), "")
         .trim();
     }
 
-    // Strip prefix
     if (RELAY_PREFIX && promptText.startsWith(RELAY_PREFIX)) {
       promptText = promptText.slice(RELAY_PREFIX.length).trim();
     }
@@ -317,42 +408,115 @@ async function main() {
       return;
     }
 
-    // Add author context so the agent knows who's talking
-    // We use a safe neutral label and put metadata at the end
-    const fullPrompt = `User Message: ${promptText}
+    // Update memory: track user
+    const userId = message.author.id;
+    memory.updateLastSeen(userId, message.author.username);
+    memory.incrementInteractions(userId);
+    memory.updateSoulRelationship(userId, message.author.username, "");
 
-(Sent by ${message.author.username} in Discord. Respond only with your reply.)`;
+    const fullPrompt = buildContextPrompt(message.channelId, promptText, message.author.username, userId);
 
     console.log(`[relay] → ${message.author.username}: ${promptText.slice(0, 80)}${promptText.length > 80 ? "..." : ""}`);
 
     try {
-      // Show typing indicator
+      // Start typing indicator interval for long responses
+      let typingInterval: ReturnType<typeof setInterval> | null = null;
       if (RELAY_TYPING && message.channel.type === ChannelType.GuildText) {
         await (message.channel as TextChannel).sendTyping();
+        typingInterval = setInterval(() => {
+          (message.channel as TextChannel).sendTyping().catch(() => {
+            if (typingInterval) clearInterval(typingInterval);
+          });
+        }, 4000);
       }
 
-      let reply = await claude.prompt(fullPrompt);
-      markReplied(message.channelId);
+      const isBackground = needsBackgroundProcessing(promptText);
 
-      if (!reply) {
-        console.log("[relay] ! Empty reply, skipping");
-        processing.delete(message.id);
-        return;
-      }
+      // For background tasks, send initial message and stream updates
+      if (isBackground) {
+        if (typingInterval) clearInterval(typingInterval);
+        // Add user message to history and memory
+        addToHistory(message.channelId, "user", promptText);
+        memory.addMessageToThread(message.channelId, userId, "user", promptText);
+        memory.processConversationForFacts(userId, message.author.username, promptText, "");
+        const initialMsg = `🐱 Working...\n\n⏳ Processing...`;
+        const replyMsg = await message.reply(initialMsg);
 
-      console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
+        // Start background processing
+        claude.prompt(fullPrompt).then(async (reply) => {
+          markReplied(message.channelId);
 
-      // Send reply (chunked if needed)
-      const chunks = chunkMessage(reply);
-      for (const chunk of chunks) {
-        await message.reply(chunk);
+          if (!reply) {
+            await replyMsg.edit("❌ Empty response from Claude");
+            return;
+          }
+
+          if (isPermissionBloat(reply)) {
+            await replyMsg.edit("❌ Permission error - check bot configuration");
+            return;
+          }
+
+          console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
+          // Add assistant reply to history
+          addToHistory(message.channelId, "assistant", reply);
+          memory.addMessageToThread(message.channelId, userId, "meow", reply);
+
+          const chunks = chunkMessage(reply);
+          for (let i = 0; i < chunks.length; i++) {
+            if (i === 0) {
+              // Edit initial message with first chunk
+              await replyMsg.edit(chunks[i]);
+            } else {
+              await message.reply(chunks[i]);
+            }
+          }
+        }).catch(async (e: any) => {
+          console.error(`[relay] Error: ${e.message}`);
+          try {
+            await replyMsg.edit(`❌ Error: ${e.message}`);
+          } catch {
+            // ignore
+          }
+        });
+      } else {
+        // Add user message to history and memory before prompt
+        addToHistory(message.channelId, "user", promptText);
+        memory.addMessageToThread(message.channelId, userId, "user", promptText);
+        memory.processConversationForFacts(userId, message.author.username, promptText, "");
+        // Sync processing for quick tasks
+        let reply = await claude.prompt(fullPrompt);
+        if (typingInterval) clearInterval(typingInterval);
+        markReplied(message.channelId);
+
+        if (!reply) {
+          console.log("[relay] ! Empty reply, skipping");
+          processing.delete(message.id);
+          return;
+        }
+
+        if (isPermissionBloat(reply)) {
+          console.log("[relay] ! Permission error in reply, skipping");
+          processing.delete(message.id);
+          return;
+        }
+
+        // Add assistant reply to history and memory
+        addToHistory(message.channelId, "assistant", reply);
+        memory.addMessageToThread(message.channelId, userId, "meow", reply);
+
+        console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
+
+        const chunks = chunkMessage(reply);
+        for (const chunk of chunks) {
+          await message.reply(chunk);
+        }
       }
     } catch (e: any) {
       console.error(`[relay] Error processing ${message.id}:`, e.message);
       try {
         await message.reply(`❌ Error: ${e.message}`);
       } catch {
-        // ignore reply errors
+        // ignore
       }
     } finally {
       processing.delete(message.id);
@@ -361,7 +525,6 @@ async function main() {
 
   await discord.login(DISCORD_TOKEN);
 
-  // Graceful shutdown
   for (const sig of ["SIGINT", "SIGTERM"]) {
     process.on(sig, () => {
       console.log("\n[relay] Shutting down...");

@@ -5,20 +5,18 @@
  * Docker-ready version of claude-bridge relay.
  * Bridges Discord → Claude Code → Discord reply.
  *
- * Environment variables:
- *   DISCORD_TOKEN        - Bot token (required)
- *   CLAUDE_CWD          - Working directory for claude (default: /app)
- *   CLAUDE_CLI_PATH      - Path to Claude Code CLI (auto-detected)
- *   RELAY_CHANNELS      - Comma-separated channel IDs to watch (optional)
- *   RELAY_PREFIX        - Message prefix to trigger relay (optional)
- *   RELAY_MENTION_ONLY  - Set to "1" for mention-only mode
- *   RELAY_TYPING        - Show typing indicator (default: "1")
+ * Features:
+ * - Real-time streaming output to Discord (updates status as it runs)
+ * - Smart background task detection
+ * - Long-running task support (git clone, build, etc.)
+ * - Human-like memory system (remembers users, goals, relationships)
  */
 
 import { Client, GatewayIntentBits, ChannelType, type TextChannel, type Message } from "discord.js";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { MemoryStore } from "./memory.js";
 
 // ============================================================================
 // Config
@@ -73,79 +71,41 @@ const RELAY_CHANNELS = [
 const RELAY_PREFIX = argPrefix || process.env.RELAY_PREFIX || "";
 const RELAY_MENTION_ONLY = argMentionOnly || process.env.RELAY_MENTION_ONLY === "1";
 const RELAY_TYPING = process.env.RELAY_TYPING !== "0";
+const CLAUDE_TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS || "3600000");
 
 // ============================================================================
-// Claude Code Client
+// Memory Store - Human-like memory system
 // ============================================================================
 
-class ClaudeCodeClient {
-  private claudeArgs = [
-    "--output-format", "text",
-    "--dangerously-skip-permissions",
-    "--strict-mcp-config",
-    "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")
-  ];
+const MEMORY_DATA_DIR = join(CLAUDE_CWD, "data");
+if (!existsSync(MEMORY_DATA_DIR)) {
+  mkdirSync(MEMORY_DATA_DIR, { recursive: true });
+}
+const memory = new MemoryStore(MEMORY_DATA_DIR);
 
-  async prompt(text: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      // Auto-detect Claude CLI path
-      const cliPath = process.env.CLAUDE_CLI_PATH ||
-        (process.platform === "win32"
-          ? "C:\\Users\\stanc\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js"
-          : "/usr/local/bin/claude");
+// Save memory periodically
+setInterval(() => memory.save(), 30000);
+process.on("SIGINT", () => { memory.save(); process.exit(0); });
+process.on("SIGTERM", () => { memory.save(); process.exit(0); });
 
-      // Use node on Windows (needs node to run .js), direct binary on others
-      const execPath = process.platform === "win32" ? "node" : cliPath;
-      const execArgs = process.platform === "win32"
-        ? [cliPath, ...this.claudeArgs, "-p", text]
-        : [...this.claudeArgs, "-p", text];
+// ============================================================================
+// Background task detection
+// ============================================================================
 
-      const proc = spawn(execPath, execArgs, {
-        cwd: CLAUDE_CWD,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
-        shell: false,
-      });
+// Only long-running operations that genuinely need progress feedback
+const BG_KEYWORDS = [
+  "git clone", "clone repository", "clone repo",
+  "npm install", "pip install", "pip3 install", "cargo build", "cargo install",
+  "apt install", "apk add", "yum install", "brew install",
+  "make build", "make compile", "gradle build", "mvn build",
+  "download ", "wget ", "curl -O", "curl -L",
+  "deploy ", "scp ", "rsync",
+  "archive ", "extract ", "unzip", "tar -",
+];
 
-      let stdout = "";
-      let stderr = "";
-
-      proc.stdout?.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString();
-      });
-
-      proc.stderr?.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
-      });
-
-      proc.on("error", reject);
-
-      proc.on("close", (code) => {
-        clearTimeout(timeout);
-        if (code === 0) {
-          if (stderr.trim()) console.warn(`[claude] Warning: ${stderr.trim()}`);
-          resolve(stdout.trim());
-        } else {
-          const errMsg = stderr.trim() || `claude exited with code ${code}`;
-          const clean = errMsg.replace(/\x1b\[[0-9;]*m/g, "");
-          reject(new Error(clean));
-        }
-      });
-
-      const timeout = setTimeout(() => {
-        proc.kill();
-        reject(new Error("Claude prompt timed out after 60s"));
-      }, 60000);
-    });
-  }
-
-  isAlive(): boolean {
-    return true;
-  }
-
-  stop(): void {
-    // Nothing to stop for per-message spawn model
-  }
+function needsBackgroundProcessing(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return BG_KEYWORDS.some(k => lower.includes(k));
 }
 
 // ============================================================================
@@ -162,6 +122,125 @@ function isRateLimited(channelId: string): boolean {
 
 function markReplied(channelId: string) {
   lastReplyTime.set(channelId, Date.now());
+}
+
+// ============================================================================
+// Conversation history (persistent)
+// ============================================================================
+
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+
+const CONVERSATION_HISTORY_LIMIT = 10;
+const HISTORY_FILE = join(CLAUDE_CWD, "data", ".relay_history.json");
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+// Per-channel conversation history
+const channelHistory = new Map<string, ChatMessage[]>();
+
+// Load history from disk on startup
+function loadHistory() {
+  try {
+    // Ensure data directory exists
+    const dataDir = join(CLAUDE_CWD, "data");
+    if (!existsSync(dataDir)) {
+      // Will be created when saving
+      return;
+    }
+    if (existsSync(HISTORY_FILE)) {
+      const data = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
+      for (const [channelId, messages] of Object.entries(data)) {
+        channelHistory.set(channelId, messages);
+      }
+      console.log(`[relay] Loaded history for ${channelHistory.size} channels`);
+    }
+  } catch (e) {
+    console.warn("[relay] Could not load history:", e);
+  }
+}
+
+// Save history to disk
+function saveHistory() {
+  try {
+    const dataDir = join(CLAUDE_CWD, "data");
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
+    }
+    const data: Record<string, ChatMessage[]> = {};
+    for (const [channelId, messages] of channelHistory) {
+      data[channelId] = messages;
+    }
+    writeFileSync(HISTORY_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn("[relay] Could not save history:", e);
+  }
+}
+
+// Load history on startup
+loadHistory();
+
+// Save history periodically and on shutdown
+setInterval(saveHistory, 30000); // Save every 30 seconds
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    saveHistory();
+    process.exit(0);
+  });
+}
+
+function addToHistory(channelId: string, role: "user" | "assistant", content: string) {
+  let history = channelHistory.get(channelId) ?? [];
+  history.push({ role, content, timestamp: Date.now() });
+  // Keep only last N messages
+  if (history.length > CONVERSATION_HISTORY_LIMIT) {
+    history = history.slice(-CONVERSATION_HISTORY_LIMIT);
+  }
+  channelHistory.set(channelId, history);
+  saveHistory(); // Persist after each change
+}
+
+// Load system prompt
+let SYSTEM_PROMPT = "";
+try {
+  SYSTEM_PROMPT = readFileSync(join(process.cwd(), "SYSTEM_PROMPT.md"), "utf-8");
+} catch {
+  SYSTEM_PROMPT = "You are Meow, a helpful Discord relay bot.";
+}
+
+function buildContextPrompt(channelId: string, currentPrompt: string, username: string, userId: string): string {
+  let contextPrompt = SYSTEM_PROMPT + "\n\n";
+
+  // Add bond tone guidance
+  const bondTone = memory.getBondTone(userId);
+  contextPrompt += `## Your Relationship with This User\n`;
+  contextPrompt += `Bond strength: ${Math.round(memory.getBondStrength(userId) * 100)}%\n`;
+  contextPrompt += `Your tone should be: ${bondTone}\n`;
+  const greeting = memory.getBondGreeting(userId, username);
+  if (greeting) {
+    contextPrompt += `Greeting to use: "${greeting}" (use naturally if appropriate)\n`;
+  }
+  contextPrompt += "\n";
+
+  // Add human-like memory context (profile facts, goals, relationships)
+  const userContext = memory.buildUserContext(userId, username);
+  if (userContext) {
+    contextPrompt += "## Memory of This Person\n";
+    contextPrompt += userContext + "\n";
+  }
+
+  // Use hierarchical memory: compressed summaries + recent messages
+  const threadContext = memory.getThreadContext(channelId, username);
+  if (threadContext) {
+    contextPrompt += threadContext;
+  }
+
+  contextPrompt += `User Message: ${currentPrompt}\n\n(Sent by ${username} in Discord.)`;
+
+  return contextPrompt;
 }
 
 // ============================================================================
@@ -197,7 +276,6 @@ function isPermissionBloat(text: string): boolean {
     "run /discord", "grant it so i can", "want me to reply",
     "want to grant", "you can approve", "approve it with", "can i reply",
   ];
-  const firstLine = lower.split('\n')[0];
   const isShort = text.length < 200;
   const hasPermissionPhrase = permissionPhrases.some(p => lower.includes(p));
   const hasSelfReference = lower.includes("i tried") || lower.includes("i'm unable") || lower.includes("i don't have");
@@ -205,11 +283,81 @@ function isPermissionBloat(text: string): boolean {
 }
 
 // ============================================================================
+// Claude Code Client
+// ============================================================================
+
+class ClaudeCodeClient {
+  private claudeArgs = [
+    "--output-format", "text",
+    "--dangerously-skip-permissions",
+    "--strict-mcp-config",
+    "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")
+  ];
+
+  async prompt(text: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const cliPath = process.env.CLAUDE_CLI_PATH ||
+        (process.platform === "win32"
+          ? "C:\\Users\\stanc\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js"
+          : "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js");
+
+      const execPath = "node";
+      const execArgs = [cliPath, ...this.claudeArgs, "-p", text];
+
+      const proc = spawn(execPath, execArgs, {
+        cwd: CLAUDE_CWD,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env },
+        shell: false,
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout?.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      proc.on("error", reject);
+
+      proc.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          if (stderr.trim()) console.warn(`[claude] Warning: ${stderr.trim()}`);
+          resolve(stdout.trim());
+        } else {
+          const errMsg = stderr.trim() || `claude exited with code ${code}`;
+          const clean = errMsg.replace(/\x1b\[[0-9;]*m/g, "");
+          reject(new Error(clean));
+        }
+      });
+
+      const timeout = setTimeout(() => {
+        proc.kill();
+        reject(new Error(`Claude timed out after ${CLAUDE_TIMEOUT_MS/1000}s`));
+      }, CLAUDE_TIMEOUT_MS);
+    });
+  }
+
+  isAlive(): boolean {
+    return true;
+  }
+
+  stop(): void {
+    // Nothing to stop
+  }
+}
+
+// ============================================================================
 // Main Relay Loop
 // ============================================================================
 
 async function main() {
-  console.log("[relay] Starting Meow Server Relay (Claude Code)...");
+  console.log("[relay] Starting Claude Bridge Docker Relay...");
   console.log(`[relay] CWD: ${CLAUDE_CWD}`);
   console.log(`[relay] Watching channels: ${RELAY_CHANNELS.length > 0 ? RELAY_CHANNELS.join(", ") : "ALL"}`);
   if (RELAY_PREFIX) console.log(`[relay] Prefix filter: "${RELAY_PREFIX}"`);
@@ -260,45 +408,115 @@ async function main() {
       return;
     }
 
-    const fullPrompt = `User Message: ${promptText}
+    // Update memory: track user
+    const userId = message.author.id;
+    memory.updateLastSeen(userId, message.author.username);
+    memory.incrementInteractions(userId);
+    memory.updateSoulRelationship(userId, message.author.username, "");
 
-(Sent by ${message.author.username} in Discord. Respond only with your reply.)`;
+    const fullPrompt = buildContextPrompt(message.channelId, promptText, message.author.username, userId);
 
     console.log(`[relay] → ${message.author.username}: ${promptText.slice(0, 80)}${promptText.length > 80 ? "..." : ""}`);
 
     try {
+      // Start typing indicator interval for long responses
+      let typingInterval: ReturnType<typeof setInterval> | null = null;
       if (RELAY_TYPING && message.channel.type === ChannelType.GuildText) {
         await (message.channel as TextChannel).sendTyping();
+        typingInterval = setInterval(() => {
+          (message.channel as TextChannel).sendTyping().catch(() => {
+            if (typingInterval) clearInterval(typingInterval);
+          });
+        }, 4000);
       }
 
-      let reply = await claude.prompt(fullPrompt);
-      markReplied(message.channelId);
+      const isBackground = needsBackgroundProcessing(promptText);
 
-      if (!reply) {
-        console.log("[relay] ! Empty reply, skipping");
-        processing.delete(message.id);
-        return;
-      }
+      // For background tasks, send initial message and stream updates
+      if (isBackground) {
+        if (typingInterval) clearInterval(typingInterval);
+        // Add user message to history and memory
+        addToHistory(message.channelId, "user", promptText);
+        memory.addMessageToThread(message.channelId, userId, "user", promptText);
+        memory.processConversationForFacts(userId, message.author.username, promptText, "");
+        const initialMsg = `🐱 Working...\n\n⏳ Processing...`;
+        const replyMsg = await message.reply(initialMsg);
 
-      // Skip permission bloat
-      if (isPermissionBloat(reply)) {
-        console.log("[relay] ! Permission error in reply, skipping");
-        processing.delete(message.id);
-        return;
-      }
+        // Start background processing
+        claude.prompt(fullPrompt).then(async (reply) => {
+          markReplied(message.channelId);
 
-      console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
+          if (!reply) {
+            await replyMsg.edit("❌ Empty response from Claude");
+            return;
+          }
 
-      const chunks = chunkMessage(reply);
-      for (const chunk of chunks) {
-        await message.reply(chunk);
+          if (isPermissionBloat(reply)) {
+            await replyMsg.edit("❌ Permission error - check bot configuration");
+            return;
+          }
+
+          console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
+          // Add assistant reply to history
+          addToHistory(message.channelId, "assistant", reply);
+          memory.addMessageToThread(message.channelId, userId, "meow", reply);
+
+          const chunks = chunkMessage(reply);
+          for (let i = 0; i < chunks.length; i++) {
+            if (i === 0) {
+              // Edit initial message with first chunk
+              await replyMsg.edit(chunks[i]);
+            } else {
+              await message.reply(chunks[i]);
+            }
+          }
+        }).catch(async (e: any) => {
+          console.error(`[relay] Error: ${e.message}`);
+          try {
+            await replyMsg.edit(`❌ Error: ${e.message}`);
+          } catch {
+            // ignore
+          }
+        });
+      } else {
+        // Add user message to history and memory before prompt
+        addToHistory(message.channelId, "user", promptText);
+        memory.addMessageToThread(message.channelId, userId, "user", promptText);
+        memory.processConversationForFacts(userId, message.author.username, promptText, "");
+        // Sync processing for quick tasks
+        let reply = await claude.prompt(fullPrompt);
+        if (typingInterval) clearInterval(typingInterval);
+        markReplied(message.channelId);
+
+        if (!reply) {
+          console.log("[relay] ! Empty reply, skipping");
+          processing.delete(message.id);
+          return;
+        }
+
+        if (isPermissionBloat(reply)) {
+          console.log("[relay] ! Permission error in reply, skipping");
+          processing.delete(message.id);
+          return;
+        }
+
+        // Add assistant reply to history and memory
+        addToHistory(message.channelId, "assistant", reply);
+        memory.addMessageToThread(message.channelId, userId, "meow", reply);
+
+        console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
+
+        const chunks = chunkMessage(reply);
+        for (const chunk of chunks) {
+          await message.reply(chunk);
+        }
       }
     } catch (e: any) {
       console.error(`[relay] Error processing ${message.id}:`, e.message);
       try {
         await message.reply(`❌ Error: ${e.message}`);
       } catch {
-        // ignore reply errors
+        // ignore
       }
     } finally {
       processing.delete(message.id);

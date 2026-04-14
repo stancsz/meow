@@ -10,9 +10,8 @@ services:
     environment:
       - NODE_ENV=production
       - HOME=/home/appuser
-      - ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
-      - GH_PAT=${GH_PAT}
+      - SHELL=/bin/bash
     restart: unless-stopped
     volumes:
       - ./mcp-null.json:/app/mcp-null.json:ro
+      - ./data:/app/data
