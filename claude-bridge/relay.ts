@@ -17,6 +17,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { MemoryStore } from "./memory.js";
+import { getSkillContext } from "./skill-manager.js";
 
 // ============================================================================
 // Config
@@ -238,6 +239,10 @@ function buildContextPrompt(channelId: string, currentPrompt: string, username: 
     contextPrompt += threadContext;
   }
 
+  // Add skill management context
+  const skillContext = getSkillContext(CLAUDE_CWD);
+  contextPrompt += skillContext + "\n";
+
   contextPrompt += `User Message: ${currentPrompt}\n\n(Sent by ${username} in Discord.)`;
 
   return contextPrompt;
@@ -430,86 +435,37 @@ async function main() {
         }, 4000);
       }
 
-      const isBackground = needsBackgroundProcessing(promptText);
+      // Add user message to history and memory before prompt
+      addToHistory(message.channelId, "user", promptText);
+      memory.addMessageToThread(message.channelId, userId, "user", promptText);
+      memory.processConversationForFacts(userId, message.author.username, promptText, "");
 
-      // For background tasks, send initial message and stream updates
-      if (isBackground) {
-        if (typingInterval) clearInterval(typingInterval);
-        // Add user message to history and memory
-        addToHistory(message.channelId, "user", promptText);
-        memory.addMessageToThread(message.channelId, userId, "user", promptText);
-        memory.processConversationForFacts(userId, message.author.username, promptText, "");
-        const initialMsg = `🐱 Working...\n\n⏳ Processing...`;
-        const replyMsg = await message.reply(initialMsg);
+      // Sync processing - typing indicator keeps user updated
+      let reply = await claude.prompt(fullPrompt);
+      if (typingInterval) clearInterval(typingInterval);
+      markReplied(message.channelId);
 
-        // Start background processing
-        claude.prompt(fullPrompt).then(async (reply) => {
-          markReplied(message.channelId);
+      if (!reply) {
+        console.log("[relay] ! Empty reply, skipping");
+        processing.delete(message.id);
+        return;
+      }
 
-          if (!reply) {
-            await replyMsg.edit("❌ Empty response from Claude");
-            return;
-          }
+      if (isPermissionBloat(reply)) {
+        console.log("[relay] ! Permission error in reply, skipping");
+        processing.delete(message.id);
+        return;
+      }
 
-          if (isPermissionBloat(reply)) {
-            await replyMsg.edit("❌ Permission error - check bot configuration");
-            return;
-          }
+      // Add assistant reply to history and memory
+      addToHistory(message.channelId, "assistant", reply);
+      memory.addMessageToThread(message.channelId, userId, "meow", reply);
 
-          console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
-          // Add assistant reply to history
-          addToHistory(message.channelId, "assistant", reply);
-          memory.addMessageToThread(message.channelId, userId, "meow", reply);
+      console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
 
-          const chunks = chunkMessage(reply);
-          for (let i = 0; i < chunks.length; i++) {
-            if (i === 0) {
-              // Edit initial message with first chunk
-              await replyMsg.edit(chunks[i]);
-            } else {
-              await message.reply(chunks[i]);
-            }
-          }
-        }).catch(async (e: any) => {
-          console.error(`[relay] Error: ${e.message}`);
-          try {
-            await replyMsg.edit(`❌ Error: ${e.message}`);
-          } catch {
-            // ignore
-          }
-        });
-      } else {
-        // Add user message to history and memory before prompt
-        addToHistory(message.channelId, "user", promptText);
-        memory.addMessageToThread(message.channelId, userId, "user", promptText);
-        memory.processConversationForFacts(userId, message.author.username, promptText, "");
-        // Sync processing for quick tasks
-        let reply = await claude.prompt(fullPrompt);
-        if (typingInterval) clearInterval(typingInterval);
-        markReplied(message.channelId);
-
-        if (!reply) {
-          console.log("[relay] ! Empty reply, skipping");
-          processing.delete(message.id);
-          return;
-        }
-
-        if (isPermissionBloat(reply)) {
-          console.log("[relay] ! Permission error in reply, skipping");
-          processing.delete(message.id);
-          return;
-        }
-
-        // Add assistant reply to history and memory
-        addToHistory(message.channelId, "assistant", reply);
-        memory.addMessageToThread(message.channelId, userId, "meow", reply);
-
-        console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
-
-        const chunks = chunkMessage(reply);
-        for (const chunk of chunks) {
-          await message.reply(chunk);
-        }
+      const chunks = chunkMessage(reply);
+      for (const chunk of chunks) {
+        await message.reply(chunk);
       }
     } catch (e: any) {
       console.error(`[relay] Error processing ${message.id}:`, e.message);
