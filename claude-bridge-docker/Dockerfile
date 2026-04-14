@@ -31,7 +31,22 @@ RUN bun install
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -D -h /home/appuser && \
     chown -R appuser:appgroup /app
+
+# Create .claude/skills directory for skill management
+RUN mkdir -p /app/.claude/skills && chown -R appuser:appgroup /app/.claude
+
+# Configure git
+RUN git config --global user.email "meow@bot" && \
+    git config --global user.name "Meow Bot"
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER appuser
+
+# Set up gh auth at runtime using token from GH_PAT
+ENV GH_HOST=github.com
 
 # Copy relay source
 COPY --chown=appuser:appgroup relay.ts ./
@@ -46,5 +61,6 @@ RUN bun build relay.ts --outdir=dist --format=esm --target=node
 # Expose for any future HTTP services
 EXPOSE 3000
 
-# Default command - run relay with env vars
+# Entrypoint handles gh auth, then runs relay
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bun", "run", "relay.ts"]
