@@ -1,104 +1,144 @@
-# @meow/channels
+# Meow 🐱 — Claude Code, Fully Realized
 
-Discord integration for Meow — the self-hosted equivalent of `claude --channels`.
+> *"OpenClaw has all the features. Meow gives them to Claude Code."*
 
-## Two Modes
+**Meow is a sidecar harness for Claude Code and Open Code.** It doesn't replace your agent—it supercharges it. Memory that persists, missions that run in the background, skills that install themselves.
 
-### 1. `relay.ts` — The Channels Bridge ⭐
+---
 
-Equivalent to `claude --channels` but using **your own backend** (MiniMax, OpenRouter, etc.) — no Anthropic subscription needed.
+## What Meow Unlocks
 
+### 💾 Memory That Never Forgets
+Claude Code starts fresh every session. Meow remembers:
+- User profiles and relationships
+- Conversation history compressed into context
+- Your preferences, your goals, your patterns
+- Backed up to GitHub — restore anywhere
+
+### 🎯 Missions That Work While You Sleep
+Background task agents for Claude Code:
+- Define a goal, walk away
+- Agent evaluates progress every 30 seconds
+- Posts updates to Discord (edits existing message, no spam)
+- **100% completion? Keeps going. Pushes for excellence.**
+
+### 🧩 Skills from OpenClaw's Ecosystem
 ```
-Discord User
-    ↓  (types a message / @mentions bot)
-relay.ts
-    ↓  (JSON-RPC over stdio)
-meow --acp  (your local AI agent)
-    ↓  (MiniMax / any OpenAI-compatible API)
-AI Response
-    ↓
-Discord Channel
+"Install the knowledge-base skill"
+→ Clones from GitHub, installs, ready to use
 ```
+Any skill in the OpenClaw format Just Works.
 
-#### Quick Start
-
-```bash
-# From the channels/ directory
-DISCORD_TOKEN=your_token bun run relay
-
-# Mention-only mode (bot only responds when @mentioned)
-bun run relay:mention
-
-# Watch specific channels
-bun run relay.ts --channel 123456789 --channel 987654321
-
-# With a trigger prefix
-bun run relay.ts --prefix "meow:"
+### 🔄 Soul Backup to GitHub
 ```
-
-#### Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `DISCORD_TOKEN` | *(required)* | Bot token |
-| `MEOW_CWD` | `../meow` | Working directory for meow agent |
-| `MEOW_DANGEROUS` | `0` | Set `1` to enable shell auto-approve |
-| `RELAY_CHANNELS` | all | Comma-separated channel IDs to watch |
-| `RELAY_PREFIX` | none | Only respond to messages with this prefix |
-| `RELAY_MENTION_ONLY` | `0` | Set `1` for mention-only mode |
-| `RELAY_TYPING` | `1` | Show typing indicator while processing |
-
-#### CLI Flags
-
-```
---channel <id>     Add channel to watchlist (repeatable)
---prefix <str>     Only respond to messages starting with prefix
---mention-only     Only respond when bot is @mentioned
+"backup yourself"
+→ Pushed to GitHub. Never lose your agent.
 ```
 
 ---
 
-### 2. `index.ts` — Discord MCP Server
+## Sidecar Architecture
 
-Exposes Discord as MCP tools that any MCP-compatible client (including meow) can use.
+```
+┌─────────────────┐       ┌─────────────────┐
+│   Claude Code    │◄─────►│   Meow Harness  │
+│   (Your Agent)  │       │  (OpenClaw DNA) │
+└─────────────────┘       └─────────────────┘
+```
 
-**Tools:** `list_guilds`, `list_channels`, `get_messages`, `post_message`, `get_channel_info`
+Claude Code does the thinking. Meow handles:
+- Memory persistence
+- Background mission tracking
+- Skill installation
+- Long-term context
 
-Add to `~/.meow/mcp.json`:
+---
+
+## Quick Start
+
+```bash
+bun install
+bun run relay.ts
+```
+
+Or with Docker:
+
+```bash
+cd claude-bridge-docker
+cp .env.example .env
+docker-compose up --build
+```
+
+---
+
+## Use as a Claude Code Skill
+
+```bash
+git submodule add https://github.com/stancsz/meow ~/.claude/meow
+```
+
+In `~/.claude/settings.json`:
 
 ```json
 {
-  "servers": [
-    {
-      "name": "discord",
-      "command": "bun",
-      "args": ["C:/path/to/meow-1/channels/index.ts"],
-      "env": { "DISCORD_TOKEN": "your_token" }
+  "skills": {
+    "meow": {
+      "path": "~/.claude/meow/.claude/skills/meow"
     }
-  ]
+  }
 }
 ```
 
 ---
 
-## Bot Setup
+## Mission Commands
 
-1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
-2. New application → Bot → Reset Token → copy the token
-3. Under **Privileged Gateway Intents**, enable:
-   - **Server Members Intent**
-   - **Message Content Intent**
-4. OAuth2 → URL Generator: scopes `bot`, permissions `Send Messages` + `Read Message History`
-5. Use generated URL to invite bot to your server
-
-## Configure `.env`
-
-```bash
-# channels/.env  (or root .env — relay.ts reads both)
-DISCORD_TOKEN=MTQx...your_token_here
-RELAY_MENTION_ONLY=1   # recommended: only respond when @mentioned
+```
+create mission <title>               # Create
+add goals to <mission>: <goal1>     # Define done
+start mission <name>               # Begin tracking
+mission status                      # Check progress
+complete mission <name>             # Finish
+cancel mission <name>                # Cancel
+list missions                       # See all
 ```
 
-## Getting Channel / Guild IDs
+---
 
-Enable Developer Mode in Discord (Settings → Advanced → Developer Mode), then right-click channels or servers to "Copy ID".
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DISCORD_TOKEN` | Yes | Discord bot token |
+| `GH_PAT` | Yes | GitHub PAT for skills & backup |
+| `BACKUP_REPO` | No | GitHub repo for memory backup |
+| `RELAY_CHANNELS` | No | Channel IDs to watch |
+
+---
+
+## Discord Setup
+
+1. Create Discord bot at https://discord.com/developers/applications
+2. Enable **Message Content Intent** and **Server Members Intent**
+3. Copy token to `DISCORD_TOKEN`
+4. Add bot to server
+
+---
+
+## Project Structure
+
+```
+claude-bridge/
+├── relay.ts              # Discord ↔ Claude Code bridge
+├── mission-agent.ts      # Background mission evaluator
+├── memory.ts             # Hierarchical memory system
+├── skill-manager.ts      # GitHub skill installation
+├── SYSTEM_PROMPT.md     # Meow's personality
+└── .claude/skills/      # Installed skills
+    ├── backup-restore/
+    └── mission-tracker/
+```
+
+---
+
+*Meow: Claude Code, fully realized.*

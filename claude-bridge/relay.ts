@@ -288,6 +288,218 @@ function isPermissionBloat(text: string): boolean {
 }
 
 // ============================================================================
+// Skill installation executor
+// ============================================================================
+
+interface SkillInstallResult {
+  success: boolean;
+  output: string;
+}
+
+function execCommand(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, args, { shell: true });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    proc.on("close", (code) => resolve({ stdout, stderr, code: code ?? 0 }));
+    proc.on("error", (err) => resolve({ stdout, stderr: err.message, code: 1 }));
+    setTimeout(() => { proc.kill(); resolve({ stdout, stderr: "timeout", code: 124 }); }, 60000);
+  });
+}
+
+async function executeSkillInstallCommands(claudeReply: string): Promise<SkillInstallResult | null> {
+  const lower = claudeReply.toLowerCase();
+
+  // Check if this reply is about skill installation
+  if (!lower.includes("git clone") && !lower.includes("mkdir") && !lower.includes(".claude/skills")) {
+    return null;
+  }
+
+  // Extract git clone URL
+  const cloneMatch = claudeReply.match(/git clone\s+(https?:\/\/[^\s]+)/i);
+  // Extract skill name from path
+  const skillPathMatch = claudeReply.match(/\.claude\/skills\/([^\/\s]+)/i);
+
+  if (!cloneMatch || !skillPathMatch) {
+    return null;
+  }
+
+  const repoUrl = cloneMatch[1];
+  const skillName = skillPathMatch[1];
+
+  console.log(`[relay] Installing skill "${skillName}" from ${repoUrl}`);
+
+  // Clone to temp directory
+  const tmpPath = `/tmp/skill-repo-${Date.now()}`;
+  const cloneResult = await execCommand("git", ["clone", "--depth", "1", repoUrl, tmpPath]);
+
+  if (cloneResult.code !== 0) {
+    return { success: false, output: `Clone failed: ${cloneResult.stderr}` };
+  }
+
+  // Check if SKILL.md exists
+  const sourceSkillPath = `${tmpPath}/.claude/skills/${skillName}/SKILL.md`;
+  const checkResult = await execCommand("test", ["-f", sourceSkillPath]);
+
+  if (checkResult.code !== 0) {
+    // Try alternate location
+    const altPath = `${tmpPath}/SKILL.md`;
+    const altResult = await execCommand("test", ["-f", altPath]);
+    if (altResult.code !== 0) {
+      await execCommand("rm", ["-rf", tmpPath]);
+      return { success: false, output: `SKILL.md not found for skill "${skillName}"` };
+    }
+    // Install from alternate path using bash with sg appgroup for correct group
+    const installCmd = `sg appgroup -c "mkdir -p /app/.claude/skills/${skillName} && cp ${tmpPath}/SKILL.md /app/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
+    const installResult = await execCommand("bash", ["-c", installCmd]);
+    return {
+      success: installResult.code === 0,
+      output: installResult.code === 0 ? `Skill "${skillName}" installed successfully!` : `Install failed: ${installResult.stderr}`
+    };
+  }
+
+  // Install using bash with sg appgroup for correct group ownership
+  try {
+    const installCmd = `sg appgroup -c "mkdir -p /app/.claude/skills/${skillName} && cp ${tmpPath}/.claude/skills/${skillName}/SKILL.md /app/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
+    const installResult = await execCommand("bash", ["-c", installCmd]);
+    return {
+      success: installResult.code === 0,
+      output: installResult.code === 0 ? `Skill "${skillName}" installed successfully!` : `Install failed: ${installResult.stderr}`
+    };
+  } catch (e: any) {
+    await execCommand("rm", ["-rf", tmpPath]);
+    return { success: false, output: `Install error: ${e.message}` };
+  }
+}
+
+// ============================================================================
+// Backup command executor
+// ============================================================================
+
+interface BackupResult {
+  success: boolean;
+  output: string;
+}
+
+const SETTINGS_FILE = join(CLAUDE_CWD, "data", "settings.json");
+
+function loadSettings(): Record<string, string> {
+  try {
+    if (existsSync(SETTINGS_FILE)) {
+      return JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
+    }
+  } catch {}
+  return {};
+}
+
+function saveSettings(settings: Record<string, string>) {
+  try {
+    const dataDir = join(CLAUDE_CWD, "data");
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
+    }
+    writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } catch (e) {
+    console.error("[relay] Failed to save settings:", e);
+  }
+}
+
+async function executeBackupCommands(promptText: string, reply: string): Promise<BackupResult | null> {
+  const lowerPrompt = promptText.toLowerCase();
+  const lowerReply = reply.toLowerCase();
+
+  // Check if this is a backup request
+  const isBackupRequest = lowerPrompt.includes("backup yourself") ||
+                          lowerPrompt.includes("backup me") ||
+                          lowerPrompt.includes("backup my");
+  const isRestoreRequest = lowerPrompt.includes("restore");
+
+  if (!isBackupRequest && !isRestoreRequest) {
+    return null;
+  }
+
+  // Load current settings
+  const settings = loadSettings();
+  const backupRepo = process.env.BACKUP_REPO || settings.backupRepo;
+
+  // Check if user provided a repo URL in their message
+  const repoUrlMatch = promptText.match(/https?:\/\/github\.com\/[^\s\/]+\/[^\s\/]+/i);
+  if (repoUrlMatch) {
+    const providedUrl = repoUrlMatch[0].replace(/\.git$/i, "");
+    settings.backupRepo = providedUrl;
+    saveSettings(settings);
+    console.log(`[relay] Saved backup repo: ${providedUrl}`);
+  }
+
+  // For restore, need BACKUP_REPO
+  if (isRestoreRequest && !backupRepo && !repoUrlMatch) {
+    return { success: false, output: "No backup repo configured. Please provide a backup repo URL first." };
+  }
+
+  // Execute backup
+  if (isBackupRequest) {
+    const repo = backupRepo || settings.backupRepo;
+    if (!repo) {
+      return { success: false, output: "I don't have a backup repo configured yet! Please provide your backup repo URL (e.g., https://github.com/username/meow-backup)" };
+    }
+
+    console.log(`[relay] Starting backup to ${repo}`);
+
+    const tmpPath = `/tmp/meow-backup-${Date.now()}`;
+
+    // Clone or init backup repo
+    const cloneResult = await execCommand("git", ["clone", "--depth", "1", repo, tmpPath]);
+    if (cloneResult.code !== 0) {
+      // Repo might be empty or not exist - init fresh
+      await execCommand("mkdir", ["-p", tmpPath]);
+      await execCommand("sh", ["-c", `cd ${tmpPath} && git init && git remote add origin ${repo}`]);
+    }
+
+    // Sync data (exclude large files)
+    const rsyncExcludes = "--exclude='.relay_history.json' --exclude='threads.backup.json' --exclude='*.log'";
+    await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} /app/data/ ${tmpPath}/data/`]);
+    await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} /app/.claude/skills/ ${tmpPath}/.claude/skills/`]);
+
+    // Copy .gitignore
+    await execCommand("sh", ["-c", `cp /app/.gitignore ${tmpPath}/ 2>/dev/null || true`]);
+
+    // Commit and push
+    const commitResult = await execCommand("sh", ["-c", `cd ${tmpPath} && git add -A && git commit -m "Backup $(date -u '+%Y-%m-%d %H:%M UTC')" && git push origin main || git push -u origin main`]);
+
+    await execCommand("rm", ["-rf", tmpPath]);
+
+    if (commitResult.code !== 0) {
+      return { success: false, output: `Backup failed: ${commitResult.stderr}` };
+    }
+
+    return { success: true, output: `✅ Backup complete! Pushed to ${repo}` };
+  }
+
+  // Execute restore
+  if (isRestoreRequest) {
+    const repo = backupRepo || settings.backupRepo;
+    console.log(`[relay] Starting restore from ${repo}`);
+
+    const tmpPath = `/tmp/meow-restore-${Date.now()}`;
+    const cloneResult = await execCommand("git", ["clone", repo, tmpPath]);
+
+    if (cloneResult.code !== 0) {
+      return { success: false, output: `Restore failed: could not clone ${repo}` };
+    }
+
+    await execCommand("sh", ["-c", `rsync -a ${tmpPath}/data/ /app/data/`]);
+    await execCommand("sh", ["-c", `rsync -a ${tmpPath}/.claude/skills/ /app/.claude/skills/ 2>/dev/null || true`]);
+    await execCommand("rm", ["-rf", tmpPath]);
+
+    return { success: true, output: `✅ Restore complete! Memory and skills restored from ${repo}` };
+  }
+
+  return null;
+}
+
+// ============================================================================
 // Claude Code Client
 // ============================================================================
 
@@ -358,6 +570,205 @@ class ClaudeCodeClient {
 }
 
 // ============================================================================
+// Mission Management
+// ============================================================================
+
+interface Mission {
+  id: string;
+  title: string;
+  description: string;
+  goals: string[];
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  createdAt: number;
+  updatedAt: number;
+  checkInterval: number;
+  channelId: string;
+  iteration: number;
+  lastCheck: number;
+  completionPercent: number;
+  evalHistory: Array<{
+    timestamp: number;
+    percent: number;
+    findings: string;
+    nextSteps: string;
+  }>;
+}
+
+const MISSIONS_FILE = join(MEMORY_DATA_DIR, "missions.json");
+
+function loadMissions(): Mission[] {
+  try {
+    if (existsSync(MISSIONS_FILE)) {
+      const data = JSON.parse(readFileSync(MISSIONS_FILE, "utf-8"));
+      return data.missions || [];
+    }
+  } catch {}
+  return [];
+}
+
+function saveMissions(missions: Mission[]) {
+  try {
+    if (!existsSync(MEMORY_DATA_DIR)) {
+      mkdirSync(MEMORY_DATA_DIR, { recursive: true });
+    }
+    writeFileSync(MISSIONS_FILE, JSON.stringify({ missions }, null, 2));
+  } catch (e) {
+    console.error("[relay] Failed to save missions:", e);
+  }
+}
+
+function generateId(): string {
+  return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+}
+
+function handleMissionCommand(prompt: string, message: Message): string | null {
+  const lower = prompt.toLowerCase();
+
+  // List missions
+  if (lower.includes("list mission") || lower === "missions") {
+    const missions = loadMissions();
+    if (missions.length === 0) {
+      return "📋 No missions yet! Say `create mission <title>` to start tracking.";
+    }
+
+    let response = "**📋 Active Missions:**\n\n";
+    for (const m of missions.filter(m => m.status !== "cancelled")) {
+      const emoji = m.completionPercent >= 100 ? "✅" : m.completionPercent >= 50 ? "🔄" : "⏳";
+      const status = m.status === "completed" ? " [DONE]" : m.status === "in_progress" ? " [Active]" : "";
+      response += `${emoji} **${m.title}**${status}\n`;
+      response += `   ${m.completionPercent}% complete | ${m.goals.length} goals\n`;
+      if (m.channelId) {
+        response += `   Tracking since <t:${Math.floor(m.createdAt / 1000)}:R>\n`;
+      }
+      response += "\n";
+    }
+    return response;
+  }
+
+  // Create mission
+  const createMatch = prompt.match(/create mission[s]?\s+(.+)/i);
+  if (createMatch) {
+    const title = createMatch[1].trim();
+    const missions = loadMissions();
+    const newMission: Mission = {
+      id: generateId(),
+      title,
+      description: "",
+      goals: [],
+      status: "pending",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      checkInterval: 600,
+      channelId: message.channelId,
+      iteration: 0,
+      lastCheck: 0,
+      completionPercent: 0,
+      evalHistory: [],
+    };
+    missions.push(newMission);
+    saveMissions(missions);
+    return `🎯 **Mission created:** ${title}\n\nNow tell me the goals! What should this mission accomplish?\n\nExample: \`add goal to ${title}: build landing page with hero section\``;
+  }
+
+  // Add goal to mission
+  const goalMatch = prompt.match(/add goal[s]?\s+to\s+(.+?):\s*(.+)/i);
+  if (goalMatch) {
+    const missionTitle = goalMatch[1].trim().toLowerCase();
+    const goal = goalMatch[2].trim();
+    const missions = loadMissions();
+    const mission = missions.find(m => m.title.toLowerCase().includes(missionTitle));
+
+    if (!mission) {
+      return `Couldn't find mission "${missionTitle}". Try \`list missions\` to see active ones.`;
+    }
+
+    mission.goals.push(goal);
+    mission.status = "in_progress";
+    mission.updatedAt = Date.now();
+    saveMissions(missions);
+
+    return `✅ Added goal to **${mission.title}**:\n• ${goal}\n\nSay \`start mission ${mission.id.slice(0, 8)}\` when ready to begin tracking!`;
+  }
+
+  // Start mission (activate tracking)
+  const startMatch = prompt.match(/start mission[s]?\s+(.+)/i);
+  if (startMatch) {
+    const idOrTitle = startMatch[1].trim();
+    const missions = loadMissions();
+    const mission = missions.find(m =>
+      m.id.startsWith(idOrTitle) || m.title.toLowerCase().includes(idOrTitle.toLowerCase())
+    );
+
+    if (!mission) {
+      return `Couldn't find mission "${idOrTitle}".`;
+    }
+
+    mission.status = "in_progress";
+    mission.channelId = message.channelId;
+    mission.updatedAt = Date.now();
+    saveMissions(missions);
+
+    return `🚀 **Mission started:** ${mission.title}\n\nI'll track this in the background and update you on progress. Goals:\n${mission.goals.map((g, i) => `${i + 1}. ${g}`).join("\n")}\n\nI'll check every ${mission.checkInterval / 60} minutes.`;
+  }
+
+  // Complete/cancel mission
+  if (prompt.toLowerCase().includes("complete mission")) {
+    const idOrTitle = prompt.replace(/complete mission[s]?/i, "").trim();
+    const missions = loadMissions();
+    const mission = missions.find(m =>
+      m.id.startsWith(idOrTitle) || m.title.toLowerCase().includes(idOrTitle.toLowerCase())
+    );
+
+    if (!mission) {
+      return `Couldn't find mission "${idOrTitle}".`;
+    }
+
+    mission.status = "completed";
+    mission.updatedAt = Date.now();
+    saveMissions(missions);
+    return `✅ **Mission completed:** ${mission.title}\n\nFinal stats:\n• ${mission.iteration} evaluation cycles\n• ${mission.completionPercent}% completion\n\nGreat work! 🎉`;
+  }
+
+  if (prompt.toLowerCase().includes("cancel mission") || prompt.toLowerCase().includes("delete mission")) {
+    const idOrTitle = prompt.replace(/cancel|delete mission[s]?/gi, "").trim();
+    const missions = loadMissions();
+    const idx = missions.findIndex(m =>
+      m.id.startsWith(idOrTitle) || m.title.toLowerCase().includes(idOrTitle.toLowerCase())
+    );
+
+    if (idx < 0) {
+      return `Couldn't find mission "${idOrTitle}".`;
+    }
+
+    const removed = missions.splice(idx, 1)[0];
+    saveMissions(missions);
+    return `🗑️ Mission **${removed.title}** cancelled.`;
+  }
+
+  // Mission status
+  if (prompt.toLowerCase().includes("mission status") || prompt.toLowerCase().includes("how's my") || prompt.toLowerCase().includes("how is my")) {
+    const missions = loadMissions().filter(m => m.status === "in_progress");
+    if (missions.length === 0) {
+      return "No active missions! Say `create mission <title>` to start.";
+    }
+
+    let response = "**🎯 Active Mission Status:**\n\n";
+    for (const m of missions) {
+      const emoji = m.completionPercent >= 100 ? "✅" : m.completionPercent >= 50 ? "🔄" : "⏳";
+      response += `${emoji} **${m.title}** — ${m.completionPercent}%\n`;
+      if (m.evalHistory.length > 0) {
+        const latest = m.evalHistory[m.evalHistory.length - 1];
+        response += `   Last: ${latest.findings.slice(0, 100)}...\n`;
+      }
+      response += "\n";
+    }
+    return response;
+  }
+
+  return null;
+}
+
+// ============================================================================
 // Main Relay Loop
 // ============================================================================
 
@@ -384,6 +795,15 @@ async function main() {
     console.log(`[relay] Ready! Listening for messages...`);
   });
 
+  // Start mission agent in background
+  spawn("bun", ["run", "--watch", "mission-agent.ts"], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "inherit", "inherit"],
+    detached: true,
+    shell: false,
+  });
+  console.log("[relay] Mission agent started in background");
+
   const processing = new Set<string>();
 
   discord.on("messageCreate", async (message: Message) => {
@@ -409,6 +829,15 @@ async function main() {
     }
 
     if (!promptText) {
+      processing.delete(message.id);
+      return;
+    }
+
+    // Check for mission commands (quick handling, no Claude needed)
+    const missionResponse = handleMissionCommand(promptText, message);
+    if (missionResponse) {
+      console.log(`[relay] ← [mission] ${missionResponse.slice(0, 60)}...`);
+      await message.reply(missionResponse);
       processing.delete(message.id);
       return;
     }
@@ -455,6 +884,20 @@ async function main() {
         console.log("[relay] ! Permission error in reply, skipping");
         processing.delete(message.id);
         return;
+      }
+
+      // Try to execute skill installation commands from Claude's reply
+      const installResult = await executeSkillInstallCommands(reply);
+      if (installResult) {
+        console.log(`[relay] Skill install: ${installResult.output}`);
+        reply = reply.trim() + "\n\n✅ " + installResult.output;
+      }
+
+      // Try to execute backup/restore commands
+      const backupResult = await executeBackupCommands(promptText, reply);
+      if (backupResult) {
+        console.log(`[relay] Backup: ${backupResult.output}`);
+        reply = reply.trim() + "\n\n" + backupResult.output;
       }
 
       // Add assistant reply to history and memory
