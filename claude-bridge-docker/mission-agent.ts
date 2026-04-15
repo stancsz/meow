@@ -273,8 +273,14 @@ async function checkMission(mission: Mission): Promise<Mission> {
     return mission;
   }
 
-  // Skip cancelled/completed missions
-  if (mission.status === "cancelled" || mission.status === "completed") {
+  // Only evaluate in_progress missions - pending needs goals first
+  if (mission.status !== "in_progress") {
+    return mission;
+  }
+
+  // Skip missions with no goals - nothing to evaluate
+  if (mission.goals.length === 0) {
+    console.log(`[mission-agent] Mission "${mission.title}" has no goals, skipping`);
     return mission;
   }
 
@@ -314,7 +320,13 @@ async function checkMission(mission: Mission): Promise<Mission> {
 
 function buildStatusMessage(mission: Mission, eval_: EvalRecord): string {
   const emoji = eval_.percent >= 100 ? "✅" : eval_.percent >= 50 ? "🔄" : "⏳";
-  const status = mission.status === "completed" ? "COMPLETE" : "IN PROGRESS";
+  const statusMap: Record<string, string> = {
+    pending: "PENDING",
+    in_progress: "IN PROGRESS",
+    completed: "COMPLETE",
+    cancelled: "CANCELLED"
+  };
+  const status = statusMap[mission.status] || mission.status.toUpperCase();
 
   let msg = `${emoji} **Mission Update: ${mission.title}**\n`;
   msg += `Status: ${status} | Completion: ${eval_.percent}% | Iteration: ${mission.iteration}\n\n`;
