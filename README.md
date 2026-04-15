@@ -2,6 +2,8 @@
 
 > "Like OpenClaw, but with a soul."
 
+**A product of harness engineering** — Meow is designed to work as a **sidecar harness** alongside Claude Code or Open Code, extending their capabilities without modifying the core agent.
+
 Meow is a **skill meta-orchestrator** that transforms Claude Code into an agentic companion. It runs Claude Code as a background agent, manages skills dynamically, tracks missions persistently, and maintains memory across sessions.
 
 Unlike a simple CLI wrapper, Meow is an **agentic system** — it doesn't just execute commands, it pursues goals, learns from failures, and improves over time.
@@ -42,7 +44,29 @@ Cute default with relationship tracking (bond strength):
 
 ---
 
-## Architecture
+## Architecture — Sidecar Harness
+
+Meow is a **sidecar harness** — it augments Claude Code without replacing it:
+
+```
+┌─────────────────┐       ┌─────────────────┐
+│   Claude Code   │◄─────►│   Meow Harness  │
+│   (Core Agent) │       │  (Sidecar)      │
+└─────────────────┘       └─────────────────┘
+                                  │
+                            ┌─────┴─────┐
+                            │           │
+                       Memory      Missions
+                       +Skills    +Skills
+```
+
+The core agent (Claude Code / Open Code) does the thinking. Meow provides:
+- Persistent memory across sessions
+- Background mission tracking
+- Skill orchestration
+- Long-term context management
+
+---
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -139,6 +163,61 @@ Skills are `.claude/skills/<name>/SKILL.md` files that define capabilities.
 2. Enable **Message Content Intent** and **Server Members Intent**
 3. Copy token to `DISCORD_TOKEN`
 4. Add bot to server
+
+---
+
+## For Claude Code Agents
+
+Meow can be used as a **skill** within Claude Code itself:
+
+### Install as Submodule
+
+```bash
+cd ~/.claude
+git submodule add https://github.com/stancsz/meow meow
+git submodule update --init --recursive
+```
+
+### Add to Settings
+
+In your `~/.claude/settings.json`:
+
+```json
+{
+  "skills": {
+    "meow": {
+      "description": "Agentic orchestrator with memory, missions, and Discord interface",
+      "path": "/path/to/meow/.claude/skills/meow"
+    }
+  }
+}
+```
+
+### Use in Claude Code
+
+```
+/meow backup                     # Backup memory to GitHub
+/meow mission create <title>    # Create a mission
+/meow mission status <id>         # Check mission progress
+/meow skills install <repo>      # Install a skill
+```
+
+### As a CLI Tool
+
+```bash
+# Memory
+./meow memory save user-prefs '{"theme": "dark"}'
+./meow memory load user-prefs
+
+# Missions
+./meow mission create "build feature"
+./meow mission add <id> "implement endpoint"
+./meow mission start <id>
+./meow mission status <id>
+
+# Background agent
+./meow --agent --mission <id> --interval 30s
+```
 
 ---
 
