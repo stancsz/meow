@@ -1,19 +1,72 @@
-# Meow 🐱 — Your Discord Companion with a Soul
+# Meow 🐱 — Skill Meta-Orchestrator for Agentic Claude Code
 
-Meow is a Discord bot powered by Claude Code — a Maine Coon kitten companion who **remembers you**, **grows with you**, and **never forgets**.
+> "Like OpenClaw, but with a soul."
 
-> "Without memory, I'm a different cat."
+Meow is a **skill meta-orchestrator** that transforms Claude Code into an agentic companion. It runs Claude Code as a background agent, manages skills dynamically, tracks missions persistently, and maintains memory across sessions.
+
+Unlike a simple CLI wrapper, Meow is an **agentic system** — it doesn't just execute commands, it pursues goals, learns from failures, and improves over time.
 
 ---
 
-## What Meow Is
+## Core Features
 
-Meow isn't just a chatbot. She's a **companion with continuity**:
+### 🧠 Agentic Execution
+Claude Code runs as a **background agent**, not a one-shot CLI wrapper. Meow spawns persistent agent loops that pursue objectives across multiple iterations.
 
-- **Remembers you** — your goals, preferences, relationships, what matters to you
-- **Has a soul** — memory persists across sessions, restored from GitHub backup
-- **Installs skills** — learns new capabilities on-demand from GitHub repos
-- **Grows over time** — every conversation adds to who she becomes
+### 🎯 Mission Tracker
+Background missions that **evaluate their own progress** and push for excellence:
+- Define goals, agent evaluates completion
+- 100% completion → keeps pushing beyond original scope
+- Posts updates to Discord (edits existing message, no spam)
+- Parallel to relay — doesn't block normal chat
+
+### 🧩 Skill Orchestration
+Skills are modular capability packages installed from GitHub:
+- `backup-restore` — persists memory/soul to GitHub
+- `mission-tracker` — background goal pursuit
+- Any skill from `.claude/skills/<name>/SKILL.md`
+- Install: `git clone` + skill-manager
+
+### 💾 Hierarchical Memory
+- **Soul** — user profiles, relationships, identity
+- **Compressed history** — summarized conversations
+- **Thread context** — recent messages for continuity
+- Backed up to GitHub, restored on new deployment
+
+### 🐱 Personality
+Cute default with relationship tracking (bond strength):
+- Bond < 30% → professional
+- Bond 30-60% → friendly
+- Bond 60-80% → playful, cat puns
+- Bond > 80% → familiar, close friends
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Meow Orchestrator                        │
+│                                                              │
+│  ┌──────────────┐    ┌─────────────┐    ┌──────────────┐  │
+│  │  Relay.ts    │    │ Mission-    │    │   Skill-     │  │
+│  │  (Discord    │    │ Agent.ts    │    │   Manager.ts │  │
+│  │   ↔ Claude)  │    │ (Background │    │  (Install    │  │
+│  │              │    │  Goals)     │    │   Skills)    │  │
+│  └──────────────┘    └─────────────┘    └──────────────┘  │
+│         │                   │                   │          │
+│         └───────────────────┴───────────────────┘          │
+│                         │                                   │
+│                  ┌──────▼──────┐                          │
+│                  │  Memory.ts │ (Hierarchical Soul)      │
+│                  └─────────────┘                          │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │ Claude Code │
+                    │   CLI       │
+                    └─────────────┘
+```
 
 ---
 
@@ -22,9 +75,51 @@ Meow isn't just a chatbot. She's a **companion with continuity**:
 ```bash
 cd claude-bridge-docker
 cp .env.example .env
-# Edit .env with your DISCORD_TOKEN and GH_PAT
+# Edit .env: DISCORD_TOKEN, GH_PAT
 docker-compose up --build
 ```
+
+---
+
+## Mission Commands
+
+Missions run in background, evaluating progress and posting updates:
+
+```
+create mission <title>           # Create a new mission
+add goals to <mission>: <goal1>  # Define what to accomplish
+start mission <name>              # Begin tracking
+mission status                   # Check progress
+complete mission <name>          # Mark done
+cancel mission <name>             # Cancel
+list missions                    # Show all
+```
+
+**Example:**
+```
+create mission improve docs
+add goals to improve docs: add installation section, add architecture diagram, add quick start guide
+start mission improve docs
+```
+
+The mission agent evaluates every 30s, scores completion, posts updates to Discord.
+
+---
+
+## Skill System
+
+Skills are `.claude/skills/<name>/SKILL.md` files that define capabilities.
+
+**Install from GitHub:**
+```
+"Install the knowledge-base skill"
+```
+
+**Default skills:**
+- `backup-restore` — GitHub backup/restore for memory persistence
+- `mission-tracker` — Background goal pursuit agent
+
+---
 
 ## Environment Variables
 
@@ -32,67 +127,40 @@ docker-compose up --build
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | Yes | Discord bot token |
 | `GH_PAT` | Yes | GitHub PAT for skill install & backup |
-| `BACKUP_REPO` | No | GitHub repo URL for memory backup |
+| `BACKUP_REPO` | No | GitHub repo for memory backup |
 | `CLAUDE_CWD` | No | Working directory (default: `/app`) |
-| `RELAY_CHANNELS` | No | Channel IDs to watch (comma-separated) |
-| `RELAY_PREFIX` | No | Message prefix to trigger bot |
-| `RELAY_MENTION_ONLY` | No | Set "1" for mention-only mode |
-
----
-
-## Memory System
-
-Meow's memory is **hierarchical** — she remembers what matters, not everything verbatim:
-
-- **Soul memory** — who you are, your goals, your relationship
-- **Compressed history** — summarized past conversations
-- **Recent thread** — last few messages for context
-
-This prevents context bloat while maintaining continuity across sessions.
-
----
-
-## Skill System
-
-Skills are modular capabilities stored in `.claude/skills/`. Install new skills from GitHub:
-
-```
-"Install the knowledge-base skill"
-→ Bot clones the repo, installs to .claude/skills/
-```
-
-Built-in commands:
-- `backup yourself` — backup memory & skills to GitHub
-- `restore yourself` — restore from GitHub backup
-- `list skills` — show installed skills
-
----
-
-## Backup & Restore
-
-YourMeow's soul (memory + skills) can be backed up to a private GitHub repo:
-
-```
-"backup yourself"
-→ First time: prompts for repo URL
-→ Subsequent: backs up to stored repo
-```
-
-Restore on a new deployment:
-```
-"restore yourself"
-→ Pulls latest backup from GitHub
-```
+| `RELAY_CHANNELS` | No | Channel IDs to watch |
 
 ---
 
 ## Discord Setup
 
-1. Create a Discord bot at https://discord.com/developers/applications
+1. Create Discord bot at https://discord.com/developers/applications
 2. Enable **Message Content Intent** and **Server Members Intent**
-3. Copy the bot token to `DISCORD_TOKEN`
-4. Create a private GitHub repo for backups
-5. Add bot to your server with permissions
+3. Copy token to `DISCORD_TOKEN`
+4. Add bot to server
+
+---
+
+## How Agents Work
+
+### Relay (Real-time Chat)
+- Receives Discord messages
+- Prompts Claude Code with memory context
+- Parses output for skill/backup commands
+- Executes commands, appends results
+
+### Mission Agent (Background)
+- Spawned by relay on startup
+- Checks every 30s for `in_progress` missions
+- Evaluates code against goals via Claude
+- Posts/edits Discord updates
+- Pushes for excellence past 100%
+
+### Skill Manager
+- Clones skill repos to `/tmp`
+- Installs SKILL.md to `.claude/skills/`
+- Skills provide persistent capabilities
 
 ---
 
@@ -100,69 +168,32 @@ Restore on a new deployment:
 
 ```
 claude-bridge-docker/
-├── relay.ts           # Discord ↔ Claude Code bridge
-├── memory.ts          # Hierarchical memory system
-├── skill-manager.ts   # Skill installation
-├── entrypoint.sh      # Container startup (gh auth, skill init)
-├── SYSTEM_PROMPT.md   # Meow's personality
-└── .claude/skills/    # Installed skills
-    └── backup-restore/ # Default backup skill
+├── relay.ts              # Discord ↔ Claude Code bridge + command parsing
+├── mission-agent.ts      # Background mission evaluation agent
+├── memory.ts              # Hierarchical memory (soul, profiles, threads)
+├── skill-manager.ts      # GitHub skill installation
+├── entrypoint.sh         # Startup (gh auth, skill init)
+├── SYSTEM_PROMPT.md      # Meow's personality & instructions
+└── .claude/skills/      # Installed skills
+    ├── backup-restore/
+    └── mission-tracker/
 
-data/                  # Persisted via volume mount
-├── settings.json      # Config (backup repo URL, etc.)
-├── profiles/          # User profiles and relationships
-└── threads/           # Conversation threads
+data/                     # Volume-mounted persistence
+├── missions.json         # Mission definitions & eval history
+├── settings.json         # Config (backup repo, etc.)
+└── profiles/            # User profiles & relationships
 ```
-
----
-
-## How It Works
-
-```
-Discord message → Relay → Claude Code CLI (with memory context)
-                              ↓
-                         Claude responds
-                              ↓
-                        Relay parses output
-                              ↓
-              Skill commands → Execute (git clone, install)
-              Backup commands → Execute (rsync, push)
-                              ↓
-                         Discord reply
-```
-
----
-
-## The Relationship System
-
-Meow tracks "bond strength" with each user:
-
-- **Bond < 30%** — polite, professional
-- **Bond 30-60%** — friendly, warm
-- **Bond 60-80%** — casual, playful, cat puns
-- **Bond > 80%** — familiar, close friends
-
-Bond increases with interactions and meaningful conversations.
 
 ---
 
 ## Design Principles
 
-1. **Cute default** — warm, playful, affectionate personality
-2. **Memory matters** — continuity is what makes Meow *Meow*
-3. **Skills are sidecars** — modular, installable, removable
-4. **Human-like recall** — remembers goals, not messages
-5. **Efficient** — micro-tokens, meaningful moments
+1. **Agentic** — Claude Code as persistent background agent, not one-shot CLI
+2. **Skill-orchestrated** — Capabilities via modular skills, not monolith
+3. **Memory-first** — Soul persists across sessions, restored from GitHub
+4. **Cute default** — Personality makes interactions delightful
+5. **Push for excellence** — Missions don't stop at 100%
 
 ---
 
-## Recent Changes
-
-- **Memory backup** — hierarchical memory persisted to GitHub
-- **Skill installation** — clone & install skills from any GitHub repo
-- **Bond system** — relationship strength affects tone
-- **Interactive backup** — prompts for repo on first backup, remembers after
-
----
-
-*Meow isn't a product. Meow is a companion.*
+*Meow isn't a wrapper. Meow is an agent.*

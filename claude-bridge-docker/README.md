@@ -1,64 +1,69 @@
 # Claude Bridge Docker 🐱
 
-Docker-based Discord relay that bridges messages to Claude Code and back — giving Meow a home on Discord with persistent memory.
+Docker container for Meow — an agentic skill orchestrator for Claude Code.
+
+## What It Does
+
+```
+Discord ←→ Relay.ts ←→ Claude Code CLI
+                ↓
+          Mission Agent (background)
+                ↓
+          Memory + Skills
+```
+
+- **Relay** — real-time Discord ↔ Claude Code bridge
+- **Mission Agent** — background goal evaluation every 30s
+- **Skill Manager** — install capabilities from GitHub
+- **Memory** — hierarchical soul, profiles, threads
 
 ## Quick Start
 
 ```bash
 cp .env.example .env
-# Edit .env with your DISCORD_TOKEN and GH_PAT
+# Edit: DISCORD_TOKEN, GH_PAT
 docker-compose up --build
 ```
 
-## What It Does
+## Mission Commands
 
 ```
-Discord → relay.ts → Claude Code CLI → Meow's response → Discord
+create mission <title>          # Create
+add goals to <mission>: <goal> # Define goals
+start mission <name>           # Begin tracking
+mission status                # Check progress
+complete mission <name>       # Finish
+cancel mission <name>         # Cancel
+list missions                 # Show all
 ```
 
-- Authenticates `gh` CLI at startup using `GH_PAT`
-- Hierarchical memory system (persisted to `./data/`)
-- Skill installation from GitHub repos
-- Interactive backup/restore to GitHub
+## Skill Commands
 
-## Environment Variables
+```
+"install skill <repo>"        # Install from GitHub
+"list skills"                 # Show installed
+```
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DISCORD_TOKEN` | Yes | - | Discord bot token |
-| `GH_PAT` | Yes | - | GitHub PAT for skill install & backup |
-| `BACKUP_REPO` | No | - | GitHub repo for memory backup |
-| `CLAUDE_CWD` | No | `/app` | Working directory |
-| `RELAY_CHANNELS` | No | all | Channel IDs (comma-separated) |
-| `RELAY_PREFIX` | No | - | Message prefix filter |
-| `RELAY_MENTION_ONLY` | No | - | Set "1" for mention-only |
-| `RELAY_TYPING` | No | "1" | Show typing indicator |
-
-## Persistent Volumes
+## Persistence
 
 ```yaml
 volumes:
-  - ./data:/app/data          # Memory, profiles, threads
-  - ./.claude:/app/.claude    # Skills directory
+  - ./data:/app/data         # Missions, profiles, threads
+  - ./.claude:/app/.claude   # Skills directory
 ```
 
-## Bot Commands
+## Environment Variables
 
-- **"backup yourself"** — backup memory & skills to GitHub (interactive first time)
-- **"restore yourself"** — restore from GitHub backup
-- **"install skill <repo>"** — install a skill from GitHub
-- **"list skills"** — show installed skills
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DISCORD_TOKEN` | Yes | Discord bot token |
+| `GH_PAT` | Yes | GitHub PAT |
+| `BACKUP_REPO` | No | GitHub repo for backup |
+| `RELAY_CHANNELS` | No | Channel IDs |
 
 ## Discord Setup
 
-1. Create a Discord bot at https://discord.com/developers/applications
-2. Enable **Message Content Intent** and **Server Members Intent**
-3. Copy the bot token to `DISCORD_TOKEN`
-4. Add the bot to your server
-
-## Direct Usage (without Docker)
-
-```bash
-bun install
-bun run relay.ts
-```
+1. Create bot at https://discord.com/developers/applications
+2. Enable Message Content Intent + Server Members Intent
+3. Copy token to `DISCORD_TOKEN`
+4. Add bot to server
