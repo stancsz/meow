@@ -55,6 +55,7 @@ interface Mission {
   lastCheck: number;
   completionPercent: number;
   evalHistory: EvalRecord[];
+  lastMessageId?: string; // Discord message ID for editing updates
 }
 
 interface EvalRecord {
@@ -139,19 +140,39 @@ async function initDiscord() {
   await discord.login(token);
 }
 
-async function postUpdate(channelId: string, content: string) {
+async function postUpdate(mission: Mission, content: string): Promise<string | null> {
   if (!discord || !discord.user) {
     console.log("[mission-agent] Discord not connected, skipping update");
-    return;
+    return null;
   }
 
   try {
-    const channel = await discord.channels.fetch(channelId);
-    if (channel && channel.isTextBased()) {
-      await (channel as TextChannel).send(content);
+    const channel = await discord.channels.fetch(mission.channelId);
+    if (!channel || !channel.isTextBased()) {
+      return null;
     }
+
+    const textChannel = channel as TextChannel;
+
+    // If we have a previous message ID, try to edit it
+    if (mission.lastMessageId) {
+      try {
+        const oldMessage = await textChannel.messages.fetch(mission.lastMessageId);
+        await oldMessage.edit(content);
+        console.log(`[mission-agent] Updated existing message ${mission.lastMessageId}`);
+        return mission.lastMessageId;
+      } catch {
+        // Message was deleted or not found, post new one
+        console.log(`[mission-agent] Could not edit message ${mission.lastMessageId}, posting new`);
+      }
+    }
+
+    // Post new message
+    const newMessage = await textChannel.send(content);
+    return newMessage.id;
   } catch (e) {
-    console.error(`[mission-agent] Failed to post to channel ${channelId}:`, e);
+    console.error(`[mission-agent] Failed to post update:`, e);
+    return null;
   }
 }
 
@@ -283,7 +304,10 @@ async function checkMission(mission: Mission): Promise<Mission> {
 
   // Build status message
   const statusMsg = buildStatusMessage(mission, eval_);
-  await postUpdate(mission.channelId, statusMsg);
+  const messageId = await postUpdate(mission, statusMsg);
+  if (messageId) {
+    mission.lastMessageId = messageId;
+  }
 
   return mission;
 }
