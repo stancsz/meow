@@ -570,6 +570,205 @@ class ClaudeCodeClient {
 }
 
 // ============================================================================
+// Mission Management
+// ============================================================================
+
+interface Mission {
+  id: string;
+  title: string;
+  description: string;
+  goals: string[];
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  createdAt: number;
+  updatedAt: number;
+  checkInterval: number;
+  channelId: string;
+  iteration: number;
+  lastCheck: number;
+  completionPercent: number;
+  evalHistory: Array<{
+    timestamp: number;
+    percent: number;
+    findings: string;
+    nextSteps: string;
+  }>;
+}
+
+const MISSIONS_FILE = join(MEMORY_DATA_DIR, "missions.json");
+
+function loadMissions(): Mission[] {
+  try {
+    if (existsSync(MISSIONS_FILE)) {
+      const data = JSON.parse(readFileSync(MISSIONS_FILE, "utf-8"));
+      return data.missions || [];
+    }
+  } catch {}
+  return [];
+}
+
+function saveMissions(missions: Mission[]) {
+  try {
+    if (!existsSync(MEMORY_DATA_DIR)) {
+      mkdirSync(MEMORY_DATA_DIR, { recursive: true });
+    }
+    writeFileSync(MISSIONS_FILE, JSON.stringify({ missions }, null, 2));
+  } catch (e) {
+    console.error("[relay] Failed to save missions:", e);
+  }
+}
+
+function generateId(): string {
+  return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+}
+
+function handleMissionCommand(prompt: string, message: Message): string | null {
+  const lower = prompt.toLowerCase();
+
+  // List missions
+  if (lower.includes("list mission") || lower === "missions") {
+    const missions = loadMissions();
+    if (missions.length === 0) {
+      return "📋 No missions yet! Say `create mission <title>` to start tracking.";
+    }
+
+    let response = "**📋 Active Missions:**\n\n";
+    for (const m of missions.filter(m => m.status !== "cancelled")) {
+      const emoji = m.completionPercent >= 100 ? "✅" : m.completionPercent >= 50 ? "🔄" : "⏳";
+      const status = m.status === "completed" ? " [DONE]" : m.status === "in_progress" ? " [Active]" : "";
+      response += `${emoji} **${m.title}**${status}\n`;
+      response += `   ${m.completionPercent}% complete | ${m.goals.length} goals\n`;
+      if (m.channelId) {
+        response += `   Tracking since <t:${Math.floor(m.createdAt / 1000)}:R>\n`;
+      }
+      response += "\n";
+    }
+    return response;
+  }
+
+  // Create mission
+  const createMatch = prompt.match(/create mission[s]?\s+(.+)/i);
+  if (createMatch) {
+    const title = createMatch[1].trim();
+    const missions = loadMissions();
+    const newMission: Mission = {
+      id: generateId(),
+      title,
+      description: "",
+      goals: [],
+      status: "pending",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      checkInterval: 600,
+      channelId: message.channelId,
+      iteration: 0,
+      lastCheck: 0,
+      completionPercent: 0,
+      evalHistory: [],
+    };
+    missions.push(newMission);
+    saveMissions(missions);
+    return `🎯 **Mission created:** ${title}\n\nNow tell me the goals! What should this mission accomplish?\n\nExample: \`add goal to ${title}: build landing page with hero section\``;
+  }
+
+  // Add goal to mission
+  const goalMatch = prompt.match(/add goal[s]?\s+to\s+(.+?):\s*(.+)/i);
+  if (goalMatch) {
+    const missionTitle = goalMatch[1].trim().toLowerCase();
+    const goal = goalMatch[2].trim();
+    const missions = loadMissions();
+    const mission = missions.find(m => m.title.toLowerCase().includes(missionTitle));
+
+    if (!mission) {
+      return `Couldn't find mission "${missionTitle}". Try \`list missions\` to see active ones.`;
+    }
+
+    mission.goals.push(goal);
+    mission.status = "in_progress";
+    mission.updatedAt = Date.now();
+    saveMissions(missions);
+
+    return `✅ Added goal to **${mission.title}**:\n• ${goal}\n\nSay \`start mission ${mission.id.slice(0, 8)}\` when ready to begin tracking!`;
+  }
+
+  // Start mission (activate tracking)
+  const startMatch = prompt.match(/start mission[s]?\s+(.+)/i);
+  if (startMatch) {
+    const idOrTitle = startMatch[1].trim();
+    const missions = loadMissions();
+    const mission = missions.find(m =>
+      m.id.startsWith(idOrTitle) || m.title.toLowerCase().includes(idOrTitle.toLowerCase())
+    );
+
+    if (!mission) {
+      return `Couldn't find mission "${idOrTitle}".`;
+    }
+
+    mission.status = "in_progress";
+    mission.channelId = message.channelId;
+    mission.updatedAt = Date.now();
+    saveMissions(missions);
+
+    return `🚀 **Mission started:** ${mission.title}\n\nI'll track this in the background and update you on progress. Goals:\n${mission.goals.map((g, i) => `${i + 1}. ${g}`).join("\n")}\n\nI'll check every ${mission.checkInterval / 60} minutes.`;
+  }
+
+  // Complete/cancel mission
+  if (prompt.toLowerCase().includes("complete mission")) {
+    const idOrTitle = prompt.replace(/complete mission[s]?/i, "").trim();
+    const missions = loadMissions();
+    const mission = missions.find(m =>
+      m.id.startsWith(idOrTitle) || m.title.toLowerCase().includes(idOrTitle.toLowerCase())
+    );
+
+    if (!mission) {
+      return `Couldn't find mission "${idOrTitle}".`;
+    }
+
+    mission.status = "completed";
+    mission.updatedAt = Date.now();
+    saveMissions(missions);
+    return `✅ **Mission completed:** ${mission.title}\n\nFinal stats:\n• ${mission.iteration} evaluation cycles\n• ${mission.completionPercent}% completion\n\nGreat work! 🎉`;
+  }
+
+  if (prompt.toLowerCase().includes("cancel mission") || prompt.toLowerCase().includes("delete mission")) {
+    const idOrTitle = prompt.replace(/cancel|delete mission[s]?/gi, "").trim();
+    const missions = loadMissions();
+    const idx = missions.findIndex(m =>
+      m.id.startsWith(idOrTitle) || m.title.toLowerCase().includes(idOrTitle.toLowerCase())
+    );
+
+    if (idx < 0) {
+      return `Couldn't find mission "${idOrTitle}".`;
+    }
+
+    const removed = missions.splice(idx, 1)[0];
+    saveMissions(missions);
+    return `🗑️ Mission **${removed.title}** cancelled.`;
+  }
+
+  // Mission status
+  if (prompt.toLowerCase().includes("mission status") || prompt.toLowerCase().includes("how's my") || prompt.toLowerCase().includes("how is my")) {
+    const missions = loadMissions().filter(m => m.status === "in_progress");
+    if (missions.length === 0) {
+      return "No active missions! Say `create mission <title>` to start.";
+    }
+
+    let response = "**🎯 Active Mission Status:**\n\n";
+    for (const m of missions) {
+      const emoji = m.completionPercent >= 100 ? "✅" : m.completionPercent >= 50 ? "🔄" : "⏳";
+      response += `${emoji} **${m.title}** — ${m.completionPercent}%\n`;
+      if (m.evalHistory.length > 0) {
+        const latest = m.evalHistory[m.evalHistory.length - 1];
+        response += `   Last: ${latest.findings.slice(0, 100)}...\n`;
+      }
+      response += "\n";
+    }
+    return response;
+  }
+
+  return null;
+}
+
+// ============================================================================
 // Main Relay Loop
 // ============================================================================
 
@@ -596,6 +795,15 @@ async function main() {
     console.log(`[relay] Ready! Listening for messages...`);
   });
 
+  // Start mission agent in background
+  spawn("bun", ["run", "--watch", "mission-agent.ts"], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "inherit", "inherit"],
+    detached: true,
+    shell: false,
+  });
+  console.log("[relay] Mission agent started in background");
+
   const processing = new Set<string>();
 
   discord.on("messageCreate", async (message: Message) => {
@@ -621,6 +829,15 @@ async function main() {
     }
 
     if (!promptText) {
+      processing.delete(message.id);
+      return;
+    }
+
+    // Check for mission commands (quick handling, no Claude needed)
+    const missionResponse = handleMissionCommand(promptText, message);
+    if (missionResponse) {
+      console.log(`[relay] ← [mission] ${missionResponse.slice(0, 60)}...`);
+      await message.reply(missionResponse);
       processing.delete(message.id);
       return;
     }

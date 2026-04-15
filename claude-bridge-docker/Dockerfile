@@ -52,6 +52,7 @@ ENV GH_HOST=github.com
 COPY --chown=appuser:appgroup relay.ts ./
 COPY --chown=appuser:appgroup memory.ts ./
 COPY --chown=appuser:appgroup skill-manager.ts ./
+COPY --chown=appuser:appgroup mission-agent.ts ./
 COPY --chown=appuser:appgroup mcp-null.json ./
 COPY --chown=appuser:appgroup SYSTEM_PROMPT.md ./
 
