@@ -1,104 +1,103 @@
-# Meow 🐱 — The Agentic Sidecar Harness
+# Meow 🐱 — Claude Code, Fully Realized
 
-> *"Like OpenClaw, but with a soul."*
+> *"OpenClaw has all the features. Meow gives them to Claude Code."*
 
-**Meow is a sidecar harness for Claude Code and Open Code.** It doesn't replace your agent—it supercharges it. Memory that persists, missions that run in the background, skills that install themselves.
+Claude Code is powerful, but OpenClaw has the **features that matter**:
+
+- Persistent memory across sessions
+- Background goal-tracking agents
+- Skill ecosystem you can install from GitHub
+- "Soul" that restores on any machine
+
+**Meow brings OpenClaw's DNA to Claude Code.**
+
+```
+OpenClaw DNA ──────► Meow Harness ──────► Claude Code
+                      │
+                      ├── Memory (soul persists)
+                      ├── Missions (background agent)
+                      └── Skills (install from GitHub)
+```
 
 ---
 
-## What Is a Sidecar Harness?
+## What Meow Unlocks
 
-Most CLI wrappers are **one-shot tools** — you ask, it answers, it's done.
+### 🧠 Memory That Never Forgets
+Claude Code starts fresh every session. Meow remembers:
+- User profiles and relationships
+- Conversation history compressed into context
+- Your preferences, your goals, your patterns
+- Backed up to GitHub — restore anywhere
 
-Meow is a **sidecar harness** — a persistent companion that:
+### 🎯 Missions That Work While You Sleep
+OpenClaw has background task agents. Meow gives Claude Code the same:
+- Define a goal, walk away
+- Agent evaluates progress every 30 seconds
+- Posts updates to Discord (edits existing message, no spam)
+- **100% completion? Keeps going. Pushes for excellence.**
 
-- 🧠 **Remembers everything** across sessions (your agent forgets nothing)
-- 🎯 **Runs missions in the background** while you work
-- 🧩 **Installs skills on demand** from any GitHub repo
-- 💾 **Persists your agent's "soul"** to GitHub — restore anywhere
-- ⚡ **Never blocks** — background agent, real-time chat together
+### 🧩 Skills from OpenClaw's Ecosystem
+OpenClaw's skill ecosystem — now for Claude Code:
+```
+"Install the knowledge-base skill"
+→ Clones from GitHub, installs, ready to use
+```
+Any skill in the OpenClaw format Just Works.
+
+### 💾 Soul Backup to GitHub
+```
+"backup yourself"
+→ Pushed to your GitHub. Never lose your agent.
+
+"restore yourself"
+→ Pulled anywhere. Meow is never lost.
+```
+
+---
+
+## Sidecar Architecture
+
+Meow is a **sidecar harness** — it runs alongside Claude Code, not inside it:
 
 ```
 ┌─────────────────┐       ┌─────────────────┐
 │   Claude Code    │◄─────►│   Meow Harness  │
-│   (Core Agent)  │       │   (Sidecar)     │
+│   (Your Agent)  │       │  (OpenClaw DNA) │
 └─────────────────┘       └─────────────────┘
-                                  │
-                    ┌─────────────┼─────────────┐
-                    │             │             │
-               Memory       Missions       Skills
 ```
 
----
+Claude Code does the thinking. Meow handles:
+- Memory persistence
+- Background mission tracking
+- Skill installation
+- Long-term context
 
-## Why Meow Exists
-
-**Every agent starts fresh.** No memory, no continuity, no growth.
-
-Claude Code is powerful, but:
-- Forgets everything after each session
-- Can't pursue goals while you work
-- No skill ecosystem out of the box
-
-Meow fixes this. It's the **harness** your agent wished it had.
-
----
-
-## Core Capabilities
-
-### 💾 Persistent Memory
-Your agent's "soul" — user profiles, relationships, conversation history, compressed summaries. Backed up to GitHub, restored in seconds.
-
-### 🎯 Background Missions
-Define a goal, go make coffee. Meow evaluates progress every 30 seconds, posts updates to Discord, and **keeps pushing past 100%** for excellence.
-
-### 🧩 Skill Orchestration
-```
-"Install the knowledge-base skill"
-→ Done. Bot restarted, skill available.
-```
-Any `.claude/skills/<name>/SKILL.md` becomes an installable capability.
-
-### 🔄 GitHub Backup & Restore
-```
-"backup yourself"
-→ Pushed to GitHub.
-
-"restore yourself"
-→ Pulled everywhere. Meow is never lost.
-```
+**Your agent, fully realized.**
 
 ---
 
 ## Quick Start
 
 ```bash
-# Clone
 git clone https://github.com/stancsz/meow
 cd meow/claude-bridge-docker
-
-# Configure
 cp .env.example .env
-# Add your DISCORD_TOKEN and GH_PAT
-
-# Run
+# Add DISCORD_TOKEN and GH_PAT
 docker-compose up --build
 ```
 
-That's it. Meow connects to Discord and starts remembering.
+Meow connects to Discord. You're ready.
 
 ---
 
-## Use as a Claude Code Skill
-
-Install Meow as a **skill** inside Claude Code:
+## Use Meow Inside Claude Code
 
 ```bash
-# Add as git submodule
 git submodule add https://github.com/stancsz/meow ~/.claude/meow
 ```
 
-Add to `~/.claude/settings.json`:
+In `~/.claude/settings.json`:
 
 ```json
 {
@@ -110,128 +109,79 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-Now in Claude Code:
+Then in Claude Code:
 
 ```
 /meow backup                    # Backup soul to GitHub
-/meow mission create <title>   # Create a mission
-/meow skills install <repo>    # Install a skill
+/meow mission create <title>  # Start a mission
+/meow skills install <repo>   # Add OpenClaw skills
 ```
 
 ---
 
 ## Mission Commands
 
-Missions run **parallel to everything else** — your agent keeps working while Meow tracks progress.
-
 ```
-create mission <title>              # Start a new mission
-add goals to <mission>: <goal1>   # Define what "done" looks like
-start mission <name>               # Begin tracking
-mission status                    # Check progress
-complete mission <name>           # Mark done
-cancel mission <name>              # Cancel
-list missions                    # See all
+create mission <title>               # Create
+add goals to <mission>: <goal1>     # Define done
+start mission <name>                 # Begin tracking
+mission status                      # Check progress
+complete mission <name>             # Finish
+cancel mission <name>                # Cancel
+list missions                       # See all
 ```
 
 **Example:**
 
 ```
-create mission improve README
-add goals to improve README: add quick start section, add architecture diagram, add troubleshooting guide
-start mission improve README
+create mission improve docs
+add goals to improve docs: add quickstart section, add troubleshooting guide
+start mission improve docs
 ```
 
-You keep coding. Meow watches, evaluates, and posts updates to Discord.
-
----
-
-## The Mission Difference
-
-Other tools mark tasks "done" and stop.
-
-Meow keeps going:
-
-| Completion | What Happens |
-|------------|--------------|
-| 0-99% | Agent identifies gaps, suggests/implements fixes |
-| 100% | Agent says "what's next?" and looks for improvements |
-| 100% + stable | Auto-marks complete, agent seeks next challenge |
-
-**Excellence past the finish line.**
+Go make coffee. Meow watches, evaluates, updates Discord.
 
 ---
 
 ## Memory Architecture
 
 ```
-Soul Memory (permanent)
-├── User profiles
-├── Relationship bonds
-└── Identity facts
+Soul (GitHub-backed)
+├── Who you are
+├── What you care about
+└── How you work
+
+Context Thread (recent)
+└── Last N messages for continuity
 
 Compressed History (summarized)
-└── Past conversations → tiny summaries
-
-Thread Context (recent)
-└── Last N messages for continuity
+└── Old conversations → tiny summaries
 ```
 
-**No context bloat.** Meow remembers what matters, compresses what doesn't, forgets what never mattered.
+No context bloat. Just memory that matters.
 
 ---
 
-## Project Structure
+## Design Philosophy
 
-```
-meow/
-├── .claude/skills/           # Installable skills
-│   └── meow/                 # The Meow skill itself
-├── claude-bridge-docker/     # Docker deployment
-│   ├── relay.ts              # Discord ↔ Claude Code bridge
-│   ├── mission-agent.ts      # Background mission evaluator
-│   ├── memory.ts             # Hierarchical memory system
-│   └── skill-manager.ts      # GitHub skill installation
-└── data/                     # Persisted state (volume-mounted)
-    ├── missions.json         # Mission definitions
-    ├── settings.json        # Config
-    └── profiles/            # User souls
-```
+1. **Sidecar, not replacement** — Claude Code stays Claude Code
+2. **OpenClaw parity** — if OpenClaw has it, Meow brings it
+3. **Memory-first** — continuity enables real intelligence
+4. **Agentic** — background processes that work while you sleep
+5. **Excellence** — 100% completion is a waypoint, not the destination
 
 ---
 
-## Environment Variables
+## For Open Code Users
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DISCORD_TOKEN` | Yes | Discord bot token |
-| `GH_PAT` | Yes | GitHub PAT for skills & backup |
-| `BACKUP_REPO` | No | GitHub repo for memory backup |
-| `RELAY_CHANNELS` | No | Channel IDs to watch |
-
----
-
-## Design Principles
-
-1. **Sidecar, not core** — augments Claude Code, doesn't replace it
-2. **Agentic** — background processes that pursue goals autonomously
-3. **Memory-first** — continuity is what makes intelligence useful
-4. **Skill-orchestrated** — capabilities via modular packages
-5. **Push for excellence** — 100% is a checkpoint, not a finish line
-
----
-
-## For Open Code Too
-
-Meow works as a sidecar for **any** Claude-compatible agent:
+Meow works with Open Code too:
 
 ```bash
-# Point Meow at your agent's working directory
-MEOW_CWD=/path/to/opencode ./meow --agent
+MEOW_CWD=/path/to/opencode ./meow --agent --mission <id>
 ```
 
-The same memory, missions, and skills — regardless of which core agent you use.
+Same memory, same missions. Your harness, your choice.
 
 ---
 
-*Meow isn't a product. Meow is a companion for your agent.*
+*Meow: Claude Code, fully realized.*
