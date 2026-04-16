@@ -504,14 +504,27 @@ async function executeBackupCommands(promptText: string, reply: string): Promise
 // ============================================================================
 
 class ClaudeCodeClient {
+  private primaryMcpConfig = join(CLAUDE_CWD, "mcp-bridge.json");
+  private fallbackMcpConfig = join(CLAUDE_CWD, "mcp-null.json");
+
   private claudeArgs = [
     "--output-format", "text",
     "--dangerously-skip-permissions",
-    "--strict-mcp-config",
-    "--mcp-config", join(CLAUDE_CWD, "mcp-null.json")
+    "--mcp-config", this.primaryMcpConfig
   ];
 
   async prompt(text: string): Promise<string> {
+    return this.promptWithRetry(text, 0);
+  }
+
+  private async promptWithRetry(text: string, attempt: number): Promise<string> {
+    const mcpConfig = attempt === 0 ? this.primaryMcpConfig : this.fallbackMcpConfig;
+    const args = [
+      "--output-format", "text",
+      "--dangerously-skip-permissions",
+      "--mcp-config", mcpConfig
+    ];
+
     return new Promise((resolve, reject) => {
       const cliPath = process.env.CLAUDE_CLI_PATH ||
         (process.platform === "win32"
@@ -519,7 +532,7 @@ class ClaudeCodeClient {
           : "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js");
 
       const execPath = "node";
-      const execArgs = [cliPath, ...this.claudeArgs, "-p", text];
+      const execArgs = [cliPath, ...args, "-p", text];
 
       const proc = spawn(execPath, execArgs, {
         cwd: CLAUDE_CWD,
@@ -549,6 +562,13 @@ class ClaudeCodeClient {
         } else {
           const errMsg = stderr.trim() || `claude exited with code ${code}`;
           const clean = errMsg.replace(/\x1b\[[0-9;]*m/g, "");
+
+          // If MCP error and haven't tried fallback, retry without MCP
+          if (attempt === 0 && (clean.includes("MCP") || clean.includes("mcp"))) {
+            console.warn(`[claude] MCP error detected, retrying without MCP: ${clean.slice(0, 100)}`);
+            return this.promptWithRetry(text, 1).then(resolve).catch(reject);
+          }
+
           reject(new Error(clean));
         }
       });

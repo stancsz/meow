@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "browseros": {
+      "type": "http",
+      "url": "http://host.docker.internal:9000/mcp"
+    }
+  }
+}

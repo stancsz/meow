@@ -13,8 +13,11 @@ services:
       - SHELL=/bin/bash
       - GH_PAT=${GH_PAT}
       - BACKUP_REPO=${BACKUP_REPO:-}
+    extra_hosts:
+      - host.docker.internal:host-gateway
     restart: unless-stopped
     volumes:
       - ./mcp-null.json:/app/mcp-null.json:ro
+      - ./mcp-bridge.json:/app/mcp-bridge.json:ro
       - ./data:/app/data
       - ./.claude:/app/.claude
