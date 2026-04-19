@@ -83,7 +83,7 @@ In `~/.claude/settings.json`:
 {
   "skills": {
     "meow": {
-      "path": "~/.claude/meow/.claude/skills/meow"
+      "path": "~/.claude/agent-kernel/.claude/skills/meow"
     }
   }
 }
@@ -142,3 +142,4 @@ agent-harness/
 ---
 
 *Meow: Claude Code, fully realized.*
+

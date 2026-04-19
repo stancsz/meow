@@ -7,7 +7,7 @@
   "type": "module",
   "private": true,
   "bin": {
-    "meow": "meow/cli/index.ts",
+    "meow": "agent-kernel/cli/index.ts",
     "claude": "claude.cmd",
     "meow-chan": "agent-harness/relay.ts"
   },
@@ -26,9 +26,9 @@
     "typescript": "^5"
   },
   "scripts": {
-    "start": "bun run meow/cli/index.ts",
-    "meow-chan": "bun run meow/cli/index.ts --meow-chan",
-    "meow-chan:mention": "bun run meow/cli/index.ts --meow-chan-mention",
+    "start": "bun run agent-kernel/cli/index.ts",
+    "meow-chan": "bun run agent-kernel/cli/index.ts --meow-chan",
+    "meow-chan:mention": "bun run agent-kernel/cli/index.ts --meow-chan-mention",
     "channels": "bun run agent-harness/relay.ts",
     "channels:mention": "bun run agent-harness/relay.ts --mention-only",
     "channels:stop": "bash run-relay.sh --stop",
@@ -63,7 +63,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "happy-dom": "^20.8.4",
-    "openai": "^6.33.0",
+    "openai": "^6.34.0",
     "screenshot-desktop": "^1.15.3",
     "stripe": "^21.0.1",
     "yaml": "^2.8.3",
@@ -108,7 +108,7 @@
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/stancsz/meow/issues"
+    "url": "https://github.com/stancsz/agent-kernel/issues"
   },
   "homepage": "https://github.com/stancsz/meow#readme"
 }

@@ -1,5 +1,5 @@
 {
-  "name": "@meow/agent-harness",
+  "name": "@agent-kernel/agent-harness",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -22,3 +22,4 @@
     "bun-types": "^1.1.0"
   }
 }
+

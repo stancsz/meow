@@ -60,7 +60,7 @@ packages/db/
 docs/research/competitors/*/
 
 # Meow user data (session logs, tasks, memory)
-.meow/
+.agent-kernel/
 
 # Claude Code data
 .claude/

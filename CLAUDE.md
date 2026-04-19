@@ -36,7 +36,7 @@ Core Agent (~100 lines, fixed)
 ## PROJECT STRUCTURE
 
 ```
-meow/
+agent-kernel/
 ├── cli/index.ts              # CLI + REPL + slash commands
 ├── tests/
 │   └── gap-impl.test.ts     # Gap implementation tests
@@ -44,8 +44,8 @@ meow/
     ├── core/
     │   ├── lean-agent.ts    # Core loop (~100 lines)
     │   ├── auto-agent.ts    # OODA autonomous agent (tick/auto modes)
-    │   ├── task-store.ts    # Task persistence (.meow/tasks.json)
-    │   └── session-store.ts # Session logs + LLM compaction (~/.meow/sessions/)
+    │   ├── task-store.ts    # Task persistence (.agent-kernel/tasks.json)
+    │   └── session-store.ts # Session logs + LLM compaction (~/.agent-kernel/sessions/)
     ├── sidecars/
     │   ├── tool-registry.ts # Tool registry with read/write/edit/shell/git
     │   ├── mcp-client.ts    # MCP protocol client
@@ -90,7 +90,7 @@ meowclaw/                     # Desktop App
 ## DOGFOOD NOTES
 
 - **train.sh** delegates to evolve.ts OODA loop: observe → orient → decide → act
-- Heavy logic lives in `meow/src/tools/evolve.ts`, train.sh is just a thin wrapper
+- Heavy logic lives in `agent-kernel/src/tools/evolve.ts`, train.sh is just a thin wrapper
 - **timeoutMs** prevents hung shell/git commands; propagated via ToolContext
 - **LLM compaction** keeps sessions under token limit by summarizing old messages
 - **maxBudgetUSD** halts agent when estimated cost exceeds threshold
@@ -145,15 +145,15 @@ bun run start --resume
 
 ## MECHANICS
 
-**Tasks:** File-based in `.meow/tasks.json`
+**Tasks:** File-based in `.agent-kernel/tasks.json`
 
-**Sessions:** JSONL logs in `~/.meow/sessions/<id>.jsonl` with LLM-powered compaction
+**Sessions:** JSONL logs in `~/.agent-kernel/sessions/<id>.jsonl` with LLM-powered compaction
 
-**Skills:** Modular capabilities loaded from `meow/src/skills/`
+**Skills:** Modular capabilities loaded from `agent-kernel/src/skills/`
 
 **Permissions:** Pattern-matching rules (allow/deny/ask) per tool
 
-**Memory:** `~/.meow/memory/user.json` (future)
+**Memory:** `~/.agent-kernel/memory/user.json` (future)
 
 **Growth:** Interaction count, unlocks behaviors (future)
 
@@ -168,3 +168,4 @@ bun run start --resume
 5. **Memory** - continuity across sessions
 6. **Core never grows** - capabilities via sidecar skills
 7. **P0-PN lifecycle** - see `docs/capability-system.md`
+

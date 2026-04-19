@@ -1,0 +1,48 @@
+---
+name: checkpointing
+repo: https://github.com/google-gemini/gemini-cli
+docPath: competitors/gemini-cli/docs/cli/checkpointing.md
+why: Automatically snapshots project state before AI file modifications. Lets users approve experimental changes knowing they can instantly revert. Essential safety net.
+minimalSlice: "A minimal checkpoint sidecar: before each write/edit tool call, git stash a temporary checkpoint. After the tool runs, if user approves the result, checkpoint is dropped. If user runs /restore, revert to checkpoint."
+fit: sidecar
+status: implemented
+complexity: 2
+---
+
+# Harvest: checkpointing from gemini-cli
+
+**Source:** `docs/research/competitors/gemini-cli/docs/cli/checkpointing.md`
+
+## Core Trick
+
+Gemini CLI automatically snapshots project state before AI-powered file modifications:
+1. User approves a tool call (write_file, replace, etc.)
+2. CLI creates a **git snapshot** in `~/.gemini/history/<project_hash>/` (shadow repo)
+3. Also saves conversation history up to that point
+4. `/restore` command reverts files + conversation to that snapshot
+
+Key insight: **shadow git repo** in home directory, separate from user's project git. Doesn't interfere with user's git history.
+
+## Minimal Slice for Meow
+
+Implement as `src/sidecars/checkpoint.ts`:
+
+1. Hook into tool-registry: pre-tool-call for write/edit tools
+2. Run `git stash push -m "checkpoint:<timestamp>"` (or use worktree)
+3. After tool executes, if user approves result, silently drop checkpoint
+4. `/restore` command: find most recent checkpoint, `git stash pop` to revert
+5. Keep checkpoints in `~/.agent-kernel/checkpoints/<project_hash>/`
+
+This is simpler than gemini's version: single git stash per checkpoint, no shadow repo needed.
+
+## Why Worth It
+
+- Essential safety for an agent that modifies files
+- Very high user trust impact — "I can always undo what the AI did"
+- Sidecar fits perfectly: hooks into tool-registry pre/post tool calls
+- 2/5 complexity: git stash + slash command = ~80 lines
+
+## Complexity Note
+
+2/5 — fairly straightforward: git stash before writes, stash pop on restore. Do after basic write tool exists. Depends on slash-commands sidecar for `/restore` command.
+

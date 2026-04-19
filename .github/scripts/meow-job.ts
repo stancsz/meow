@@ -1,7 +1,7 @@
 import "dotenv/config";
 import chalk from "chalk";
-import { startRuntime } from "../../meow/src/core/runtime.ts";
-import type { RuntimeDispatchEvent } from "../../meow/src/core/dispatcher.ts";
+import { startRuntime } from "../../agent-kernel/src/core/runtime.ts";
+import type { RuntimeDispatchEvent } from "../../agent-kernel/src/core/dispatcher.ts";
 
 async function main() {
     console.log(chalk.blue.bold("Meow Job: Initializing..."));
@@ -73,3 +73,4 @@ main().catch((err) => {
     console.error(chalk.red("Fatal Error:"), err);
     process.exit(1);
 });
+

@@ -80,8 +80,8 @@ Claude Code does the thinking. Meow handles:
 ## Quick Start
 
 ```bash
-git clone https://github.com/stancsz/meow
-cd meow/agent-harness
+git clone https://github.com/stancsz/agent-kernel
+cd agent-kernel/agent-harness
 cp .env.example .env
 # Add DISCORD_TOKEN and GH_PAT
 docker-compose up --build
@@ -94,7 +94,7 @@ Meow connects to Discord. You're ready.
 ## Use Meow Inside Claude Code
 
 ```bash
-git submodule add https://github.com/stancsz/meow ~/.claude/meow
+git submodule add https://github.com/stancsz/agent-kernel ~/.claude/agent-kernel
 ```
 
 In `~/.claude/settings.json`:
@@ -102,8 +102,8 @@ In `~/.claude/settings.json`:
 ```json
 {
   "skills": {
-    "meow": {
-      "path": "~/.claude/meow/.claude/skills/meow"
+    "agent-kernel": {
+      "path": "~/.claude/agent-kernel/.claude/skills/agent-kernel"
     }
   }
 }
@@ -112,9 +112,9 @@ In `~/.claude/settings.json`:
 Then in Claude Code:
 
 ```
-/meow backup                    # Backup soul to GitHub
-/meow mission create <title>  # Start a mission
-/meow skills install <repo>   # Add OpenClaw skills
+/agent-kernel backup                    # Backup soul to GitHub
+/agent-kernel mission create <title>  # Start a mission
+/agent-kernel skills install <repo>   # Add OpenClaw skills
 ```
 
 ---

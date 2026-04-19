@@ -25,7 +25,7 @@ MemPalace achieved 96.6% on LongMemEval benchmark with raw verbatim storage + FT
 
 - [ ] **Palace memory structure**: Implement wings/rooms/closets hierarchy in memory-fts.ts (extend FTS5 schema with wing/room/closet metadata)
 - [ ] **mine sessions**: Extract structured memories from session logs — decisions, preferences, problems, milestones, emotional context. Run automatically after each session ends.
-- [ ] **wake-up context**: Generate compact ~170-token summary of current project state for new sessions. Store in ~/.meow/wake-up.txt, load on session start.
+- [ ] **wake-up context**: Generate compact ~170-token summary of current project state for new sessions. Store in ~/.agent-kernel/wake-up.txt, load on session start.
 - [ ] **MCP memory tools**: Expose memory_search, memory_store, memory_recall as MCP tools. Auto-register on startup.
 - [ ] **Verbatim session storage**: Store full session JSONL in memory-fts, not just auto-learned facts. FTS5 handles the retrieval.
 
@@ -38,3 +38,4 @@ MemPalace achieved 96.6% on LongMemEval benchmark with raw verbatim storage + FT
 - [x] Settings UI: preferences panel, theme switcher (2026-04-08)
 - [x] Notifications: system notifications for long-running tasks (2026-04-08)
 - [ ] Internationalization: i18n support for future localization
+
