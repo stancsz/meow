@@ -64,7 +64,7 @@ bun run relay.ts
 Or with Docker:
 
 ```bash
-cd claude-bridge-docker
+cd agent-harness
 cp .env.example .env
 docker-compose up --build
 ```
@@ -128,7 +128,7 @@ list missions                       # See all
 ## Project Structure
 
 ```
-claude-bridge/
+agent-harness/
 ├── relay.ts              # Discord ↔ Claude Code bridge
 ├── mission-agent.ts      # Background mission evaluator
 ├── memory.ts             # Hierarchical memory system

@@ -279,14 +279,14 @@ Respond directly unless tool use is clearly necessary.`;
 // ============================================================================
 
 async function startMeowChanRelay(relayArgs: string[]): Promise<void> {
-  // Resolve the claude-bridge relay.ts relative to this CLI's location
-  // cli/index.ts → ../../../claude-bridge/relay.ts (from meow/cli/)
+  // Resolve the agent-harness relay.ts relative to this CLI's location
+  // cli/index.ts → ../../../agent-harness/relay.ts (from meow/cli/)
   const cliDir = dirname(fileURLToPath(import.meta.url));
-  const relayPath = resolve(cliDir, "..", "..", "claude-bridge", "relay.ts");
+  const relayPath = resolve(cliDir, "..", "..", "agent-harness", "relay.ts");
 
   if (!existsSync(relayPath)) {
     console.error(`${colors.red}[meow-chan] relay.ts not found at: ${relayPath}${colors.reset}`);
-    console.error(`${colors.dim}Ensure claude-bridge/ exists alongside the meow/ directory.${colors.reset}`);
+    console.error(`${colors.dim}Ensure agent-harness/ exists alongside the meow/ directory.${colors.reset}`);
     process.exit(1);
   }
 

@@ -100,14 +100,19 @@ export function getSkillContext(cwd: string): string {
   context += "\n### How to Install Skills\n";
   context += "Skills are installed to `.claude/skills/` in the working directory.\n";
   context += "To install a skill from a GitHub repo:\n";
+  const isWin = process.platform === "win32";
+  const tmpSkill = isWin ? "$env:TEMP\\skill-repo" : "/tmp/skill-repo";
+  const mkdirCmd = isWin ? `New-Item -ItemType Directory -Force -Path '.claude\\skills\\<skill-name>'` : "mkdir -p .claude/skills/<skill-name>";
+  const cpCmd = isWin ? `Copy-Item -Path '${tmpSkill}\\.claude\\skills\\<skill-name>\\SKILL.md' -Destination '.claude\\skills\\<skill-name>\\'` : `cp ${tmpSkill}/.claude/skills/<skill-name>/SKILL.md .claude/skills/<skill-name>/`;
+
   context += "```bash\n";
   context += "# Clone the repo\n";
-  context += "git clone <repo-url> /tmp/skill-repo\n";
+  context += `git clone <repo-url> ${tmpSkill}\n`;
   context += "# Copy SKILL.md to skills directory\n";
-  context += "mkdir -p .claude/skills/<skill-name>\n";
-  context += "cp /tmp/skill-repo/.claude/skills/<skill-name>/SKILL.md .claude/skills/<skill-name>/\n";
+  context += `${mkdirCmd}\n`;
+  context += `${cpCmd}\n`;
   context += "# Cleanup\n";
-  context += "rm -rf /tmp/skill-repo\n";
+  context += isWin ? `Remove-Item -Recurse -Force -Path '${tmpSkill}'\n` : `rm -rf ${tmpSkill}\n`;
   context += "```\n";
   context += "\nTo list installed skills, check `.claude/skills/` directory.\n";
 

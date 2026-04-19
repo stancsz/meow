@@ -81,7 +81,7 @@ Claude Code does the thinking. Meow handles:
 
 ```bash
 git clone https://github.com/stancsz/meow
-cd meow/claude-bridge-docker
+cd meow/agent-harness
 cp .env.example .env
 # Add DISCORD_TOKEN and GH_PAT
 docker-compose up --build

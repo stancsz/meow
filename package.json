@@ -9,7 +9,7 @@
   "bin": {
     "meow": "meow/cli/index.ts",
     "claude": "claude.cmd",
-    "meow-chan": "claude-bridge/relay.ts"
+    "meow-chan": "agent-harness/relay.ts"
   },
   "devDependencies": {
     "@google-cloud/functions-framework": "^5.0.2",
@@ -29,8 +29,8 @@
     "start": "bun run meow/cli/index.ts",
     "meow-chan": "bun run meow/cli/index.ts --meow-chan",
     "meow-chan:mention": "bun run meow/cli/index.ts --meow-chan-mention",
-    "channels": "bun run claude-bridge/relay.ts",
-    "channels:mention": "bun run claude-bridge/relay.ts --mention-only",
+    "channels": "bun run agent-harness/relay.ts",
+    "channels:mention": "bun run agent-harness/relay.ts --mention-only",
     "channels:stop": "bash run-relay.sh --stop",
     "channels:status": "bash run-relay.sh --status",
     "channels:watch": "bash run-relay.sh --watch --mention-only",

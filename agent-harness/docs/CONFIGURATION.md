@@ -25,7 +25,7 @@ The relay requires a file named `mcp-null.json` in the project root to isolate t
 ## 4. Launching
 You can launch the relay using Bun:
 ```bash
-bun run claude-bridge/relay.ts --channel <channel_id>
+bun run agent-harness/relay.ts --channel <channel_id>
 ```
 
 Or using the built-in watcher:

@@ -182,7 +182,9 @@ async function postUpdate(mission: Mission, content: string): Promise<string | n
 
 async function evaluateMission(mission: Mission): Promise<EvalRecord> {
   const cliPath = process.env.CLAUDE_CLI_PATH ||
-    "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js";
+    (process.platform === "win32"
+      ? "C:\\Users\\stanc\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js"
+      : "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js");
 
   const prompt = `You are evaluating progress on a mission.
 

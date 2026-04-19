@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  claude-bridge-docker:
+  agent-harness:
     build:
       context: .
       dockerfile: Dockerfile

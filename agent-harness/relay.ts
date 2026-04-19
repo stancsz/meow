@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
- * relay.ts - Claude Bridge Docker Relay
+ * relay.ts - Agent Harness Relay
  *
- * Docker-ready version of claude-bridge relay.
+ * Docker-ready version of agent-harness relay.
  * Bridges Discord → Claude Code → Discord reply.
  *
  * Features:
@@ -332,7 +332,8 @@ async function executeSkillInstallCommands(claudeReply: string): Promise<SkillIn
   console.log(`[relay] Installing skill "${skillName}" from ${repoUrl}`);
 
   // Clone to temp directory
-  const tmpPath = `/tmp/skill-repo-${Date.now()}`;
+  const os = await import("node:os");
+  const tmpPath = join(os.tmpdir(), `skill-repo-${Date.now()}`);
   const cloneResult = await execCommand("git", ["clone", "--depth", "1", repoUrl, tmpPath]);
 
   if (cloneResult.code !== 0) {
@@ -351,9 +352,12 @@ async function executeSkillInstallCommands(claudeReply: string): Promise<SkillIn
       await execCommand("rm", ["-rf", tmpPath]);
       return { success: false, output: `SKILL.md not found for skill "${skillName}"` };
     }
-    // Install from alternate path using bash with sg appgroup for correct group
-    const installCmd = `sg appgroup -c "mkdir -p /app/.claude/skills/${skillName} && cp ${tmpPath}/SKILL.md /app/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
-    const installResult = await execCommand("bash", ["-c", installCmd]);
+    // Install from alternate path
+    const isWin = process.platform === "win32";
+    const installCmd = isWin 
+      ? `powershell -Command "New-Item -ItemType Directory -Force -Path '${join(CLAUDE_CWD, ".claude/skills", skillName)}'; Copy-Item -Path '${join(tmpPath, "SKILL.md")}' -Destination '${join(CLAUDE_CWD, ".claude/skills", skillName)}'; Remove-Item -Recurse -Force -Path '${tmpPath}'"`
+      : `sg appgroup -c "mkdir -p ${CLAUDE_CWD}/.claude/skills/${skillName} && cp ${tmpPath}/SKILL.md ${CLAUDE_CWD}/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
+    const installResult = await execCommand(isWin ? "powershell" : "bash", ["-c", installCmd]);
     return {
       success: installResult.code === 0,
       output: installResult.code === 0 ? `Skill "${skillName}" installed successfully!` : `Install failed: ${installResult.stderr}`
@@ -362,8 +366,11 @@ async function executeSkillInstallCommands(claudeReply: string): Promise<SkillIn
 
   // Install using bash with sg appgroup for correct group ownership
   try {
-    const installCmd = `sg appgroup -c "mkdir -p /app/.claude/skills/${skillName} && cp ${tmpPath}/.claude/skills/${skillName}/SKILL.md /app/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
-    const installResult = await execCommand("bash", ["-c", installCmd]);
+    const isWin = process.platform === "win32";
+    const installCmd = isWin
+      ? `powershell -Command "New-Item -ItemType Directory -Force -Path '${join(CLAUDE_CWD, ".claude/skills", skillName)}'; Copy-Item -Path '${join(tmpPath, ".claude/skills", skillName, "SKILL.md")}' -Destination '${join(CLAUDE_CWD, ".claude/skills", skillName)}'; Remove-Item -Recurse -Force -Path '${tmpPath}'"`
+      : `sg appgroup -c "mkdir -p ${CLAUDE_CWD}/.claude/skills/${skillName} && cp ${tmpPath}/.claude/skills/${skillName}/SKILL.md ${CLAUDE_CWD}/.claude/skills/${skillName}/ && rm -rf ${tmpPath}"`;
+    const installResult = await execCommand(isWin ? "powershell" : "bash", ["-c", installCmd]);
     return {
       success: installResult.code === 0,
       output: installResult.code === 0 ? `Skill "${skillName}" installed successfully!` : `Install failed: ${installResult.stderr}`
@@ -447,7 +454,8 @@ async function executeBackupCommands(promptText: string, reply: string): Promise
 
     console.log(`[relay] Starting backup to ${repo}`);
 
-    const tmpPath = `/tmp/meow-backup-${Date.now()}`;
+    const os = await import("node:os");
+    const tmpPath = join(os.tmpdir(), `meow-backup-${Date.now()}`);
 
     // Clone or init backup repo
     const cloneResult = await execCommand("git", ["clone", "--depth", "1", repo, tmpPath]);
@@ -459,11 +467,17 @@ async function executeBackupCommands(promptText: string, reply: string): Promise
 
     // Sync data (exclude large files)
     const rsyncExcludes = "--exclude='.relay_history.json' --exclude='threads.backup.json' --exclude='*.log'";
-    await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} /app/data/ ${tmpPath}/data/`]);
-    await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} /app/.claude/skills/ ${tmpPath}/.claude/skills/`]);
-
-    // Copy .gitignore
-    await execCommand("sh", ["-c", `cp /app/.gitignore ${tmpPath}/ 2>/dev/null || true`]);
+    const isWin = process.platform === "win32";
+    
+    if (isWin) {
+      await execCommand("powershell", ["-c", `New-Item -ItemType Directory -Force -Path '${join(tmpPath, "data")}'; Copy-Item -Path '${join(CLAUDE_CWD, "data", "*")}' -Destination '${join(tmpPath, "data")}' -Exclude '.relay_history.json','threads.backup.json','*.log'`]);
+      await execCommand("powershell", ["-c", `New-Item -ItemType Directory -Force -Path '${join(tmpPath, ".claude/skills")}'; Copy-Item -Path '${join(CLAUDE_CWD, ".claude/skills", "*")}' -Destination '${join(tmpPath, ".claude/skills")}' -Recurse`]);
+      await execCommand("powershell", ["-c", `Copy-Item -Path '${join(CLAUDE_CWD, ".gitignore")}' -Destination '${tmpPath}' -ErrorAction SilentlyContinue`]);
+    } else {
+      await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} ${CLAUDE_CWD}/data/ ${tmpPath}/data/`]);
+      await execCommand("sh", ["-c", `rsync -a ${rsyncExcludes} ${CLAUDE_CWD}/.claude/skills/ ${tmpPath}/.claude/skills/`]);
+      await execCommand("sh", ["-c", `cp ${CLAUDE_CWD}/.gitignore ${tmpPath}/ 2>/dev/null || true`]);
+    }
 
     // Commit and push
     const commitResult = await execCommand("sh", ["-c", `cd ${tmpPath} && git add -A && git commit -m "Backup $(date -u '+%Y-%m-%d %H:%M UTC')" && git push origin main || git push -u origin main`]);
@@ -482,15 +496,21 @@ async function executeBackupCommands(promptText: string, reply: string): Promise
     const repo = backupRepo || settings.backupRepo;
     console.log(`[relay] Starting restore from ${repo}`);
 
-    const tmpPath = `/tmp/meow-restore-${Date.now()}`;
+    const os = await import("node:os");
+    const tmpPath = join(os.tmpdir(), `meow-restore-${Date.now()}`);
     const cloneResult = await execCommand("git", ["clone", repo, tmpPath]);
 
     if (cloneResult.code !== 0) {
       return { success: false, output: `Restore failed: could not clone ${repo}` };
     }
 
-    await execCommand("sh", ["-c", `rsync -a ${tmpPath}/data/ /app/data/`]);
-    await execCommand("sh", ["-c", `rsync -a ${tmpPath}/.claude/skills/ /app/.claude/skills/ 2>/dev/null || true`]);
+    if (process.platform === "win32") {
+      await execCommand("powershell", ["-c", `Copy-Item -Path '${join(tmpPath, "data", "*")}' -Destination '${join(CLAUDE_CWD, "data")}' -Recurse -Force`]);
+      await execCommand("powershell", ["-c", `Copy-Item -Path '${join(tmpPath, ".claude/skills", "*")}' -Destination '${join(CLAUDE_CWD, ".claude/skills")}' -Recurse -Force -ErrorAction SilentlyContinue`]);
+    } else {
+      await execCommand("sh", ["-c", `rsync -a ${tmpPath}/data/ ${CLAUDE_CWD}/data/`]);
+      await execCommand("sh", ["-c", `rsync -a ${tmpPath}/.claude/skills/ ${CLAUDE_CWD}/.claude/skills/ 2>/dev/null || true`]);
+    }
     await execCommand("rm", ["-rf", tmpPath]);
 
     return { success: true, output: `✅ Restore complete! Memory and skills restored from ${repo}` };
@@ -504,14 +524,16 @@ async function executeBackupCommands(promptText: string, reply: string): Promise
 // ============================================================================
 
 class ClaudeCodeClient {
-  private primaryMcpConfig = join(CLAUDE_CWD, "mcp-bridge.json");
-  private fallbackMcpConfig = join(CLAUDE_CWD, "mcp-null.json");
+  private getMcpConfig() {
+    const isDocker = existsSync("/.dockerenv");
+    if (isDocker && existsSync(join(CLAUDE_CWD, "mcp-bridge.json"))) {
+      return join(CLAUDE_CWD, "mcp-bridge.json");
+    }
+    return join(CLAUDE_CWD, "mcp-null.json");
+  }
 
-  private claudeArgs = [
-    "--output-format", "text",
-    "--dangerously-skip-permissions",
-    "--mcp-config", this.primaryMcpConfig
-  ];
+  private primaryMcpConfig = this.getMcpConfig();
+  private fallbackMcpConfig = join(CLAUDE_CWD, "mcp-null.json");
 
   async prompt(text: string): Promise<string> {
     return this.promptWithRetry(text, 0);
