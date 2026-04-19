@@ -16,8 +16,8 @@ import { Client, GatewayIntentBits, ChannelType, type TextChannel, type Message 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { MemoryStore } from "./memory.js";
-import { getSkillContext } from "./skill-manager.js";
+import { MemoryStore } from "./memory";
+import { getSkillContext } from "./skill-manager";
 
 // ============================================================================
 // Config
@@ -129,8 +129,6 @@ function markReplied(channelId: string) {
 // Conversation history (persistent)
 // ============================================================================
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-
 const CONVERSATION_HISTORY_LIMIT = 10;
 const HISTORY_FILE = join(CLAUDE_CWD, "data", ".relay_history.json");
 
@@ -154,7 +152,7 @@ function loadHistory() {
     }
     if (existsSync(HISTORY_FILE)) {
       const data = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
-      for (const [channelId, messages] of Object.entries(data)) {
+      for (const [channelId, messages] of Object.entries(data) as [string, ChatMessage[]][]) {
         channelHistory.set(channelId, messages);
       }
       console.log(`[relay] Loaded history for ${channelHistory.size} channels`);
@@ -172,7 +170,7 @@ function saveHistory() {
       mkdirSync(dataDir, { recursive: true });
     }
     const data: Record<string, ChatMessage[]> = {};
-    for (const [channelId, messages] of channelHistory) {
+    for (const [channelId, messages] of channelHistory.entries()) {
       data[channelId] = messages;
     }
     writeFileSync(HISTORY_FILE, JSON.stringify(data, null, 2));
