@@ -29,11 +29,9 @@ Study and adapt skill patterns:
 
 import { type Skill } from "./loader.ts";
 
-export const minimax_skills: Skill = {
-  name: "minimax-skills",
-  description: "# Harvest: MiniMax skills from MiniMax-AI
+const DESCRIPTION = `# Harvest: MiniMax skills from MiniMax-AI
 
-**Source:** `https://github.com/MiniMax-AI/skills`
+**Source:** \`https://github.com/MiniMax-AI/skills\`
 
 ## Core Trick
 
@@ -51,7 +49,11 @@ Study and adapt skill patterns:
 
 - High-quality, battle-tested skills
 - Reference implementation for skill quality
-- Potential direct port of useful skills",
+- Potential direct port of useful skills`;
+
+export const minimax_skills: Skill = {
+  name: "minimax-skills",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement minimax-skills capability from https://github.com/MiniMax-AI/skills
     // Study MiniMax's skill patterns and adapt to Meow's format. Focus on the skill definition schema and execution pattern.

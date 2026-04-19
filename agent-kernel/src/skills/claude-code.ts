@@ -34,9 +34,7 @@ Create `src/sidecars/claude-code-features.ts`:
 
 import { type Skill } from "./loader.ts";
 
-export const claude_code: Skill = {
-  name: "claude-code",
-  description: "# Claude Code Capability
+const DESCRIPTION = `# Claude Code Capability
 
 Learn from Claude Code to implement advanced features for Meow.
 
@@ -50,18 +48,21 @@ Learn from Claude Code to implement advanced features for Meow.
 
 ## Minimal Slice
 
-Create `src/sidecars/claude-code-features.ts`:
-
-1. `hooks` - Execute scripts on pre/post commands
-2. `mcpConfig` - Load and manage MCP server configurations
-3. `agentModes` - Support --agent flag with custom agent prompts
-4. `streaming` - AsyncGenerator streaming interface
+Create \`src/sidecars/claude-code-features.ts\`:
+1. \`hooks\` - Execute scripts on pre/post commands
+2. \`mcpConfig\` - Load and manage MCP server configurations
+3. \`agentModes\` - Support --agent flag with custom agent prompts
+4. \`streaming\` - AsyncGenerator streaming interface
 
 ## Why Worth It
 
 - Brings Claude Code's best features to Meow
 - Improves tool integration via MCP
-- Better streaming UX",
+- Better streaming UX`;
+
+export const claude_code: Skill = {
+  name: "claude-code",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement claude-code capability from https://github.com/anthropics/claude-code
     // Implement --hooks flag, --mcp-config, --agent modes, --print streaming

@@ -29,11 +29,9 @@ Study and adapt:
 
 import { type Skill } from "./loader.ts";
 
-export const huggingface_skills: Skill = {
-  name: "huggingface-skills",
-  description: "# Harvest: Hugging Face skills
+const DESCRIPTION = `# Harvest: Hugging Face skills
 
-**Source:** `https://github.com/huggingface/skills`
+**Source:** \`https://github.com/huggingface/skills\`
 
 ## Core Trick
 
@@ -51,7 +49,11 @@ Study and adapt:
 
 - Large, diverse skill collection
 - Open source community skills
-- Reference for skill quality standards",
+- Reference for skill quality standards`;
+
+export const huggingface_skills: Skill = {
+  name: "huggingface-skills",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement huggingface-skills capability from https://github.com/huggingface/skills
     // Study huggingface skill format, adapt the best ones to Meow's skill system. Focus on the skill definition schema.

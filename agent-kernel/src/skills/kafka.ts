@@ -1,29 +1,12 @@
 /**
- * kafka.ts
- * ---
-name: kafka
-repo: https://github.com/confluentinc/kafka-tutorials
-why: Kafka streaming - produce/consume events, manage topics, schema registry
-minimalSlice: "kafka-console-producer + kafka-console-consumer + ksqlDB for stream processing"
-fit: skill
-complexity: 3
-status: pending
----
-
-# Kafka Capability
-
-Learn event streaming with Kafka - produce, consume, and process events.
+ * kafka.ts - Harvested skill for Kafka event streaming capability
  *
- * Harvested from: 
- * Why: 
- * Minimal slice: 
+ * Kafka streaming - produce/consume events, manage topics, schema registry.
  */
 
 import { type Skill } from "./loader.ts";
 
-export const kafka: Skill = {
-  name: "kafka",
-  description: "---
+const DESCRIPTION = `---
 name: kafka
 repo: https://github.com/confluentinc/kafka-tutorials
 why: Kafka streaming - produce/consume events, manage topics, schema registry
@@ -35,10 +18,13 @@ status: pending
 
 # Kafka Capability
 
-Learn event streaming with Kafka - produce, consume, and process events.",
+Learn event streaming with Kafka - produce, consume, and process events.`;
+
+export const kafka: Skill = {
+  name: "kafka",
+  description: DESCRIPTION,
   async execute(context) {
-    // TODO: Implement kafka capability from 
-    // 
+    // TODO: Implement kafka capability
     return { success: true, message: "kafka capability" };
   },
 };

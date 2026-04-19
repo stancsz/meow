@@ -29,9 +29,7 @@ export async function connectMCPServer(config: MCPConfig) {
 
 import { type Skill } from "./loader.ts";
 
-export const mcp_servers: Skill = {
-  name: "mcp-servers",
-  description: "# MCP Servers Capability
+const DESCRIPTION = `# MCP Servers Capability
 
 Connect to Model Context Protocol servers for extended tooling.
 
@@ -44,14 +42,18 @@ Connect to Model Context Protocol servers for extended tooling.
 
 ## Minimal Slice
 
-```typescript
+\`\`\`typescript
 // src/sidecars/mcp.ts
 export async function connectMCPServer(config: MCPConfig) {
   // Spawn MCP server process
   // Send JSON-RPC initialize
   // Handle tool calls via stdio
 }
-```",
+\`\`\``;
+
+export const mcp_servers: Skill = {
+  name: "mcp-servers",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement mcp-servers capability from https://github.com/modelcontextprotocol/servers
     // Implement mcp.ts that can connect to MCP servers via --mcp-config

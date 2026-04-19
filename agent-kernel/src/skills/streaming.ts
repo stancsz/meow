@@ -37,9 +37,7 @@ export async function* streamWithBuffer(
 
 import { type Skill } from "./loader.ts";
 
-export const streaming: Skill = {
-  name: "streaming",
-  description: "# Streaming UX Improvements
+const DESCRIPTION = `# Streaming UX Improvements
 
 Improve Meow's streaming output for better UX.
 
@@ -52,7 +50,7 @@ Improve Meow's streaming output for better UX.
 
 ## Minimal Slice
 
-```typescript
+\`\`\`typescript
 // src/sidecars/streaming.ts
 export async function* streamWithBuffer(
   stream: AsyncGenerator<string>
@@ -67,7 +65,11 @@ export async function* streamWithBuffer(
   }
   if (buffer) yield buffer;
 }
-```",
+\`\`\``;
+
+export const streaming: Skill = {
+  name: "streaming",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement streaming capability from https://github.com/anthropics/claude-code
     // AsyncGenerator streaming with token buffering and partial render

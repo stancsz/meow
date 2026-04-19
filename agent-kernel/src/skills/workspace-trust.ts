@@ -27,9 +27,7 @@ interface WorkspaceTrust {
 
 import { type Skill } from "./loader.ts";
 
-export const workspace_trust: Skill = {
-  name: "workspace-trust",
-  description: "# Workspace Trust Capability
+const DESCRIPTION = `# Workspace Trust Capability
 
 Security feature that prompts when running in untrusted directories.
 
@@ -41,13 +39,17 @@ Security feature that prompts when running in untrusted directories.
 
 ## Minimal Slice
 
-```typescript
+\`\`\`typescript
 interface WorkspaceTrust {
   trustedPaths: string[];
   check(path: string): boolean;
   trust(path: string): void;
 }
-```",
+\`\`\``;
+
+export const workspace_trust: Skill = {
+  name: "workspace-trust",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement workspace-trust capability from https://github.com/anthropics/claude-code
     // Implement workspace trust: check .claude/trusted.json, prompt if untrusted

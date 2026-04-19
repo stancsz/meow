@@ -30,11 +30,9 @@ Study and adapt:
 
 import { type Skill } from "./loader.ts";
 
-export const microsoft_skills: Skill = {
-  name: "microsoft-skills",
-  description: "# Harvest: Microsoft skills
+const DESCRIPTION = `# Harvest: Microsoft skills
 
-**Source:** `https://github.com/microsoft/skills`
+**Source:** \`https://github.com/microsoft/skills\`
 
 ## Core Trick
 
@@ -53,7 +51,11 @@ Study and adapt:
 
 - Enterprise-grade patterns
 - Security/compliance considerations
-- Production-hardened implementations",
+- Production-hardened implementations`;
+
+export const microsoft_skills: Skill = {
+  name: "microsoft-skills",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement microsoft-skills capability from https://github.com/microsoft/skills
     // Study Microsoft's enterprise skill patterns: skill definition schema, security scanning, compliance hooks. Adapt to Meow.

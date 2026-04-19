@@ -34,9 +34,7 @@ Create `src/sidecars/memory.ts`:
 
 import { type Skill } from "./loader.ts";
 
-export const memory: Skill = {
-  name: "memory",
-  description: "# Memory Capability
+const DESCRIPTION = `# Memory Capability
 
 Implement persistent memory for Meow across sessions.
 
@@ -49,19 +47,22 @@ Implement persistent memory for Meow across sessions.
 
 ## Minimal Slice
 
-Create `src/sidecars/memory.ts`:
-
-1. `loadMemory(userId)` - Load memory from file
-2. `saveMemory(userId, data)` - Save memory to file
-3. `getMemory(key)` - Get specific memory
-4. `setMemory(key, value)` - Set specific memory
+Create \`src/sidecars/memory.ts\`:
+1. \`loadMemory(userId)\` - Load memory from file
+2. \`saveMemory(userId, data)\` - Save memory to file
+3. \`getMemory(key)\` - Get specific memory
+4. \`setMemory(key, value)\` - Set specific memory
 5. Auto-save on important events
 
 ## Why Worth It
 
 - Continuity across sessions
 - Learns user preferences over time
-- Essential for companion identity",
+- Essential for companion identity`;
+
+export const memory: Skill = {
+  name: "memory",
+  description: DESCRIPTION,
   async execute(context) {
     // TODO: Implement memory capability from https://github.com/msitarzewski/agency-agents
     // memory.ts - load/save memory to ~/.agent-kernel/memory/*.json
