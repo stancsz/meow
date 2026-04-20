@@ -15,7 +15,7 @@ RUN curl -fsSL https://github.com/cli/cli/releases/download/v2.65.0/gh_2.65.0_li
     rm -rf /tmp/gh*
 
 # Install Claude Code CLI globally
-RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @anthropic-ai/claude-code@2.1.98
 
 # Set up working directory
 WORKDIR /app

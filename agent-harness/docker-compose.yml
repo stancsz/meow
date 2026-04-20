@@ -13,6 +13,8 @@ services:
       - SHELL=/bin/bash
       - GH_PAT=${GH_PAT}
       - BACKUP_REPO=${BACKUP_REPO:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-https://api.minimax.io/anthropic}
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
