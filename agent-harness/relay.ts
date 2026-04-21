@@ -876,6 +876,46 @@ async function main() {
       return;
     }
 
+    // Check for /auto command (start/stop/status auto-improvement daemon)
+    if (promptText.startsWith("/auto")) {
+      const args = promptText.slice(5).trim();
+      const [action, ...missionParts] = args.split(/\s+/);
+      const subcmd = action?.toLowerCase();
+      const { startAutoDaemon, stopAutoDaemon, getAutoDaemonStatus, setMission, getMission, clearMission } = await import("./auto-daemon");
+
+      if (!subcmd || subcmd === "status") {
+        const status = getAutoDaemonStatus();
+        let msg = `Auto daemon: ${status.running ? "RUNNING" : "stopped"} | PID: ${status.pid ?? "n/a"}`;
+        if (status.mission) msg += `\nMission: ${status.mission}`;
+        await message.reply(msg);
+      } else if (subcmd === "start") {
+        const mission = missionParts.join(" ");
+        if (mission) {
+          setMission(mission);
+          await message.reply(`Mission set: "${mission}"`);
+        }
+        const msg = startAutoDaemon();
+        await message.reply(msg);
+      } else if (subcmd === "stop") {
+        clearMission();
+        const msg = stopAutoDaemon();
+        await message.reply(msg);
+      } else if (subcmd === "mission") {
+        const missionText = missionParts.join(" ");
+        if (missionText) {
+          setMission(missionText);
+          await message.reply(`Mission set: "${missionText}"`);
+        } else {
+          const current = getMission();
+          await message.reply(current ? `Current mission: ${current}` : "No mission set");
+        }
+      } else {
+        await message.reply("Usage: `/auto [start|stop|status|mission]`\nStart with a mission: `/auto start research the gaps in meow and fix them`\nSet mission separately: `/auto mission fix the timeout bug in meow-run.ts`");
+      }
+      processing.delete(message.id);
+      return;
+    }
+
     // Check for mission commands (quick handling, no Claude needed)
     const missionResponse = handleMissionCommand(promptText, message);
     if (missionResponse) {

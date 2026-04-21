@@ -30,7 +30,7 @@ const builtInCommands: Record<string, Command> = {
     name: "help",
     description: "Show available commands",
     execute: async (_, __) => ({
-      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /name, /lang",
+      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /name, /lang, /auto",
     }),
   },
   exit: {
@@ -83,6 +83,37 @@ const builtInCommands: Record<string, Command> = {
     execute: async (args) => {
       const { langCommand } = await import("./i18n/index.ts");
       return langCommand(args);
+    },
+  },
+  auto: {
+    name: "auto",
+    description: "Start/stop auto-improvement daemon: /auto [start|stop|status]",
+    execute: async (args) => {
+      const { startAutoDaemon, stopAutoDaemon, getAutoDaemonStatus, isAutoDaemonRunning } = await import("/app/agent-harness/auto-daemon.ts");
+      const action = args.trim().toLowerCase();
+
+      if (!action || action === "status") {
+        const status = getAutoDaemonStatus();
+        return {
+          content: `Auto daemon: ${status.running ? "RUNNING" : "stopped"} | PID: ${status.pid ?? "n/a"} | Last log: ${status.lastKnownLog}`,
+        };
+      }
+
+      if (action === "start") {
+        const current = getAutoDaemonStatus();
+        if (current.running) {
+          return { content: `[auto-daemon] Already running (PID ${current.pid})` };
+        }
+        const msg = startAutoDaemon();
+        return { content: msg };
+      }
+
+      if (action === "stop") {
+        const msg = stopAutoDaemon();
+        return { content: msg };
+      }
+
+      return { error: "Usage: /auto [start|stop|status]" };
     },
   },
 };

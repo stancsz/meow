@@ -57,6 +57,7 @@ COPY --chown=appuser:appgroup meow-agent.ts ./
 COPY --chown=appuser:appgroup meow-run.ts ./
 COPY --chown=appuser:appgroup fallback-logger.ts ./
 COPY --chown=appuser:appgroup compare-and-fix.ts ./
+COPY --chown=appuser:appgroup auto-daemon.ts ./
 COPY --chown=appuser:appgroup mcp-null.json ./
 COPY --chown=appuser:appgroup SYSTEM_PROMPT.md ./
 
@@ -69,6 +70,9 @@ RUN echo ".env" > .gitignore && \
     echo "data/threads.backup.json" >> .gitignore && \
     echo "*.log" >> .gitignore && \
     echo "node_modules/" >> .gitignore
+
+# Create logs directory for fallback logging
+RUN mkdir -p /app/logs && chown -R appuser:appgroup /app/logs
 
 # Build relay for production
 RUN bun build relay.ts --outdir=dist --format=esm --target=node

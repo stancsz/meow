@@ -44,11 +44,12 @@ Respond directly unless tool use is clearly necessary.`;
 
   const apiKey = process.env.LLM_API_KEY || process.env.ANTHROPIC_API_KEY;
   const baseURL = process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic";
+  const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "120000");
 
   const client = new Anthropic({ apiKey, baseURL });
 
   let iterations = 0;
-  const maxIterations = 5;
+  const maxIterations = 10;
   let messages: { role: "user" | "assistant"; content: string }[] = [
     { role: "user", content: prompt }
   ];
@@ -57,20 +58,34 @@ Respond directly unless tool use is clearly necessary.`;
     iterations++;
     console.error(`[meow-run] Iteration ${iterations}: sending ${messages.length} messages`);
 
-    const response = await client.messages.create({
+    const apiPromise = client.messages.create({
       model: process.env.LLM_MODEL || "MiniMax-M2.7",
-      max_tokens: 1024,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: messages as any,
     });
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`LLM API timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    let response: any;
+    try {
+      response = await Promise.race([apiPromise, timeoutPromise]);
+    } catch (e: any) {
+      console.error(`[meow-run] API error: ${e.message}`);
+      if (e.message.includes("timed out")) {
+        console.error(`[meow-run] Timed out at iteration ${iterations}, giving up`);
+        break;
+      }
+      throw e;
+    }
 
     const text = response.content.find((c: any) => c.type === "text")?.text || "";
     const thinking = response.content.find((c: any) => c.type === "thinking")?.thinking || "";
 
     console.error(`[meow-run] Response (${text.length} chars)`);
 
-    // For now, just output the text response
-    // Tool execution would go here in a full implementation
     if (text) {
       console.log(text);
       break;

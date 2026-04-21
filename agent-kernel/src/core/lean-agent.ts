@@ -2,7 +2,7 @@
  * lean-agent.ts
  *
  * Meow's lean agent loop using OpenAI SDK.
- * MiniMax-M2.7 via MiniMax's /anthropic endpoint (OpenAI-compatible).
+ * MiniMax-M2.7 via MiniMax's OpenAI-compatible API at https://api.minimax.io.
  */
 import OpenAI from "openai";
 import {
@@ -55,6 +55,7 @@ export async function* generateStream(
   options: LeanAgentOptions = {}
 ): AsyncGenerator<string> {
   const abortSignal = options.abortSignal;
+  const timeoutMs = options.timeoutMs ?? 60000;
 
   if (abortSignal?.aborted) {
     return;
@@ -68,16 +69,32 @@ export async function* generateStream(
     { role: "user", content: prompt },
   ];
 
-  const stream = await client.chat.completions.create({
-    model,
-    messages,
-    tools: getOpenAITools(options.allowedTools),
-    tool_choice: "auto",
-    stream: true,
-  });
+  // Combine abortSignal with timeout into a single AbortController
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const cleanup = () => clearTimeout(timer);
+  abortSignal?.addEventListener("abort", () => ac.abort());
+
+  let stream: AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
+
+  try {
+    stream = await client.chat.completions.create({
+      model,
+      messages,
+      tools: getOpenAITools(options.allowedTools),
+      tool_choice: "auto",
+      stream: true,
+      signal: ac.signal,
+    });
+  } catch (e: any) {
+    cleanup();
+    if (ac.signal.aborted) return;
+    throw e;
+  }
 
   for await (const chunk of stream) {
     if (abortSignal?.aborted) {
+      cleanup();
       return;
     }
 
@@ -86,6 +103,8 @@ export async function* generateStream(
       yield delta.content;
     }
   }
+
+  cleanup();
 }
 
 // ============================================================================
@@ -156,7 +175,11 @@ function compactMessages(messages: any[], maxTokens: number): any[] {
 
 function createOpenAIClient(options: LeanAgentOptions) {
   const apiKey = options.apiKey || process.env.LLM_API_KEY;
-  const baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic";
+  let baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.minimax.io";
+  // MiniMax OpenAI-compatible endpoint is at api.minimax.io (not /anthropic suffix)
+  if (baseURL.endsWith("/anthropic")) {
+    baseURL = baseURL.replace(/\/anthropic$/, "");
+  }
   const model = options.model || process.env.LLM_MODEL || "MiniMax-M2.7";
 
   if (!apiKey) {
@@ -217,7 +240,7 @@ export async function runLeanAgent(
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
   const maxTokens = options.maxTokens || 80000;
-  const timeoutMs = options.timeoutMs;
+  const timeoutMs = options.timeoutMs ?? 60000;
   const maxBudgetUSD = options.maxBudgetUSD;
 
   if (abortSignal?.aborted) {
@@ -256,12 +279,24 @@ export async function runLeanAgent(
     iterations++;
 
     try {
-      const response = await client.chat.completions.create({
-        model,
-        messages,
-        tools: getOpenAITools(options.allowedTools),
-        tool_choice: "auto",
-      });
+      let response: OpenAI.Chat.ChatCompletion;
+
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), timeoutMs);
+      abortSignal?.addEventListener("abort", () => ac.abort());
+
+      try {
+        response = await client.chat.completions.create({
+          model,
+          messages,
+          tools: getOpenAITools(options.allowedTools),
+          tool_choice: "auto",
+          signal: ac.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+        abortSignal?.removeEventListener("abort", () => ac.abort());
+      }
 
       const choice = response.choices[0];
       if (!choice?.message) {
@@ -396,7 +431,7 @@ export async function* runLeanAgentStream(
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
-  const timeoutMs = options.timeoutMs;
+  const timeoutMs = options.timeoutMs ?? 60000;
 
   if (abortSignal?.aborted) {
     yield { type: "error", error: "Interrupted" };
@@ -421,13 +456,30 @@ export async function* runLeanAgentStream(
 
     iterations++;
 
-    const stream = await client.chat.completions.create({
-      model,
-      messages,
-      tools: getOpenAITools(options.allowedTools),
-      tool_choice: "auto",
-      stream: true,
-    });
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    abortSignal?.addEventListener("abort", () => ac.abort());
+
+    let stream: AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
+
+    try {
+      stream = await client.chat.completions.create({
+        model,
+        messages,
+        tools: getOpenAITools(options.allowedTools),
+        tool_choice: "auto",
+        stream: true,
+        signal: ac.signal,
+      });
+    } catch (e: any) {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", () => ac.abort());
+      if (ac.signal.aborted) {
+        yield { type: "error", error: "Interrupted" };
+        return;
+      }
+      throw e;
+    }
 
     let fullContent = "";
     let toolCalls: OpenAI.Chat.ChatCompletionMessage.ToolCall[] = [];
@@ -461,8 +513,13 @@ export async function* runLeanAgentStream(
       }
     }
 
+    clearTimeout(timer);
+    abortSignal?.removeEventListener("abort", () => ac.abort());
+
     // No tool calls - done
     if (toolCalls.length === 0) {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", () => ac.abort());
       yield { type: "done" };
       return;
     }
@@ -502,7 +559,7 @@ export async function runLeanAgentSimpleStream(
   const maxIterations = options.maxIterations || 10;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
-  const timeoutMs = options.timeoutMs;
+  const timeoutMs = options.timeoutMs ?? 60000;
 
   if (abortSignal?.aborted) {
     return { content: "Interrupted", iterations: 0, completed: false };
@@ -528,13 +585,29 @@ export async function runLeanAgentSimpleStream(
 
     iterations++;
 
-    const stream = await client.chat.completions.create({
-      model,
-      messages,
-      tools: getOpenAITools(options.allowedTools),
-      tool_choice: "auto",
-      stream: true,
-    });
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    abortSignal?.addEventListener("abort", () => ac.abort());
+
+    let stream: AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
+
+    try {
+      stream = await client.chat.completions.create({
+        model,
+        messages,
+        tools: getOpenAITools(options.allowedTools),
+        tool_choice: "auto",
+        stream: true,
+        signal: ac.signal,
+      });
+    } catch (e: any) {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", () => ac.abort());
+      if (ac.signal.aborted) {
+        return { content: "Interrupted", iterations, completed: false };
+      }
+      throw e;
+    }
 
     let toolCalls: OpenAI.Chat.ChatCompletionMessage.ToolCall[] = [];
 
@@ -570,6 +643,9 @@ export async function runLeanAgentSimpleStream(
         }
       }
     }
+
+    clearTimeout(timer);
+    abortSignal?.removeEventListener("abort", () => ac.abort());
 
     // No tool calls - done
     if (toolCalls.length === 0) {

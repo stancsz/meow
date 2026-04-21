@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 /**
  * compare-and-fix.ts - Background Meow improvement agent
  *
@@ -12,16 +13,28 @@ import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const LOGS_DIR = join(process.cwd(), "logs");
+const LOGS_DIR = "/app/logs";
 const AGENT_KERNEL = "/app/agent-kernel";
+
+console.error("[compare-fix] Starting...");
 
 // Find the most recent fallback log (meow→claude-code)
 function findLatestFallbackLog(): string | null {
-  if (!existsSync(LOGS_DIR)) return null;
-  const files = readdirSync(LOGS_DIR).filter(f => f.includes("meow-claude-code"));
+  if (!existsSync(LOGS_DIR)) {
+    console.error(`[compare-fix] LOGS_DIR does not exist: ${LOGS_DIR}`);
+    return null;
+  }
+  const allFiles = readdirSync(LOGS_DIR);
+  console.error(`[compare-fix] All files in ${LOGS_DIR}:`, allFiles);
+
+  const files = allFiles.filter(f => f.includes("meow-claude-code"));
+  console.error(`[compare-fix] Files matching 'meow-claude-code':`, files);
+
   if (files.length === 0) return null;
   files.sort();
-  return join(LOGS_DIR, files[files.length - 1]);
+  const latest = join(LOGS_DIR, files[files.length - 1]);
+  console.error(`[compare-fix] Latest fallback log: ${latest}`);
+  return latest;
 }
 
 // Spawn Claude Code to analyze and fix Meow
@@ -34,6 +47,8 @@ function spawnClaudeFix(prompt: string): Promise<string> {
       "--mcp-config", "/app/mcp-null.json",
       "-p", prompt
     ];
+
+    console.error(`[compare-fix] Spawning Claude Code: node ${cliPath}`);
 
     const proc = spawn("node", [cliPath, ...args], {
       cwd: AGENT_KERNEL,
@@ -50,8 +65,8 @@ function spawnClaudeFix(prompt: string): Promise<string> {
 
     const timeout = setTimeout(() => {
       proc.kill("SIGTERM");
-      reject(new Error("Claude Code timed out after 5 minutes"));
-    }, 300000);
+      reject(new Error("Claude Code timed out after 10 minutes"));
+    }, 600000);
 
     proc.on("close", (code) => {
       clearTimeout(timeout);
@@ -59,7 +74,6 @@ function spawnClaudeFix(prompt: string): Promise<string> {
         resolve(stdout.trim());
       } else {
         const errMsg = stderr.trim() || `Claude exited with code ${code}`;
-        // If it already tried to make changes, still resolve with what we got
         if (stdout.includes("```") || stdout.includes("edit") || stdout.includes("diff")) {
           resolve(stdout.trim());
         } else {
@@ -82,10 +96,23 @@ async function main() {
     return;
   }
 
-  console.log(`[compare-fix] Analyzing: ${logPath}`);
+  console.error(`[compare-fix] Analyzing: ${logPath}`);
 
-  const logContent = readFileSync(logPath, "utf-8");
-  const log = JSON.parse(logContent);
+  let logContent: string;
+  try {
+    logContent = readFileSync(logPath, "utf-8");
+  } catch (e: any) {
+    console.error(`[compare-fix] Failed to read log: ${e.message}`);
+    return;
+  }
+
+  let log: any;
+  try {
+    log = JSON.parse(logContent);
+  } catch (e: any) {
+    console.error(`[compare-fix] Failed to parse log JSON: ${e.message}`);
+    return;
+  }
 
   if (!log.meowError) {
     console.log("[compare-fix] Meow succeeded, no need to fix");
@@ -123,15 +150,15 @@ If you cannot determine the root cause, explain what you found and what else nee
 
 IMPORTANT: Make real edits to fix the actual bug. Do not just describe what to do.`;
 
-  console.log("[compare-fix] Spawning Claude Code to analyze and fix...");
-  console.log(`[compare-fix] Prompt length: ${comparisonPrompt.length} chars`);
+  console.error(`[compare-fix] Spawning Claude Code to analyze and fix...`);
+  console.error(`[compare-fix] Prompt length: ${comparisonPrompt.length} chars`);
 
   try {
     const result = await spawnClaudeFix(comparisonPrompt);
-    console.log("[compare-fix] Claude Code response:");
-    console.log("---");
-    console.log(result.slice(0, 2000));
-    console.log("---");
+    console.error("[compare-fix] Claude Code response:");
+    console.error("---");
+    console.error(result.slice(0, 2000));
+    console.error("---");
 
     // Log the comparison result
     const comparisonLog = {
@@ -150,7 +177,6 @@ IMPORTANT: Make real edits to fix the actual bug. Do not just describe what to d
 
   } catch (e: any) {
     console.error(`[compare-fix] Failed: ${e.message}`);
-    // Log the failure
     const failureLog = {
       timestamp: new Date().toISOString(),
       originalLog: logPath,
