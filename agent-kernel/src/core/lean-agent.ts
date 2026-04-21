@@ -270,7 +270,7 @@ export async function runLeanAgent(
   prompt: string,
   options: LeanAgentOptions = {}
 ): Promise<AgentResult> {
-  const maxIterations = options.maxIterations || 10;
+  const maxIterations = options.maxIterations || 50;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
   const maxTokens = options.maxTokens || 80000;
@@ -462,7 +462,7 @@ export async function* runLeanAgentStream(
   prompt: string,
   options: LeanAgentOptions = {}
 ): AsyncGenerator<StreamEvent> {
-  const maxIterations = options.maxIterations || 10;
+  const maxIterations = options.maxIterations || 50;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
   const timeoutMs = options.timeoutMs ?? 60000;
@@ -590,7 +590,7 @@ export async function runLeanAgentSimpleStream(
   options: LeanAgentOptions = {},
   onToken?: TokenHandler
 ): Promise<AgentResult> {
-  const maxIterations = options.maxIterations || 10;
+  const maxIterations = options.maxIterations || 50;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
   const timeoutMs = options.timeoutMs ?? 60000;
