@@ -18,6 +18,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { MemoryStore } from "./memory";
 import { getSkillContext } from "./skill-manager";
+import { MeowAgentClient } from "./meow-agent";
+import { logFallback, type FallbackLogEntry } from "./fallback-logger";
 
 // ============================================================================
 // Config
@@ -819,6 +821,7 @@ async function main() {
   if (RELAY_PREFIX) console.log(`[relay] Prefix filter: "${RELAY_PREFIX}"`);
   if (RELAY_MENTION_ONLY) console.log("[relay] Mode: mention-only");
 
+  const meow = new MeowAgentClient();
   const claude = new ClaudeCodeClient();
 
   const discord = new Client({
@@ -910,7 +913,56 @@ async function main() {
       memory.processConversationForFacts(userId, message.author.username, promptText, "");
 
       // Sync processing - typing indicator keeps user updated
-      let reply = await claude.prompt(fullPrompt);
+      let reply: string;
+      let attemptPath: "meow" | "meow→claude-code" = "meow";
+
+      const logEntry: FallbackLogEntry = {
+        timestamp: new Date().toISOString(),
+        channelId: message.channelId,
+        userPrompt: promptText.slice(0, 500),
+        attemptPath: "meow",
+        finalBackend: "meow",
+        finalResponseLength: 0,
+      };
+
+      try {
+        reply = await meow.prompt(fullPrompt);
+      } catch (meowErr: any) {
+        attemptPath = "meow→claude-code";
+        logEntry.attemptPath = attemptPath;
+        logEntry.meowError = meowErr.message.slice(0, 500);
+        console.warn(`[relay] Meow failed (${meowErr.message.slice(0, 80)}), falling back to Claude Code`);
+
+        try {
+          reply = await claude.prompt(fullPrompt);
+          logEntry.fallbackSuccess = true;
+          logEntry.finalBackend = "claude-code";
+        } catch (claudeErr: any) {
+          logEntry.fallbackSuccess = false;
+          logEntry.finalResponseLength = 0;
+          logFallback(logEntry);
+          try {
+            await message.reply(`❌ Both backends failed.\nMeow: ${meowErr.message}\nClaude: ${claudeErr.message}`);
+          } catch { /* ignore */ }
+          processing.delete(message.id);
+          return;
+        }
+      }
+
+      logEntry.finalResponseLength = reply.length;
+      logFallback(logEntry);
+
+      // If Meow fell back to Claude Code, spawn background fix agent
+      if (attemptPath === "meow→claude-code") {
+        spawn("bun", ["run", "/app/compare-and-fix.ts"], {
+          cwd: process.env.CLAUDE_CWD || "/app",
+          stdio: ["ignore", "inherit", "inherit"],
+          detached: false,
+          shell: false,
+        });
+        console.log("[relay] Spawned compare-and-fix agent in background");
+      }
+
       if (typingInterval) clearInterval(typingInterval);
       markReplied(message.channelId);
 

@@ -27,6 +27,8 @@ export interface LeanAgentOptions {
   messages?: any[];
   timeoutMs?: number;
   maxBudgetUSD?: number;  // Maximum budget in USD cents (e.g., 0.50 = 50 cents)
+  /** Optional list of tool names to allow. If not set, all tools are available. */
+  allowedTools?: string[];
 }
 
 export interface AgentResult {
@@ -59,7 +61,7 @@ export async function* generateStream(
   }
 
   const { model, client } = createOpenAIClient(options);
-  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+  const systemPrompt = options.systemPrompt || buildSystemPrompt(options.allowedTools);
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -69,7 +71,7 @@ export async function* generateStream(
   const stream = await client.chat.completions.create({
     model,
     messages,
-    tools: getOpenAITools(),
+    tools: getOpenAITools(options.allowedTools),
     tool_choice: "auto",
     stream: true,
   });
@@ -170,8 +172,8 @@ function createOpenAIClient(options: LeanAgentOptions) {
 // System Prompt
 // ============================================================================
 
-function buildSystemPrompt(): string {
-  const tools = getToolDefinitions();
+function buildSystemPrompt(allowedTools?: string[]): string {
+  const tools = getToolDefinitions(allowedTools);
   const toolList = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
 
   return `You are Agentic Kernel, a lean sovereign autonomous cognitive engine.
@@ -192,8 +194,8 @@ Respond directly unless tool use is clearly necessary.`;
 // Tool Definitions for OpenAI
 // ============================================================================
 
-function getOpenAITools() {
-  return getToolDefinitions().map((t) => ({
+function getOpenAITools(allowedTools?: string[]) {
+  return getToolDefinitions(allowedTools).map((t) => ({
     type: "function" as const,
     function: {
       name: t.name,
@@ -223,7 +225,7 @@ export async function runLeanAgent(
   }
 
   const { model, client } = createOpenAIClient(options);
-  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+  const systemPrompt = options.systemPrompt || buildSystemPrompt(options.allowedTools);
 
   let messages: OpenAI.Chat.ChatCompletionMessageParam[];
   if (options.messages && options.messages.length > 0) {
@@ -257,7 +259,7 @@ export async function runLeanAgent(
       const response = await client.chat.completions.create({
         model,
         messages,
-        tools: getOpenAITools(),
+        tools: getOpenAITools(options.allowedTools),
         tool_choice: "auto",
       });
 
@@ -402,7 +404,7 @@ export async function* runLeanAgentStream(
   }
 
   const { model, client } = createOpenAIClient(options);
-  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+  const systemPrompt = options.systemPrompt || buildSystemPrompt(options.allowedTools);
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -422,7 +424,7 @@ export async function* runLeanAgentStream(
     const stream = await client.chat.completions.create({
       model,
       messages,
-      tools: getOpenAITools(),
+      tools: getOpenAITools(options.allowedTools),
       tool_choice: "auto",
       stream: true,
     });
@@ -507,7 +509,7 @@ export async function runLeanAgentSimpleStream(
   }
 
   const { model, client } = createOpenAIClient(options);
-  const systemPrompt = options.systemPrompt || buildSystemPrompt();
+  const systemPrompt = options.systemPrompt || buildSystemPrompt(options.allowedTools);
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -529,7 +531,7 @@ export async function runLeanAgentSimpleStream(
     const stream = await client.chat.completions.create({
       model,
       messages,
-      tools: getOpenAITools(),
+      tools: getOpenAITools(options.allowedTools),
       tool_choice: "auto",
       stream: true,
     });

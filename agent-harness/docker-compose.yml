@@ -15,6 +15,8 @@ services:
       - BACKUP_REPO=${BACKUP_REPO:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-https://api.minimax.io/anthropic}
+      - LLM_API_KEY=${ANTHROPIC_API_KEY}
+      - LLM_BASE_URL=${ANTHROPIC_BASE_URL:-https://api.minimax.io/anthropic}
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
@@ -23,3 +25,4 @@ services:
       - ./mcp-bridge.json:/app/mcp-bridge.json:ro
       - ./data:/app/data
       - ./.claude:/app/.claude
+      - ../agent-kernel:/app/agent-kernel:rw

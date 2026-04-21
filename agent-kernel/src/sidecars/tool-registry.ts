@@ -372,12 +372,14 @@ export function getTool(name: string): Tool | undefined {
   return tools.find((t) => t.name === name);
 }
 
-export function getToolDefinitions(): ToolDefinition[] {
-  return tools.map(({ name, description, parameters }) => ({
+export function getToolDefinitions(allowedTools?: string[]): ToolDefinition[] {
+  const all = tools.map(({ name, description, parameters }) => ({
     name,
     description,
     parameters,
   }));
+  if (!allowedTools || allowedTools.length === 0) return all;
+  return all.filter(t => allowedTools.includes(t.name));
 }
 
 export function registerTool(tool: Tool): void {

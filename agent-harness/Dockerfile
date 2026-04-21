@@ -53,6 +53,10 @@ COPY --chown=appuser:appgroup relay.ts ./
 COPY --chown=appuser:appgroup memory.ts ./
 COPY --chown=appuser:appgroup skill-manager.ts ./
 COPY --chown=appuser:appgroup mission-agent.ts ./
+COPY --chown=appuser:appgroup meow-agent.ts ./
+COPY --chown=appuser:appgroup meow-run.ts ./
+COPY --chown=appuser:appgroup fallback-logger.ts ./
+COPY --chown=appuser:appgroup compare-and-fix.ts ./
 COPY --chown=appuser:appgroup mcp-null.json ./
 COPY --chown=appuser:appgroup SYSTEM_PROMPT.md ./
 

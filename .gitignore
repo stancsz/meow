@@ -86,3 +86,6 @@ test-results/
 
 # Dogfood test outputs
 dogfood/
+
+
+agent-harness/data
