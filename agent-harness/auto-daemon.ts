@@ -1,8 +1,10 @@
 /**
  * auto-daemon.ts - Background auto-improvement daemon
  *
- * Monitors logs/ for new Meow→Claude fallback events.
- * On each new fallback, spawns compare-and-fix to improve Meow's kernel.
+ * Actively works on a mission by periodically prompting Meow.
+ * Also monitors logs/ for new Meow→Claude fallback events.
+ *
+ * Monitors itself: warns if no API activity for 30 seconds.
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
@@ -10,23 +12,42 @@ import { join } from "node:path";
 
 const LOGS_DIR = "/app/logs";
 const COMPARE_AND_FIX = "/app/compare-and-fix.ts";
+const MEOW_RUN = "/app/meow-run.ts";
 const STATUS_FILE = "/app/logs/.auto-daemon.status";
 const MISSION_FILE = "/app/logs/.auto-daemon.mission";
-const POLL_INTERVAL_MS = 10000;
+const PROGRESS_FILE = "/app/logs/.auto-daemon.progress";
+
+// Work every 60 seconds by default (configurable via MEOW_WORK_INTERVAL_MS)
+const WORK_INTERVAL_MS = parseInt(process.env.MEOW_WORK_INTERVAL_MS || "60000");
+// Warn if no API activity for 30 seconds
+const API_TIMEOUT_MS = 30000;
 
 interface DaemonStatus {
   pid: number;
   startedAt: string;
   lastPoll: string;
+  lastWork: string;
   lastFoundLog: string | null;
   mission: string | null;
+  iteration: number;
 }
+
+interface Progress {
+  iteration: number;
+  lastMeowCall: string | null;
+  lastMeowResponse: string | null;
+  lastApiActivity: string | null;
+  lastError: string | null;
+  consecutiveFails: number;
+}
+
+// ============================================================================
+// File helpers
+// ============================================================================
 
 function readStatus(): DaemonStatus | null {
   if (!existsSync(STATUS_FILE)) return null;
-  try {
-    return JSON.parse(readFileSync(STATUS_FILE, "utf-8"));
-  } catch { return null; }
+  try { return JSON.parse(readFileSync(STATUS_FILE, "utf-8")); } catch { return null; }
 }
 
 function writeStatus(status: DaemonStatus): void {
@@ -37,18 +58,31 @@ function removeStatus(): void {
   try { unlinkSync(STATUS_FILE); } catch {}
 }
 
-function writeMissionToFile(prompt: string): void {
-  writeFileSync(MISSION_FILE, prompt);
-}
-
 function readMissionFromFile(): string | null {
   if (!existsSync(MISSION_FILE)) return null;
   try { return readFileSync(MISSION_FILE, "utf-8").trim(); } catch { return null; }
 }
 
+function writeMissionToFile(prompt: string): void {
+  writeFileSync(MISSION_FILE, prompt);
+}
+
 function deleteMissionFile(): void {
   try { unlinkSync(MISSION_FILE); } catch {}
 }
+
+function readProgress(): Progress | null {
+  if (!existsSync(PROGRESS_FILE)) return null;
+  try { return JSON.parse(readFileSync(PROGRESS_FILE, "utf-8")); } catch { return null; }
+}
+
+function writeProgress(progress: Progress): void {
+  writeFileSync(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+}
+
+// ============================================================================
+// Fallback log scanner
+// ============================================================================
 
 function findNewestFallbackLog(since: string): string | null {
   if (!existsSync(LOGS_DIR)) return null;
@@ -61,6 +95,10 @@ function findNewestFallbackLog(since: string): string | null {
     .sort((a, b) => b.mtime - a.mtime);
   return files.length > 0 ? files[0].path : null;
 }
+
+// ============================================================================
+// Spawn compare-and-fix
+// ============================================================================
 
 function spawnCompareAndFix(logPath: string): void {
   console.error(`[auto-daemon] New fallback: ${logPath}`);
@@ -82,52 +120,244 @@ function spawnCompareAndFix(logPath: string): void {
   });
 }
 
-function runPollLoop(): void {
+// ============================================================================
+// Spawn Meow with mission prompt
+// ============================================================================
+
+function spawnMeowMission(mission: string, iteration: number): { promise: Promise<string>, cancel: () => void } {
+  let resolvePromise: (value: string) => void;
+  let rejectPromise: (err: Error) => void;
+  let cancelled = false;
+
+  const promise = new Promise<string>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+
+    const proc = spawn("bun", ["run", "--bun", MEOW_RUN, "--", mission], {
+      cwd: "/app",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+      shell: false,
+      detached: false,
+    });
+
+    let stdout = "";
+    let stderr = "";
+    const startTime = Date.now();
+
+    // Mark API activity immediately
+    const now = new Date().toISOString();
+    const progress = readProgress() || { iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 };
+    progress.lastMeowCall = now;
+    progress.lastApiActivity = now;
+    writeProgress(progress);
+
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      // Each chunk marks API activity
+      const progress = readProgress() || { iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 };
+      progress.lastApiActivity = new Date().toISOString();
+      writeProgress(progress);
+      stdout += chunk.toString();
+    });
+
+    proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    proc.on("close", (code) => {
+      if (cancelled) return;
+      const elapsed = Date.now() - startTime;
+      console.error(`[auto-daemon] Meow iteration ${iteration} done in ${elapsed}ms (exit ${code})`);
+
+      if (code === 0 && stdout.trim()) {
+        const progress = readProgress() || { iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 };
+        progress.lastMeowResponse = new Date().toISOString();
+        progress.consecutiveFails = 0;
+        writeProgress(progress);
+        resolvePromise(stdout.trim());
+      } else {
+        const progress = readProgress() || { iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 };
+        progress.lastError = stderr.trim().slice(0, 200) || `exit code ${code}`;
+        progress.consecutiveFails = (progress.consecutiveFails || 0) + 1;
+        writeProgress(progress);
+        resolvePromise(`[iteration ${iteration} failed: ${progress.lastError}]`);
+      }
+    });
+
+    proc.on("error", (err) => {
+      if (cancelled) return;
+      const progress = readProgress() || { iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 };
+      progress.lastError = err.message;
+      progress.consecutiveFails = (progress.consecutiveFails || 0) + 1;
+      writeProgress(progress);
+      resolvePromise(`[iteration ${iteration} spawn error: ${err.message}]`);
+    });
+
+    // Apply per-call timeout
+    setTimeout(() => {
+      if (cancelled) return;
+      proc.kill("SIGTERM");
+      const progress = readProgress() || { iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 };
+      progress.lastError = "Meow timed out";
+      progress.consecutiveFails = (progress.consecutiveFails || 0) + 1;
+      writeProgress(progress);
+      resolvePromise(`[iteration ${iteration} timed out after ${WORK_INTERVAL_MS}ms]`);
+    }, WORK_INTERVAL_MS - 1000);
+  });
+
+  return {
+    promise,
+    cancel: () => {
+      cancelled = true;
+    },
+  };
+}
+
+// ============================================================================
+// Main daemon loop
+// ============================================================================
+
+let running = true;
+let currentWorkPromise: Promise<string> | null = null;
+let apiWatchdogTimer: NodeJS.Timeout | null = null;
+let isWorking = false;
+
+function startApiWatchdog(): void {
+  if (apiWatchdogTimer) clearInterval(apiWatchdogTimer);
+
+  apiWatchdogTimer = setInterval(() => {
+    const progress = readProgress();
+    if (!progress?.lastApiActivity) return;
+
+    const elapsed = Date.now() - new Date(progress.lastApiActivity).getTime();
+    // Only warn if we're in the middle of a work cycle and API is silent
+    if (isWorking && elapsed > API_TIMEOUT_MS) {
+      console.error(`[auto-daemon] API WATCHDOG: no activity for ${Math.round(elapsed / 1000)}s while working`);
+    }
+    // If not working and no activity for 2x interval, warn
+    if (!isWorking && elapsed > WORK_INTERVAL_MS * 2) {
+      console.error(`[auto-daemon] IDLE WATCHDOG: no API calls for ${Math.round(elapsed / 1000)}s`);
+    }
+  }, 10000);
+}
+
+function stopApiWatchdog(): void {
+  if (apiWatchdogTimer) {
+    clearInterval(apiWatchdogTimer);
+    apiWatchdogTimer = null;
+  }
+}
+
+function runDaemonLoop(): void {
   const pid = process.pid;
   const startedAt = new Date().toISOString();
+  let iteration = 0;
   let lastPoll = startedAt;
-  let lastFoundLog: string | null = null;
-  const mission = readMissionFromFile();
 
-  writeStatus({ pid, startedAt, lastPoll, lastFoundLog, mission });
-  console.error(`[auto-daemon] Poll loop running (PID ${pid})${mission ? ` for mission: ${mission}` : ""}`);
+  // Initialize progress
+  writeProgress({ iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 });
 
-  const interval = setInterval(() => {
+  startApiWatchdog();
+
+  console.error(`[auto-daemon] Daemon starting (PID ${pid}) — working every ${WORK_INTERVAL_MS}ms, API watchdog after ${API_TIMEOUT_MS}ms`);
+
+  const loop = setInterval(async () => {
+    if (!running) return;
+
+    const mission = readMissionFromFile();
+    const s = readStatus();
+
+    if (!mission) {
+      // No mission — just poll for fallback logs
+      try {
+        const newest = findNewestFallbackLog(lastPoll);
+        if (newest) {
+          lastPoll = newest;
+          spawnCompareAndFix(newest);
+        }
+      } catch (e: any) {
+        console.error(`[auto-daemon] poll error: ${e.message}`);
+      }
+      writeStatus({ pid, startedAt, lastPoll: new Date().toISOString(), lastWork: s?.lastWork ?? "", lastFoundLog: newest ?? s?.lastFoundLog ?? null, mission, iteration });
+      return;
+    }
+
+    // There is a mission — actively work on it
+    iteration++;
+    const now = new Date().toISOString();
+    isWorking = true;
+    console.error(`[auto-daemon] Iteration ${iteration}: working on mission`);
+
+    writeStatus({ pid, startedAt, lastPoll: now, lastWork: now, lastFoundLog: s?.lastFoundLog ?? null, mission, iteration });
+    writeProgress({
+      iteration,
+      lastMeowCall: null,
+      lastMeowResponse: null,
+      lastApiActivity: null,
+      lastError: null,
+      consecutiveFails: 0,
+    });
+
     try {
-      const newest = findNewestFallbackLog(lastPoll);
-      if (newest && newest !== lastFoundLog) {
-        lastFoundLog = newest;
-        writeStatus({ pid, startedAt, lastPoll: new Date().toISOString(), lastFoundLog, mission });
-        spawnCompareAndFix(newest);
+      const { promise } = spawnMeowMission(mission, iteration);
+      currentWorkPromise = promise;
+      const response = await promise;
+      currentWorkPromise = null;
+
+      if (response.startsWith("[iteration") && response.includes("failed") && !response.includes("timed out")) {
+        console.error(`[auto-daemon] Iteration ${iteration} failed: ${response}`);
       } else {
-        writeStatus({ pid, startedAt, lastPoll: new Date().toISOString(), lastFoundLog, mission });
+        console.error(`[auto-daemon] Iteration ${iteration} response (${response.length} chars): ${response.slice(0, 200)}`);
       }
     } catch (e: any) {
-      console.error(`[auto-daemon] poll error: ${e.message}`);
+      console.error(`[auto-daemon] Iteration ${iteration} error: ${e.message}`);
     }
-  }, POLL_INTERVAL_MS);
+
+    isWorking = false;
+
+    // Also check for fallbacks while we're at it
+    try {
+      const newest = findNewestFallbackLog(lastPoll);
+      if (newest) {
+        lastPoll = newest;
+        spawnCompareAndFix(newest);
+      }
+    } catch (e: any) {
+      console.error(`[auto-daemon] fallback poll error: ${e.message}`);
+    }
+
+    writeStatus({ pid, startedAt, lastPoll: new Date().toISOString(), lastWork: now, lastFoundLog: s?.lastFoundLog ?? null, mission, iteration });
+  }, WORK_INTERVAL_MS);
 
   process.on("SIGTERM", () => {
-    clearInterval(interval);
+    running = false;
+    clearInterval(loop);
+    stopApiWatchdog();
     console.error(`[auto-daemon] PID ${pid} stopping`);
     removeStatus();
+    try { unlinkSync(PROGRESS_FILE); } catch {}
     process.exit(0);
   });
 }
 
 // ============================================================================
-// Exports for relay.ts
+// Exports
 // ============================================================================
 
-export function getAutoDaemonStatus(): { running: boolean; pid: number | null; lastKnownLog: string; mission: string | null } {
+export function getAutoDaemonStatus(): {
+  running: boolean;
+  pid: number | null;
+  lastKnownLog: string;
+  mission: string | null;
+  iteration: number;
+  lastWork: string | null;
+} {
   const s = readStatus();
-  if (!s) return { running: false, pid: null, lastKnownLog: "(none)", mission: null };
+  if (!s) return { running: false, pid: null, lastKnownLog: "(none)", mission: null, iteration: 0, lastWork: null };
   try {
     process.kill(s.pid, 0);
-    return { running: true, pid: s.pid, lastKnownLog: s.lastFoundLog ?? "(none)", mission: s.mission ?? null };
+    return { running: true, pid: s.pid, lastKnownLog: s.lastFoundLog ?? "(none)", mission: s.mission ?? null, iteration: s.iteration ?? 0, lastWork: s.lastWork ?? null };
   } catch {
     removeStatus();
-    return { running: false, pid: null, lastKnownLog: "(none)", mission: null };
+    return { running: false, pid: null, lastKnownLog: "(none)", mission: null, iteration: 0, lastWork: null };
   }
 }
 
@@ -149,35 +379,60 @@ export function startAutoDaemon(): string {
     detached: true,
   });
   daemon.unref();
-  return `[auto-daemon] Started daemon (PID ${daemon.pid}) — use \`/auto status\` to check`;
+  return `[auto-daemon] Started (PID ${daemon.pid}) — working every ${WORK_INTERVAL_MS}ms`;
 }
 
 export function stopAutoDaemon(): string {
   const s = readStatus();
   if (!s) return `[auto-daemon] Not running`;
+  running = false;
   try {
     process.kill(s.pid, "SIGTERM");
     return `[auto-daemon] Sent SIGTERM to PID ${s.pid}`;
   } catch (e: any) {
     removeStatus();
-    return `[auto-daemon] Failed to kill PID ${s.pid}: ${e.message}`;
+    return `[auto-daemon] Failed: ${e.message}`;
   }
 }
 
+export function setMission(prompt: string): void {
+  writeMissionToFile(prompt);
+  // Update running daemon's status
+  const s = readStatus();
+  if (s) writeStatus({ ...s, mission: prompt });
+}
+
+export function getMission(): string | null {
+  return readMissionFromFile();
+}
+
+export function clearMission(): void {
+  deleteMissionFile();
+}
+
+export function getProgress(): Progress | null {
+  return readProgress();
+}
+
 // ============================================================================
-// CLI entry
+// CLI
 // ============================================================================
 
 const cmd = process.argv[2]?.toLowerCase();
 
 if (!cmd || cmd === "status") {
   const s = getAutoDaemonStatus();
+  const p = readProgress();
   if (!s.running) {
     console.log("Auto daemon: stopped");
   } else {
-    const full = readStatus();
-    console.log(`Auto daemon: RUNNING | PID: ${s.pid} | Started: ${full?.startedAt ?? "?"} | Last poll: ${full?.lastPoll ?? "?"} | Last log: ${s.lastKnownLog}`);
+    console.log(`Auto daemon: RUNNING | PID: ${s.pid} | Iteration: ${s.iteration} | Last work: ${s.lastWork ?? "never"}`);
     if (s.mission) console.log(`Mission: ${s.mission}`);
+    if (p) {
+      console.log(`Last Meow call: ${p.lastMeowCall ?? "never"} | Last response: ${p.lastMeowResponse ?? "never"} | API activity: ${p.lastApiActivity ?? "never"}`);
+      if (p.lastError) console.log(`Last error: ${p.lastError}`);
+      if (p.consecutiveFails > 0) console.log(`Consecutive fails: ${p.consecutiveFails}`);
+    }
   }
   process.exit(0);
 }
@@ -207,9 +462,19 @@ if (cmd === "mission") {
   process.exit(0);
 }
 
+if (cmd === "progress") {
+  const p = readProgress();
+  if (!p) {
+    console.log("No progress recorded");
+  } else {
+    console.log(JSON.stringify(p, null, 2));
+  }
+  process.exit(0);
+}
+
 if (cmd === "run") {
-  runPollLoop();
+  runDaemonLoop();
 } else {
-  console.error(`[auto-daemon] Usage: auto-daemon.ts [start|stop|status|mission|run]`);
+  console.error(`[auto-daemon] Usage: auto-daemon.ts [start|stop|status|mission|progress|run]`);
   process.exit(cmd ? 1 : 0);
 }
