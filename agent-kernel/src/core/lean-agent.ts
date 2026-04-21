@@ -195,10 +195,41 @@ function createOpenAIClient(options: LeanAgentOptions) {
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Strip AI reasoning blocks from model output.
+ * MiniMax uses "</think>" as the delimiter between internal reasoning and final output.
+ */
+function stripThinkingBlocks(text: string): string {
+  // Use index-based extraction to avoid regex delimiter issues with Chinese brackets
+  const OPEN = "<think>";
+  const CLOSE = "</think>";
+  let result = "";
+  let i = 0;
+  while (i < text.length) {
+    const start = text.indexOf(OPEN, i);
+    if (start === -1) {
+      result += text.slice(i);
+      break;
+    }
+    result += text.slice(i, start);
+    const end = text.indexOf(CLOSE, start + OPEN.length);
+    if (end === -1) {
+      result += text.slice(start);
+      break;
+    }
+    i = end + CLOSE.length;
+  }
+  return result.trim();
+}
+
+// ============================================================================
 // System Prompt
 // ============================================================================
 
-function buildSystemPrompt(allowedTools?: string[]): string {
+function buildSystemPrompt(allowedTools?: string[]) {
   const tools = getToolDefinitions(allowedTools);
   const toolList = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
 
@@ -307,7 +338,7 @@ export async function runLeanAgent(
       }
 
       const { content, tool_calls } = choice.message;
-      lastContent = content || lastContent;
+      lastContent = stripThinkingBlocks(content || "") || lastContent;
 
       // Push assistant message with tool_calls to messages array
       if (tool_calls && tool_calls.length > 0) {
@@ -347,7 +378,7 @@ export async function runLeanAgent(
       // No tool calls - return content directly
       if (!tool_calls || tool_calls.length === 0) {
         return {
-          content: content || "",
+          content: stripThinkingBlocks(content || ""),
           iterations,
           completed: true,
           messages,
@@ -653,7 +684,7 @@ export async function runLeanAgentSimpleStream(
     // No tool calls - done
     if (toolCalls.length === 0) {
       return {
-        content: fullContent,
+        content: stripThinkingBlocks(fullContent),
         iterations,
         completed: true,
         messages,
