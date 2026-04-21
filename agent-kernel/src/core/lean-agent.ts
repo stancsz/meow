@@ -176,9 +176,12 @@ function compactMessages(messages: any[], maxTokens: number): any[] {
 function createOpenAIClient(options: LeanAgentOptions) {
   const apiKey = options.apiKey || process.env.LLM_API_KEY;
   let baseURL = options.baseURL || process.env.LLM_BASE_URL || "https://api.minimax.io";
-  // MiniMax OpenAI-compatible endpoint is at api.minimax.io (not /anthropic suffix)
+  // Strip /anthropic suffix and append /v1 for OpenAI SDK compatibility with nginx
   if (baseURL.endsWith("/anthropic")) {
     baseURL = baseURL.replace(/\/anthropic$/, "");
+  }
+  if (!baseURL.endsWith("/v1")) {
+    baseURL = baseURL + "/v1";
   }
   const model = options.model || process.env.LLM_MODEL || "MiniMax-M2.7";
 
@@ -702,14 +705,16 @@ export async function runLeanAgentSimpleStream(
 if (import.meta.main) {
   await initializeToolRegistry();
 
-  const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-  const prompt = args.join(" ") || "Hello world";
+  const args = process.argv.slice(2);
+  const dangerous = args.includes("--dangerous");
+  const promptArgs = args.filter((a) => !a.startsWith("--"));
+  const prompt = promptArgs.join(" ") || "Hello world";
 
   console.log(`🐱 Meow lean agent`);
   console.log(`Prompt: ${prompt}\n`);
 
   try {
-    const result = await runLeanAgent(prompt);
+    const result = await runLeanAgent(prompt, { dangerous });
     console.log(`\n✅ Completed in ${result.iterations} iteration(s)`);
     if (result.usage) {
       console.log(`[${result.usage.totalTokens} tokens · ~$${result.usage.estimatedCost.toFixed(2)}]`);

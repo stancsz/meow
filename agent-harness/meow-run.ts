@@ -2,101 +2,91 @@
 /**
  * meow-run.ts - Meow Agent Runner
  *
- * Thin launcher that runs the Meow agent inside Docker.
- * Agent-kernel is mounted at /app/agent-kernel, node_modules at /app/node_modules.
- *
- * We use @anthropic-ai/sdk for the API (MiniMax supports /v1/messages)
- * since the OpenAI SDK fails with 404 on /v1/chat/completions.
+ * Thin launcher that runs lean-agent.ts inside Docker.
+ * lean-agent.ts handles the full OODA loop including tool execution.
  */
-import { initializeToolRegistry } from "/app/agent-kernel/src/sidecars/tool-registry.ts";
-import { registerSignalHandlers } from "/app/agent-kernel/src/sidecars/auto-mode.ts";
-import { getAllTools } from "/app/agent-kernel/src/sidecars/tool-registry.ts";
+import { spawn } from "node:child_process";
 
-const { Anthropic } = require("/app/node_modules/@anthropic-ai/sdk");
+const LEAN_AGENT = "/app/agent-kernel/src/core/lean-agent.ts";
+
+/**
+ * Strip lean-agent's debug output prefix to get only the actual content.
+ * lean-agent outputs: "🐱 Meow lean agent\nPrompt: ...\n\n✅ Completed...\n[xxx tokens]\n\n--- Output ---\n<content>"
+ * We want to extract only the content after "--- Output ---".
+ */
+function stripDebugPrefix(output: string): string {
+  const marker = "--- Output ---";
+  const idx = output.indexOf(marker);
+  if (idx !== -1) {
+    return output.slice(idx + marker.length).trim();
+  }
+  return output;
+}
 
 async function main() {
   const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   const prompt = args.join(" ") || "Hello world";
 
-  console.error(`[meow-run] Starting...`);
+  // Pass --dangerous to lean-agent so it can execute shell commands
+  const spawnArgs = ["run", "--bun", LEAN_AGENT, "--dangerous", "--", prompt];
+
+  console.error(`[meow-run] Starting lean-agent with prompt: ${prompt.slice(0, 80)}...`);
+  console.error(`[meow-run] cwd: ${process.cwd()}`);
   console.error(`[meow-run] LLM_API_KEY: ${process.env.LLM_API_KEY ? "(set)" : "(missing)"}`);
   console.error(`[meow-run] LLM_BASE_URL: ${process.env.LLM_BASE_URL}`);
-  console.error(`[meow-run] cwd: ${process.cwd()}`);
 
-  await initializeToolRegistry();
-  registerSignalHandlers();
+  const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "300000");
 
-  const tools = getAllTools();
-  const toolList = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
-
-  const systemPrompt = `You are Meow, a lean sovereign autonomous cognitive engine.
-
-You have access to tools:
-${toolList}
-
-When using tools:
-1. Parse the user's intent
-2. Use minimal necessary tools
-3. Prefer safe, read operations when possible
-4. Always confirm destructive actions
-
-Respond directly unless tool use is clearly necessary.`;
-
-  const apiKey = process.env.LLM_API_KEY || process.env.ANTHROPIC_API_KEY;
-  const baseURL = process.env.LLM_BASE_URL || "https://api.minimax.io/anthropic";
-  const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "120000");
-
-  const client = new Anthropic({ apiKey, baseURL });
-
-  let iterations = 0;
-  const maxIterations = 10;
-  let messages: { role: "user" | "assistant"; content: string }[] = [
-    { role: "user", content: prompt }
-  ];
-
-  while (iterations < maxIterations) {
-    iterations++;
-    console.error(`[meow-run] Iteration ${iterations}: sending ${messages.length} messages`);
-
-    const apiPromise = client.messages.create({
-      model: process.env.LLM_MODEL || "MiniMax-M2.7",
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: messages as any,
+  return new Promise((resolve, reject) => {
+    const proc = spawn("bun", spawnArgs, {
+      cwd: process.env.CLAUDE_CWD || process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+      shell: false,
+      detached: false,
     });
 
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(`LLM API timed out after ${timeoutMs}ms`)), timeoutMs);
+    let stdout = "";
+    let stderr = "";
+    const startTime = Date.now();
+
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
     });
 
-    let response: any;
-    try {
-      response = await Promise.race([apiPromise, timeoutPromise]);
-    } catch (e: any) {
-      console.error(`[meow-run] API error: ${e.message}`);
-      if (e.message.includes("timed out")) {
-        console.error(`[meow-run] Timed out at iteration ${iterations}, giving up`);
-        break;
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    const timer = setTimeout(() => {
+      console.error(`[meow-run] Timeout after ${timeoutMs}ms — killing process`);
+      proc.kill("SIGTERM");
+      reject(new Error(`Meow timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      const elapsed = Date.now() - startTime;
+      console.error(`[meow-run] lean-agent exited ${code} in ${elapsed}ms`);
+
+      if (code === 0 && stdout.trim()) {
+        // Strip lean-agent's debug output prefix to get only the actual content
+        const output = stripDebugPrefix(stdout.trim());
+        console.log(output);
+        resolve();
+      } else {
+        const errMsg = stderr.trim().slice(0, 500) || `lean-agent exited with code ${code}`;
+        console.error(`[meow-run] Error: ${errMsg}`);
+        reject(new Error(errMsg));
       }
-      throw e;
-    }
+    });
 
-    const text = response.content.find((c: any) => c.type === "text")?.text || "";
-    const thinking = response.content.find((c: any) => c.type === "thinking")?.thinking || "";
-
-    console.error(`[meow-run] Response (${text.length} chars)`);
-
-    if (text) {
-      console.log(text);
-      break;
-    }
-
-    if (iterations >= maxIterations) {
-      console.log(text || "(no response)");
-    }
-  }
-
-  console.error(`[meow-run] Done. ${iterations} iteration(s).`);
+    proc.on("error", (err) => {
+      clearTimeout(timer);
+      console.error(`[meow-run] Spawn error: ${err.message}`);
+      reject(err);
+    });
+  });
 }
 
 main().catch((e) => {
