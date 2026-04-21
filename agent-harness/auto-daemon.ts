@@ -16,6 +16,7 @@ const MEOW_RUN = "/app/meow-run.ts";
 const STATUS_FILE = "/app/logs/.auto-daemon.status";
 const MISSION_FILE = "/app/logs/.auto-daemon.mission";
 const PROGRESS_FILE = "/app/logs/.auto-daemon.progress";
+const OUTPUT_FILE = "/app/logs/.auto-daemon.output";
 
 // Work every 60 seconds by default (configurable via MEOW_WORK_INTERVAL_MS)
 const WORK_INTERVAL_MS = parseInt(process.env.MEOW_WORK_INTERVAL_MS || "60000");
@@ -78,6 +79,19 @@ function readProgress(): Progress | null {
 
 function writeProgress(progress: Progress): void {
   writeFileSync(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+}
+
+function appendOutput(entry: { timestamp: string; iteration: number; response: string; elapsed: number }): void {
+  const existing = existsSync(OUTPUT_FILE)
+    ? (JSON.parse(readFileSync(OUTPUT_FILE, "utf-8")) as any[]).slice(-49)
+    : [];
+  existing.push(entry);
+  writeFileSync(OUTPUT_FILE, JSON.stringify(existing, null, 2));
+}
+
+function readOutput(): { timestamp: string; iteration: number; response: string; elapsed: number }[] {
+  if (!existsSync(OUTPUT_FILE)) return [];
+  try { return JSON.parse(readFileSync(OUTPUT_FILE, "utf-8")); } catch { return []; }
 }
 
 // ============================================================================
@@ -172,6 +186,14 @@ function spawnMeowMission(mission: string, iteration: number): { promise: Promis
         progress.lastMeowResponse = new Date().toISOString();
         progress.consecutiveFails = 0;
         writeProgress(progress);
+        // Append response to output file
+        const outputEntry = {
+          timestamp: new Date().toISOString(),
+          iteration,
+          response: stdout.trim(),
+          elapsed,
+        };
+        appendOutput(outputEntry);
         resolvePromise(stdout.trim());
       } else {
         const progress = readProgress() || { iteration: 0, lastMeowCall: null, lastMeowResponse: null, lastApiActivity: null, lastError: null, consecutiveFails: 0 };
@@ -223,20 +245,46 @@ let isWorking = false;
 function startApiWatchdog(): void {
   if (apiWatchdogTimer) clearInterval(apiWatchdogTimer);
 
+function startApiWatchdog(): void {
+  if (apiWatchdogTimer) clearInterval(apiWatchdogTimer);
+
   apiWatchdogTimer = setInterval(() => {
     const progress = readProgress();
     if (!progress?.lastApiActivity) return;
 
     const elapsed = Date.now() - new Date(progress.lastApiActivity).getTime();
-    // Only warn if we're in the middle of a work cycle and API is silent
+    // We're working but no API response for 30s = hang detected
     if (isWorking && elapsed > API_TIMEOUT_MS) {
-      console.error(`[auto-daemon] API WATCHDOG: no activity for ${Math.round(elapsed / 1000)}s while working`);
-    }
-    // If not working and no activity for 2x interval, warn
-    if (!isWorking && elapsed > WORK_INTERVAL_MS * 2) {
-      console.error(`[auto-daemon] IDLE WATCHDOG: no API calls for ${Math.round(elapsed / 1000)}s`);
+      console.error(`[auto-daemon] HANG DETECTED: no API response for ${Math.round(elapsed / 1000)}s`);
+      logFallbackHang(progress.iteration, elapsed);
     }
   }, 10000);
+}
+
+/**
+ * Log a hang as a fallback event so compare-and-fix fires on it
+ */
+function logFallbackHang(iteration: number, elapsedMs: number): void {
+  const mission = readMissionFromFile() || "";
+  const hangLog = {
+    timestamp: new Date().toISOString(),
+    channelId: "auto-daemon",
+    userPrompt: mission.slice(0, 500),
+    attemptPath: "meow→claude-code",
+    meowError: `Hang detected: iteration ${iteration} made no API call after ${elapsedMs}ms`,
+    fallbackSuccess: false,
+    finalBackend: "meow",
+    finalResponseLength: 0,
+  };
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const path = join(LOGS_DIR, `${ts}_auto-daemon_hang_meow-claude-code.json`);
+  try {
+    writeFileSync(path, JSON.stringify(hangLog, null, 2));
+    console.error(`[auto-daemon] Hang logged to ${path} — compare-and-fix should trigger next poll`);
+  } catch (e: any) {
+    console.error(`[auto-daemon] Failed to log hang: ${e.message}`);
+  }
+}
 }
 
 function stopApiWatchdog(): void {
@@ -468,6 +516,20 @@ if (cmd === "progress") {
     console.log("No progress recorded");
   } else {
     console.log(JSON.stringify(p, null, 2));
+  }
+  process.exit(0);
+}
+
+if (cmd === "output") {
+  const entries = readOutput();
+  if (entries.length === 0) {
+    console.log("No output recorded");
+  } else {
+    console.log(`=== Daemon output (${entries.length} entries) ===`);
+    for (const entry of entries) {
+      console.log(`\n--- Iteration ${entry.iteration} @ ${entry.timestamp} (${entry.elapsed}ms) ---`);
+      console.log(entry.response.slice(0, 500));
+    }
   }
   process.exit(0);
 }

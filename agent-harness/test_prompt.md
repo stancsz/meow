@@ -12,4 +12,4 @@ Use research, and use browseros, 帮我挖所有高汇报潜在的：
 3. 这些成果如有POSTER，下载完整的版本；
 4. 这些成果是否有货大宗交易。
 
-最好整理好在一个文件夹给我
+最好整理好在一个文件夹给我, 传在 https://gist.github.com/stancsz/5c8af2b0164b1451adf3d2db631f914f
