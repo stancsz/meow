@@ -8,8 +8,8 @@
 // Re-export types
 export type {
   Point, BoundingBox,
-  ClickResult, TypeResult, ScreenshotResult, OCRResult,
-  HumanApproval, ToolResult,
+  ClickResult, TypeResult, ScreenshotResult,
+  ToolResult,
   A11yElement,
 } from "./computer_controller.js";
 

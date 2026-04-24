@@ -191,6 +191,17 @@ export class DesktopAgent {
 
   private async _executeStep(step: TaskStep, stepIndex: number): Promise<StepResult> {
     const startTime = Date.now();
+
+    // findAndClick is a compound action: resolve text → coordinates → click
+    if (step.tool === "findAndClick") {
+      return this._resolveFindAndClick(
+        step.args.text as string,
+        step,
+        stepIndex,
+        startTime
+      );
+    }
+
     const action: ActionContext = {
       tool: step.tool,
       target: step.args.target as string | undefined,
@@ -305,6 +316,16 @@ export class DesktopAgent {
       case "screenshot":
         return screenshot(args.path as string | undefined);
 
+      case "findAndClick": {
+        // findAndClick is handled separately in _executeStep; this branch
+        // exists to avoid "Unknown tool" errors for any edge cases
+        const text = args.text as string;
+        const match = await findElement(text, this.lastScreenState ?? undefined);
+        if (!match) throw new Error(`findAndClick: element not found: "${text}"`);
+        const target = match.element.boundingBox;
+        return click({ x: Math.round(target.x + target.width / 2), y: Math.round(target.y + target.height / 2) });
+      }
+
       default:
         throw new Error(`Unknown tool: ${tool}`);
     }
@@ -390,7 +411,8 @@ export class DesktopAgent {
       }
 
       // click on text (deferred — resolve to coordinates at execution time)
-      const clickMatch = s.match(/click\s+(?:on\s+)?(?:['"“](.+?)['"“]|(\S+?))(?:\s+button)?/i);
+      // Greedy \\S+ ensures multi-char button names like "Submit" aren't truncated
+      const clickMatch = s.match(/click\s+(?:on\s+)?(?:['"“](.+?)['"“]|(\S+))(?:\s+button)?/i);
       if (clickMatch) {
         const targetText = clickMatch[1] ?? clickMatch[2] ?? "";
         steps.push({
@@ -430,27 +452,30 @@ export class DesktopAgent {
   // findAndClick — special compound action
   // ---------------------------------------------------------------------------
 
-  private async _resolveFindAndClick(text: string): Promise<StepResult> {
-    const start = Date.now();
-    const match = await findElement(text, this.lastScreenState ?? undefined);
-
+  private async _resolveFindAndClick(
+    text: string,
+    step: TaskStep,
+    stepIndex: number,
+    startTime: number
+  ): Promise<StepResult> {
+    // Retry once with a fresh capture if element not found on first attempt
+    let match = await findElement(text, this.lastScreenState ?? undefined);
     if (!match) {
-      // Retry with a fresh screen capture
       await this._observeScreen();
-      const retry = await findElement(text, this.lastScreenState ?? undefined);
-      if (!retry) {
-        return this._makeStepResult(
-          { description: `Click: ${text}`, tool: "findAndClick", args: { text } },
-          0, start,
-          { tool: "findAndClick", target: text },
-          riskAssessment({ tool: "click", target: text }),
-          true,
-          { success: false, error: `Could not find element: "${text}" on screen` }
-        );
-      }
+      match = await findElement(text, this.lastScreenState ?? undefined);
     }
 
-    const target = match!.element.boundingBox;
+    if (!match) {
+      return this._makeStepResult(
+        step, stepIndex, startTime,
+        { tool: "findAndClick", target: text },
+        riskAssessment({ tool: "click", target: text }),
+        true,
+        { success: false, error: `Could not find element: "${text}" on screen` }
+      );
+    }
+
+    const target = match.element.boundingBox;
     const point: Point = {
       x: Math.round(target.x + target.width / 2),
       y: Math.round(target.y + target.height / 2),
@@ -460,30 +485,38 @@ export class DesktopAgent {
       tool: "click",
       target: text,
       details: JSON.stringify(point),
-      confidence: match!.score,
+      screenSummary: this.lastScreenState?.summary,
+      confidence: match.score,
     };
 
     const risk = riskAssessment(action);
     const needsApproval = this.config.hitlEnabled && requiresApproval(action);
 
     if (needsApproval && risk.level !== "LOW") {
+      console.log(`[agent]   ⏸️  Waiting for human approval...`);
       const approved = await promptHuman(action);
       if (!approved) {
         return this._makeStepResult(
-          { description: `Click: ${text}`, tool: "findAndClick", args: { text } },
-          0, start, action, risk, false,
+          step, stepIndex, startTime, action, risk, false,
           { success: false, error: "Human rejected" }
         );
       }
+      console.log(`[agent]   ✅ Human approved — proceeding`);
     }
 
     const result = await click(point);
-    const after = await this._observeScreen();
+    await this._sleep(300);
+    const afterState = await this._observeScreen();
+    let diff: string[] = [];
+    if (this.config.verifyAfterEachStep && afterState && this.lastScreenState) {
+      const diffResult = await compareScreens(this.lastScreenState, afterState);
+      diff = [...diffResult.added, ...diffResult.removed];
+      console.log(`[agent]   🔍 Screen diff: ${diff.length > 0 ? diff.slice(0, 3).join(", ") : "no visible change"}`);
+    }
 
     return this._makeStepResult(
-      { description: `Click: ${text}`, tool: "findAndClick", args: { text } },
-      0, start, action, risk, true,
-      { ...result, after }
+      step, stepIndex, startTime, action, risk, true,
+      { ...(result as object), after: afterState, screenDiff: diff }
     );
   }
 

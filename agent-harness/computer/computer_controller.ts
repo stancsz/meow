@@ -555,7 +555,12 @@ export async function closeWindow(appName?: string): Promise<ToolResult> {
 }
 
 /**
- * drag(from, to) — drag from one point to another (mouse down → move → mouse up).
+ * drag(from, to) — drag from one point to another (mouse down -> move -> mouse up).
+ *
+ * Platform implementation:
+ *   - darwin:  cliclick (preferred) -> Python/PyAutoGUI fallback
+ *   - linux:   xdotool mousedown/mousemove/mouseup sequence (stepwise)
+ *   - win32:   PowerShell SendKeys / System.Windows.Forms Cursor API
  */
 export async function drag(from: Point, to: Point): Promise<ToolResult> {
   if (SIMULATED) {
@@ -564,16 +569,43 @@ export async function drag(from: Point, to: Point): Promise<ToolResult> {
   }
   try {
     if (PLATFORM === "darwin") {
-      await shell(`osascript -e 'tell application "System Events" to drag (make new property list file)' 2>/dev/null || true`);
-      // Use applescript mouse sequence
-      await shell(`osascript -e 'tell application "System Events" to set the position of the first mouse to {${from.x}, ${from.y}}'`);
-      await safeShell("sleep 0.1");
-      await shell(`osascript -e 'tell application "System Events" to click at {${from.x}, ${from.y}}'`);
-      await safeShell(`osascript -e 'tell application "System Events" to set the position of the first mouse to {${to.x}, ${to.y}}'`);
+      // Prefer cliclick if available (fast, reliable CLI mouse tool)
+      const hasCliclick = (await safeShell('which cliclick', 3000)).trim();
+      if (hasCliclick) {
+        // dc: double-click to establish drag anchor, dd: mousedown, dm: move, du: mouseup
+        await shell(`cliclick dc:${from.x},${from.y}`);
+        await shell(`cliclick dd:${from.x},${from.y} dm:${to.x},${to.y} du:${to.x},${to.y}`);
+      } else {
+        // Fallback: Python + PyAutoGUI
+        const pyScript = [
+          `import pyautogui`,
+          `pyautogui.moveTo(${from.x},${from.y})`,
+          `pyautogui.drag(${to.x - from.x},${to.y - from.y},duration=0.5)`,
+        ].join('; ');
+        await shell(`python3 -c "${pyScript.replace(/"/g, '\\"')}"`);
+      }
     } else if (PLATFORM === "linux") {
-      await shell(`xdotool mousemove ${from.x} ${from.y} mousedown 1 mousemove ${to.x} ${to.y} mouseup 1`);
+      // Stepwise movement for reliability (avoids mouse teleportation)
+      const steps = Math.max(5, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 50));
+      const dx = (to.x - from.x) / steps;
+      const dy = (to.y - from.y) / steps;
+      await shell(`xdotool mousemove ${Math.round(from.x)} ${Math.round(from.y)} mousedown 1`);
+      for (let i = 1; i <= steps; i++) {
+        await shell(`xdotool mousemove ${Math.round(from.x + dx * i)} ${Math.round(from.y + dy * i)}`);
+        await safeShell('sleep 0.02');
+      }
+      await shell('xdotool mouseup 1');
     } else {
-      await shell(`powershell -c "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = @{X=${from.x};Y=${from.y}}; [System.Windows.Forms.Mouse]::Down(); Start-Sleep -Millis 500; [System.Windows.Forms.Cursor]::Position = @{X=${to.x};Y=${to.y}}; [System.Windows.Forms.Mouse]::Up()"`);
+      const psScript = [
+        `Add-Type -AssemblyName System.Windows.Forms`,
+        `[System.Windows.Forms.Cursor]::Position = @{X=${from.x};Y=${from.y}}`,
+        `[System.Windows.Forms.Mouse]::Down()`,
+        `Start-Sleep -Milliseconds 200`,
+        `[System.Windows.Forms.Cursor]::Position = @{X=${to.x};Y=${to.y}}`,
+        `Start-Sleep -Milliseconds 200`,
+        `[System.Windows.Forms.Mouse]::Up()`,
+      ].join('; ');
+      await shell(`powershell -c "${psScript}"`);
     }
     return { success: true, content: `Dragged from ${JSON.stringify(from)} to ${JSON.stringify(to)}` };
   } catch (e: any) {

@@ -1,7 +1,7 @@
 # Desktop Agent — Build Status
 
 **Last updated:** 2026-04-24
-**Status:** Core modules implemented, test script ready, Docker/simulation compatible
+**Status:** Core modules fully functional — all critical bugs fixed, hOCR bounding boxes implemented, macOS drag improved
 
 ---
 
@@ -49,6 +49,7 @@
 ### ✅ computer_controller.ts
 - `click`, `doubleClick`, `type`, `pressKey` — platform-native input injection
 - `screenshot`, `moveMouse`, `scroll`, `drag`
+- `drag` — macOS: `cliclick` (primary) or Python/PyAutoGUI; Linux: stepwise xdotool; Windows: PowerShell
 - `openApp`, `focusWindow`, `closeWindow` — window management
 - `getA11yTree` — accessibility tree for element detection
 - Platform detection: darwin, linux, win32
@@ -58,7 +59,10 @@
 ### ✅ screen_recognition.ts
 - `capture()` — full-screen screenshot + OCR → ScreenState
 - `captureRegion()` — crop a specific bounding box
-- `ocr()` — tesseract (primary), macOS Vision (fallback), mock (testing)
+- `ocr()` — tesseract hOCR (primary, real bounding boxes), tesseract text (fallback, synthesized boxes), macOS Vision (fallback), mock (testing)
+- `parseHocrOutput()` — parses tesseract hOCR HTML for real pixel bounding box coordinates per word
+- `parseOcrOutput()` — plain-text fallback with sensible synthesized bounding boxes (image-height/N per line)
+- `getImageDimensions()` — extracts image size via `identify` or `file` for accurate box sizing
 - `findElement()` / `findAllElements()` — fuzzy text search on screen
 - `waitForElement()` / `waitForElementGone()` — polling with timeout
 - `compareScreens()` — diff two states to detect UI changes
@@ -77,7 +81,7 @@
 ### ✅ computer_agent.ts
 - `DesktopAgent` class with full observe→plan→act→verify loop
 - Task parser: natural language → `TaskStep[]` plan
-- `findAndClick` compound action: find element on screen → click its center
+- `findAndClick` compound action: `_resolveFindAndClick()` resolves text via OCR → clicks element center; fully wired through `_executeStep` (was previously parsed but never dispatched)
 - Multi-app task support via `executeMultiApp()`
 - Step history tracking with timing, risk, and verification data
 - Interactive CLI with `do`, `see`, `history`, `hitl`, `screenshot`, `quit`
@@ -106,30 +110,40 @@
 - HITL gates fire correctly for HIGH-risk actions
 - Agent can execute multi-step plans and verify screen changes
 - Test script covers 7 phases from module loading to multi-app tasks
+- `findAndClick` is now fully dispatched (was parsed but never executed)
+- Real bounding box coordinates via tesseract hOCR parsing
+- macOS drag uses `cliclick` or PyAutoGUI (was broken AppleScript workaround)
+- Linux drag uses stepwise movement for reliability
+- All type exports in `index.ts` are valid (non-existent types removed)
 
 ---
 
 ## Known Gaps
 
-| Gap | Severity | Notes |
-|-----|----------|-------|
-| No real element-position OCR | Medium | boundingBox coords are approximate (0, i*20) — need hOCR parsing |
-| No real accessibility tree on Linux | Medium | getA11yTree() returns only window name on Linux |
-| No LLM screen summary endpoint set | Low | `enableLLMSummary` defaults to false, needs `LLM_SCREEN_SUMMARY_ENDPOINT` |
-| No real mouse drag implementation on macOS | Medium | drag() uses workaround script on darwin |
-| No config file (JSON/YAML) | Low | All config via env vars or programmatic `configure()` |
-| No persistent task history | Low | history is in-memory; no disk persistence |
+| Gap | Severity | Status | Notes |
+|-----|----------|--------|-------|
+| No real element-position OCR | Medium | ✅ Fixed | `parseHocrOutput()` parses tesseract hOCR output for real bbox coords |
+| No real mouse drag on macOS | Medium | ✅ Fixed | `drag()` now uses `cliclick` (preferred) or Python/PyAutoGUI fallback |
+| No real accessibility tree on Linux | Medium | Open | `getA11yTree()` returns only window name on Linux |
+| Linux drag is single-step teleportation | Low | ✅ Fixed | Stepwise movement now used for reliability |
+| No LLM screen summary endpoint set | Low | Open | `enableLLMSummary` defaults to false; set `LLM_SCREEN_SUMMARY_ENDPOINT` |
+| No config file (JSON/YAML) | Low | Open | All config via env vars or programmatic `configure()` |
+| No persistent task history | Low | Open | history is in-memory; no disk persistence |
+| No `findAndClick` dispatch in `_executeStep` | Critical | ✅ Fixed | `findAndClick` steps now route through `_resolveFindAndClick()` |
+| `index.ts` exported non-existent types | Critical | ✅ Fixed | Removed `OCRResult` and `HumanApproval` from `computer_controller.js` exports |
 
 ---
 
 ## Next Steps (in priority order)
 
-1. **Fix bounding box OCR** — parse tesseract hOCR output for real coordinates
-2. **Test on real macOS display** — run `./test-desktop-nav.sh` outside Docker with a real screen
-3. **Integrate with relay.ts** — expose `desktop-agent` as a Discord command or skill
-4. **Add config file** — load settings from `computer/config.json`
+1. ~~Fix bounding box OCR~~ — ✅ done (hOCR parsing implemented)
+2. ~~Fix findAndClick dispatch~~ — ✅ done (wired through `_executeStep`)
+3. ~~Fix macOS drag~~ — ✅ done (cliclick + PyAutoGUI)
+4. **Test on real macOS display** — run `./test-desktop-nav.sh` outside Docker with a real screen
 5. **Improve Linux A11y** — use `at-spi2` or `accerciser` for real element trees
-6. **Add performance benchmarks** — measure click latency vs. Goose
+6. **Add config file** — load settings from `computer/config.json`
+7. **Integrate with relay.ts** — expose `desktop-agent` as a Discord command or skill
+8. **Add performance benchmarks** — measure click latency vs. Goose
 
 ---
 

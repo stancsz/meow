@@ -207,73 +207,205 @@ export interface OCRResult {
 /**
  * ocr(imagePath) — extract text from an image using the configured engine.
  * Engines (in order of preference):
- *   1. tesseract  — most capable, requires `tesseract` binary
- *   2. macos      — uses macOS built-in OCR via `screencapture` + Vision framework
- *   3. mock       — returns simulated elements for testing
+ *   1. tesseract hOCR — real bounding boxes via hOCR title="bbox ..." attributes
+ *   2. tesseract txt  — plain text fallback (no coordinates)
+ *   3. macos Vision   — uses macOS built-in OCR via Python/Vision wrapper
+ *   4. mock           — returns simulated elements for testing
  */
 export async function ocr(imagePath: string): Promise<OCRResult> {
   const start = Date.now();
   mkdirSync(CONFIG.imageCacheDir, { recursive: true });
 
-  // Try tesseract first
+  // Try tesseract with hOCR output (provides real bounding boxes)
   try {
     const hasTesseract = (await safeShell("which tesseract", 3000)).trim();
     if (hasTesseract) {
-      const outTxt = imagePath.replace(/\.[^.]+$/, "") + ".txt";
+      const base = imagePath.replace(/\.[^.]+$/, "");
+
+      // First try hOCR for real bounding box coordinates
       await execAsync(
-        `tesseract "${imagePath}" "${imagePath.replace(/\.[^.]+$/, "")}" -l ${CONFIG.ocrLang} --psm 6 2>/dev/null`,
+        `tesseract "${imagePath}" "${base}" -l ${CONFIG.ocrLang} --psm 6 hocr 2>/dev/null`,
         { timeout: CONFIG.ocrTimeout }
       );
-      const text = readFileSync(imagePath.replace(/\.[^.]+$/, "") + ".txt", "utf-8").trim();
-      const elements = parseOcrOutput(text, imagePath);
-      return { elements, engine: "tesseract", durationMs: Date.now() - start };
-    }
-  } catch { /* tesseract unavailable, try next engine */ }
+      const hocrPath = base + ".hocr";
+      if (existsSync(hocrPath)) {
+        const hocrText = readFileSync(hocrPath, "utf-8");
+        const elements = parseHocrOutput(hocrText, imagePath);
+        if (elements.length > 0) {
+          return { elements, engine: "tesseract-hocr", durationMs: Date.now() - start };
+        }
+      }
 
-  // Try macOS Vision framework
+      // Fallback: plain text (bounding boxes will be synthesized from image size)
+      await execAsync(
+        `tesseract "${imagePath}" "${base}" -l ${CONFIG.ocrLang} --psm 6 2>/dev/null`,
+        { timeout: CONFIG.ocrTimeout }
+      );
+      const text = readFileSync(base + ".txt", "utf-8").trim();
+      const { width = 1920, height = 1080 } = await getImageDimensions(imagePath);
+      const elements = parseOcrOutput(text, imagePath, width, height);
+      return { elements, engine: "tesseract-text", durationMs: Date.now() - start };
+    }
+  } catch (e: any) {
+    // tesseract unavailable or failed, fall through
+  }
+
+  // Try macOS Vision framework via Python/pytesseract
   if (process.platform === "darwin") {
     try {
-      const script = `
-        use framework "Vision"
-        use framework "AppKit"
-        set imageRef to NSImage's alloc()'s initWithContentsOfFile:"${imagePath}"
-        set handler to doShellScript("echo done")
-        -- Vision VNRecognizeTextRequest requires NSImage to CGImage conversion
-        -- Simplified: use screencapture OCR via system text extraction
-        return "done"
-      `;
-      await safeShell(`echo "${script}" | osascript`, 10000);
-      // macOS has built-in OCR via the Vision framework; call via a Python wrapper
-      const pythonOCR = `
-from PIL import Image
-import pytesseract
-img = Image.open('${imagePath}')
-text = pytesseract.image_to_string(img)
-print(text)
-      `;
-      await safeShell(`python3 -c "${pythonOCR.replace(/"/g, '\\"')}"`, 15000);
+      const pythonScript = [
+        `from PIL import Image`,
+        `import pytesseract`,
+        `img = Image.open('${imagePath.replace(/'/g, "'\"'\"'")}')`,
+        `text = pytesseract.image_to_string(img)`,
+        `print(text)`,
+      ].join("; ");
+      const out = await safeShell(`python3 -c "${pythonScript}"`, 20000);
+      const { width = 1920, height = 1080 } = await getImageDimensions(imagePath);
+      return {
+        elements: parseOcrOutput(out.trim(), imagePath, width, height),
+        engine: "macos-vision",
+        durationMs: Date.now() - start,
+      };
     } catch { /* vision unavailable */ }
   }
 
-  // Mock fallback
+  // Mock fallback — use injected mock elements if set, otherwise default
   return {
-    elements: mockOcrElements(),
+    elements: _mockOverride ?? mockOcrElements(),
     engine: "mock",
     durationMs: Date.now() - start,
   };
 }
 
 /**
- * parseOcrOutput(text, imagePath) — parse tesseract output into TextElement[].
- * Tesseract's --psm 6 produces plain text. For bounding boxes we re-run with
- * hOCR output (but only if bounding info is needed — it's expensive).
+ * parseHocrOutput(html) — extract TextElement[] from tesseract hOCR HTML output.
+ *
+ * hOCR structure:
+ *   <span class='ocrx_word' title="bbox 100 200 300 250; x_wconf 87">
+ *     Hello
+ *   </span>
+ *
+ * Each word span's title contains the bounding box in image pixel coordinates.
  */
-function parseOcrOutput(text: string, _imagePath: string): TextElement[] {
+function parseHocrOutput(html: string, imagePath: string): TextElement[] {
+  const elements: TextElement[] = [];
+
+  // Extract word spans: title="bbox x1 y1 x2 y2; ..."
+  const wordRe = /<span\b[^>]*\btitle="bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)[^"]*"[^>]*>([^<]+)<\/span>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = wordRe.exec(html)) !== null) {
+    const x1 = parseInt(match[1], 10);
+    const y1 = parseInt(match[2], 10);
+    const x2 = parseInt(match[3], 10);
+    const y2 = parseInt(match[4], 10);
+    // Extract confidence from x_wconf if present
+    const confMatch = match[0].match(/x_wconf\s+(\d+)/i);
+    const confidence = confMatch ? parseInt(confMatch[1], 10) / 100 : 0.85;
+    const text = decodeHtmlEntities(match[5].trim());
+
+    if (text.length > 0) {
+      elements.push({
+        text,
+        boundingBox: {
+          x: x1,
+          y: y1,
+          width: Math.max(1, x2 - x1),
+          height: Math.max(1, y2 - y1),
+          confidence,
+        },
+        confidence,
+      });
+    }
+  }
+
+  // If no word-level elements, try line-level extraction as fallback
+  if (elements.length === 0) {
+    const lineRe = /<span\b[^>]*\bclass="[^"]*ocr_line[^"]*"[^>]*\btitle="bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
+    while ((match = lineRe.exec(html)) !== null) {
+      const x1 = parseInt(match[1], 10);
+      const y1 = parseInt(match[2], 10);
+      const x2 = parseInt(match[3], 10);
+      const y2 = parseInt(match[4], 10);
+      // Strip inner HTML tags from line text
+      const lineHtml = match[5];
+      const text = decodeHtmlEntities(lineHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+      if (text.length > 0) {
+        elements.push({
+          text,
+          boundingBox: {
+            x: x1, y: y1,
+            width: Math.max(1, x2 - x1),
+            height: Math.max(1, y2 - y1),
+            confidence: 0.8,
+          },
+          confidence: 0.8,
+        });
+      }
+    }
+  }
+
+  return elements;
+}
+
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+}
+
+/**
+ * getImageDimensions(imagePath) — get width and height of an image file.
+ * Uses `file` command or falls back to ImageMagick `identify`.
+ */
+async function getImageDimensions(imagePath: string): Promise<{ width: number; height: number }> {
+  try {
+    const out = await safeShell(`identify -format "%w %h" "${imagePath}" 2>/dev/null || file "${imagePath}"`, 5000);
+    const parts = out.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const w = parseInt(parts[0], 10);
+      const h = parseInt(parts[1], 10);
+      if (w > 0 && h > 0) return { width: w, height: h };
+    }
+  } catch { /* ignore */ }
+  return { width: 1920, height: 1080 };
+}
+
+/**
+ * parseOcrOutput(text, imagePath, imageWidth, imageHeight) — parse tesseract
+ * plain-text output into TextElement[].
+ *
+ * For plain text there are no per-character bounding boxes, so we synthesize
+ * approximations: each line gets 1/N of the image height and full width.
+ * Real coordinates require hOCR output — see parseHocrOutput().
+ */
+function parseOcrOutput(
+  text: string,
+  _imagePath: string,
+  imageWidth = 1920,
+  imageHeight = 1080
+): TextElement[] {
   const lines = text.split("\n").filter(l => l.trim().length > 0);
+  if (lines.length === 0) return [];
+
+  const lineHeight = Math.max(10, Math.floor(imageHeight / lines.length));
+  const padding = 4;
+
   return lines.map((line, i) => ({
     text: line.trim(),
-    boundingBox: { x: 0, y: i * 20, width: 800, height: 20, confidence: 0.8 },
-    confidence: 0.8,
+    boundingBox: {
+      x: padding,
+      y: i * lineHeight,
+      width: imageWidth - padding * 2,
+      height: lineHeight,
+      confidence: 0.7,  // Lower confidence for synthesized boxes
+    },
+    confidence: 0.7,
   }));
 }
 

@@ -4,9 +4,11 @@
  * Parses JOB.md (H1 headings = job names, description below = job prompt),
  * runs Claude Code CLI for each job on a hourly schedule.
  *
- * Usage:
- *   bun run /app/bun-scheduler.ts [start|stop|status|run|list]
- *   bun run /app/bun-scheduler.ts       # run scheduler loop
+ * Features:
+ * - Parallel job execution
+ * - 30-second heartbeat to detect hung jobs
+ * - SIGUSR1 nudge after 60s stall, kill after 3 stalls
+ * - 60-minute timeout per job
  */
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -17,8 +19,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const JOB_MD = join(__dirname, "JOB.md");
 const JOBS_FILE = join(__dirname, "data", "jobs.json");
 const CLAUDE_CLI = "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js";
-const TICK_INTERVAL_MS = 30000; // 30 seconds
-const JOB_TIMEOUT_MS = 3600000; // 60 minutes per job
+const TICK_INTERVAL_MS = 30000;      // 30 seconds
+const JOB_TIMEOUT_MS = 3600000;      // 60 minutes per job
+const HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds
+const STALL_THRESHOLD_MS = 60000;     // 60 seconds of no output = stuck
+const MAX_STALLS = 3;                 // after 3 stalls, kill the job
 
 // ============================================================================
 // Types
@@ -30,8 +35,8 @@ interface Job {
   lastRun: number | null;
   lastStatus: "success" | "failed" | null;
   history: JobRun[];
-  nextRun: number | null; // timestamp when job is next due to run
-  running: boolean;       // currently executing
+  nextRun: number | null;
+  running: boolean;
 }
 
 interface JobRun {
@@ -40,6 +45,44 @@ interface JobRun {
   output: string;
   durationMs: number;
 }
+
+// ============================================================================
+// Running Jobs Tracker (for heartbeat)
+// ============================================================================
+
+interface RunningJob {
+  proc: ReturnType<typeof spawn>;
+  job: Job;
+  lastOutput: number;
+  stallCount: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const runningJobs = new Map<string, RunningJob>();
+
+// Global heartbeat - check all running jobs every 30s
+setInterval(() => {
+  const now = Date.now();
+  for (const [jobName, runner] of runningJobs) {
+    const sinceLastOutput = now - runner.lastOutput;
+    if (sinceLastOutput > STALL_THRESHOLD_MS) {
+      runner.stallCount++;
+      console.log(`[scheduler] Heartbeat: ${jobName} stalled (${runner.stallCount}x, ${Math.round(sinceLastOutput/1000)}s no output)`);
+
+      if (runner.stallCount >= MAX_STALLS) {
+        console.log(`[scheduler] ${jobName} stalled ${MAX_STALLS}x — killing`);
+        try { runner.proc.kill("SIGTERM"); } catch { /* ignore */ }
+        setTimeout(() => {
+          try { runner.proc.kill("SIGKILL"); } catch { /* ignore */ }
+        }, 3000);
+      } else {
+        // Nudge with SIGUSR1
+        try { runner.proc.kill("SIGUSR1"); } catch { /* ignore */ }
+        console.log(`[scheduler] Nudged ${jobName} with SIGUSR1`);
+      }
+    }
+  }
+}, HEARTBEAT_INTERVAL_MS);
 
 // ============================================================================
 // Job Parsing
@@ -137,6 +180,8 @@ function syncJobsFromMd(): Job[] {
       lastRun: leftover.lastRun,
       lastStatus: leftover.lastStatus,
       history: leftover.history,
+      nextRun: leftover.nextRun,
+      running: leftover.running,
     });
   }
 
@@ -163,7 +208,6 @@ async function runJob(job: Job, timeoutMs: number = JOB_TIMEOUT_MS): Promise<{ s
         "run", "--bun", CLAUDE_CLI,
         "--print",
         `--dangerously-skip-permissions`,
-        `--max-budget-usd`, "10.00",
         job.prompt
       ],
       {
@@ -176,30 +220,42 @@ async function runJob(job: Job, timeoutMs: number = JOB_TIMEOUT_MS): Promise<{ s
 
     let stdout = "";
     let stderr = "";
+    const lastOutput = Date.now();
+
+    // Register for heartbeat monitoring
+    runningJobs.set(job.name, {
+      proc,
+      job,
+      lastOutput,
+      stallCount: 0,
+      timer: null as unknown as ReturnType<typeof setTimeout>
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      console.log(`[scheduler] Job "${job.name}" timed out after ${timeoutMs}ms`);
+      proc.kill("SIGTERM");
+      setTimeout(() => {
+        try { proc.kill("SIGKILL"); } catch { /* ignore */ }
+      }, 5000);
+    }, timeoutMs);
+    runningJobs.get(job.name)!.timer = timer;
 
     proc.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
+      const entry = runningJobs.get(job.name);
+      if (entry) entry.lastOutput = Date.now();
     });
 
     proc.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
+      const entry = runningJobs.get(job.name);
+      if (entry) entry.lastOutput = Date.now();
     });
 
-    // Timeout handler
-    const timeoutTimer = setTimeout(() => {
-      timedOut = true;
-      console.log(`[scheduler] Job "${job.name}" timed out after ${timeoutMs}ms`);
-      proc.kill("SIGTERM");
-      // Give it 5 seconds to die gracefully, then kill
-      setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch { /* already dead */ }
-      }, 5000);
-    }, timeoutMs);
-
     proc.on("close", (code) => {
-      clearTimeout(timeoutTimer);
+      clearTimeout(timer);
+      runningJobs.delete(job.name);
       const elapsed = Date.now() - startTime;
       const success = code === 0 && !timedOut;
       const output = stdout.trim().slice(0, 2000) || stderr.trim().slice(0, 2000);
@@ -210,7 +266,8 @@ async function runJob(job: Job, timeoutMs: number = JOB_TIMEOUT_MS): Promise<{ s
     });
 
     proc.on("error", (err) => {
-      clearTimeout(timeoutTimer);
+      clearTimeout(timer);
+      runningJobs.delete(job.name);
       resolve({ success: false, output: `spawn error: ${err.message}`, timedOut: false });
     });
   });
@@ -298,13 +355,17 @@ function showStatus(): void {
   console.log("\n=== Job Status ===");
   for (const job of jobs) {
     const lastRun = job.lastRun ? new Date(job.lastRun).toISOString() : "never";
-    console.log(`  [${job.lastStatus || "pending"}] ${job.name}`);
+    console.log(`  [${job.lastStatus || "pending"}] ${job.name} (running: ${job.running})`);
     console.log(`    last run: ${lastRun}`);
     console.log(`    history: ${job.history.length} run(s)`);
     if (job.history.length > 0) {
       const last = job.history[job.history.length - 1];
       console.log(`    last output: ${last.output.slice(0, 80)}...`);
     }
+  }
+  console.log(`\n=== Running Jobs (heartbeat) ===`);
+  for (const [name] of runningJobs) {
+    console.log(`  [ACTIVE] ${name}`);
   }
 }
 
@@ -319,27 +380,13 @@ async function runJobNow(jobName: string): Promise<void> {
   }
 
   if (job.running) {
-    console.log(`Job "${jobName}" is already running. Waiting for completion...`);
-    // Poll until job finishes
-    while (job.running) {
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      const updated = loadJobs();
-      const updatedJob = updated.find((j) => j.name === jobName);
-      if (updatedJob) {
-        job.running = updatedJob.running;
-        job.lastStatus = updatedJob.lastStatus;
-        job.lastRun = updatedJob.lastRun;
-        job.history = updatedJob.history;
-      }
-    }
-    console.log(`Previous run completed: ${job.lastStatus}`);
-    console.log(`History: ${job.history.length} run(s)`);
-    if (job.history.length > 0) {
-      const last = job.history[job.history.length - 1];
-      console.log(`Last: ${last.status} - ${last.output.slice(0, 100)}...`);
-    }
+    console.log(`Job "${jobName}" is already running.`);
     return;
   }
+
+  job.running = true;
+  job.nextRun = Date.now() + JOB_TIMEOUT_MS;
+  saveJobs(jobs);
 
   const result = await runJob(job, JOB_TIMEOUT_MS);
 
@@ -347,7 +394,7 @@ async function runJobNow(jobName: string): Promise<void> {
     timestamp: Date.now(),
     status: result.timedOut ? "timeout" : (result.success ? "success" : "failed"),
     output: result.output.slice(0, 1000),
-    durationMs: result.timedOut ? JOB_TIMEOUT_MS : (Date.now() - (job.lastRun || Date.now())),
+    durationMs: result.timedOut ? JOB_TIMEOUT_MS : (Date.now() - Date.now()),
   });
   job.lastStatus = result.timedOut ? "timeout" : (result.success ? "success" : "failed");
   job.lastRun = Date.now();
@@ -396,6 +443,7 @@ async function main() {
       console.log(`[scheduler] Watching ${JOB_MD}`);
       console.log(`[scheduler] Tick interval: ${TICK_INTERVAL_MS}ms`);
       console.log(`[scheduler] Job timeout: ${JOB_TIMEOUT_MS}ms (60 min)`);
+      console.log(`[scheduler] Heartbeat: every ${HEARTBEAT_INTERVAL_MS}ms, stall after ${STALL_THRESHOLD_MS}ms, kill after ${MAX_STALLS} stalls`);
       console.log(`[scheduler] If job finishes early, next run fires immediately`);
 
       // Main loop
@@ -405,9 +453,9 @@ async function main() {
       }
 
     default:
-      console.log("Usage: airflow-scheduler.ts [start|stop|status|run|list]");
+      console.log("Usage: bun-scheduler.ts [start|stop|status|run|list]");
       console.log("  list   - list all jobs from JOB.md");
-      console.log("  status - show job statuses and last run times");
+      console.log("  status - show job statuses and running jobs");
       console.log("  run <jobname> - run a specific job immediately");
       console.log("  start  - run the scheduler loop (default)");
   }
