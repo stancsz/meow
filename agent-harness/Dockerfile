@@ -67,10 +67,7 @@ RUN echo ".env" > .gitignore && \
 # Create logs directory for fallback logging
 RUN mkdir -p /app/logs && chown -R appuser:appgroup /app/logs
 
-# Build relay for production
-RUN bun build src/relay.ts --outdir=dist --format=esm --target=node
-
-# Expose for any future HTTP services
+# Running via bun run directly to support runtime-mounted volumes
 EXPOSE 3000
 
 # Entrypoint handles gh auth, then runs relay

@@ -107,20 +107,23 @@ class Orchestrator {
 
     // Check for latest epoch promise
     if (existsSync(evolveEpochDir)) {
+      // Directories are "1", "2", "10", "11" not "epoch-1", "epoch-2" etc
       const epochs = (readdirSync(evolveEpochDir) as string[])
-        .filter(f => f.startsWith("epoch-"))
-        .sort()
-        .reverse();
+        .filter(f => /^\d+$/.test(f))  // Only numeric directory names
+        .map(f => parseInt(f, 10))
+        .filter(n => !isNaN(n) && n > 0)
+        .sort((a, b) => b - a);  // Descending numeric sort
 
       if (epochs.length > 0) {
-        const latestEpoch = epochs[0];
+        const latestEpochNum = epochs[0];
+        const latestEpoch = String(latestEpochNum);
         const promiseFile = join(evolveEpochDir, latestEpoch, "promise.md");
 
         // Check for validation file for this epoch
         let validationStatus = "NOT_VALIDATED";
         if (existsSync(validationDir)) {
           const validations = (readdirSync(validationDir) as string[])
-            .filter(f => f.startsWith(latestEpoch.replace("epoch-", "")));
+            .filter(f => f.startsWith(`epoch-${latestEpochNum}`));
 
           if (validations.length > 0) {
             const latestValidation = validations.sort().reverse()[0];
@@ -207,6 +210,9 @@ class Orchestrator {
     this.saveState();
   }
 
+  // Track consecutive planning cycles with no decisions
+  private consecutiveNoDecisionCount = 0;
+
   /**
    * Commander Agent - decides what to work on next
    */
@@ -225,7 +231,11 @@ Recent Learnings: ${recentLearnings}`;
 
     const skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
 
-    const prompt = `You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with STRICT EPOCH GATES.
+    const commanderSystemPrompt = `You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with STRICT EPOCH GATES.
+
+## Your Authority
+You have SOLE AUTHORITY to decide which jobs run and in what priority.
+You MUST respond with a JSON decision object - nothing else.
 
 ## EPOCH GATE STATUS
 ${epochStatus}
@@ -252,15 +262,66 @@ ${skillContext}
 Max 2 concurrent jobs.`;
 
     try {
-      const result = await runLeanAgent(prompt, { maxIterations: 1 });
-      const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+      const result = await runLeanAgent(prompt, {
+        maxIterations: 5,
+        systemPrompt: commanderSystemPrompt,
+        dangerous: true
+      });
+      console.log(`[orchestrator] Commander response (${result.content.length} chars): ${result.content.slice(0, 500)}`);
+      // Strip markdown code fences if present
+      const strippedContent = result.content.replace(/^```json\s*/m, "").replace(/\s*```$/m, "").trim();
+      const jsonMatch = strippedContent.match(/\{[\s\S]*\}/);
 
       if (jsonMatch) {
         const plan = JSON.parse(jsonMatch[0]);
         console.log(`[orchestrator] Commander reasoning: ${plan.reasoning || "No reasoning provided"}`);
 
+        // Extract decisions - support multiple formats
+        let decisions = plan.decisions || plan.actions || plan.recommendations || [];
+
+        // Handle nested decision format like { decision: { action: "START_EVOLVE", jobs: [...] } }
+        if (!decisions || decisions.length === 0) {
+          if (plan.decision?.action && plan.decision?.jobs) {
+            decisions = plan.decision.jobs.map((j: any) => ({
+              type: plan.decision.action.includes("RUN") || plan.decision.action.includes("START") ? "RUN" : "IDLE",
+              job: j.name || j
+            }));
+            console.log(`[orchestrator] Detected decision.action format: ${plan.decision.action}`);
+          }
+        }
+
+        // Fallback: if no structured decisions, scan raw content for job directives
+        if (!decisions || decisions.length === 0) {
+          const content = strippedContent;
+          // Scan for patterns like "RUN: DOGFOOD", "EVOLVE should run", "Start EVOLVE", "DOGFOOD", "EVOLVE"
+          const runPatterns = [
+            /run[s]?\s+(EVOLVE|DOGFOOD|DESIGN)/gi,
+            /start\s+(EVOLVE|DOGFOOD|DESIGN)/gi,
+            /(EVOLVE|DOGFOOD|DESIGN)\s+should\s+run/gi,
+            /(EVOLVE|DOGFOOD|DESIGN)\s+(next|now|now!)/gi,
+          ];
+          const idlePatterns = [
+            /keep\s+(EVOLVE|DOGFOOD|DESIGN)\s+idle/gi,
+            /(EVOLVE|DOGFOOD|DESIGN)\s+should\s+(wait|stay|idle)/gi,
+          ];
+
+          const runMatches = new Set<string>();
+          for (const pattern of runPatterns) {
+            const matches = content.matchAll(pattern);
+            for (const match of matches) {
+              const job = match[1]?.toUpperCase();
+              if (job) runMatches.add(job);
+            }
+          }
+
+          if (runMatches.size > 0) {
+            decisions = Array.from(runMatches).map(job => ({ type: "RUN", job }));
+            console.log(`[orchestrator] Fallback: detected RUN for ${Array.from(runMatches).join(", ")}`);
+          }
+        }
+
         // First, mark all jobs not in the RUN list as idle
-        const runJobs = new Set((plan.decisions || []).filter((d: any) => d.type === "RUN").map((d: any) => d.job));
+        const runJobs = new Set((decisions).filter((d: any) => d.type === "RUN").map((d: any) => d.job));
 
         for (const job of this.jobs) {
           const isInRunList = runJobs.has(job.name) ||
@@ -280,8 +341,12 @@ Max 2 concurrent jobs.`;
         }
 
         // Execute RUN decisions
-        console.log(`[orchestrator] Commander decisions: ${JSON.stringify(plan.decisions)}`);
-        for (const action of plan.decisions || []) {
+        if (decisions.length === 0) {
+          console.log(`[orchestrator] No RUN decisions found in Commander response - all jobs stay idle`);
+          console.log(`[orchestrator] If this persists, check if Commander is making decisions or just reporting status`);
+        }
+        console.log(`[orchestrator] Commander decisions: ${JSON.stringify(decisions)}`);
+        for (const action of decisions) {
           if (action.type === "RUN") {
             // Fuzzy match: exact, starts with, or contains
             const job = this.jobs.find(j =>
@@ -297,6 +362,21 @@ Max 2 concurrent jobs.`;
               console.log(`[orchestrator] Job not found: "${action.job}"`);
             }
           }
+        }
+
+        // Track no-decision cycles
+        if (decisions.length === 0) {
+          this.consecutiveNoDecisionCount++;
+          if (this.consecutiveNoDecisionCount >= 3) {
+            console.log(`[orchestrator] ⚠️ ${this.consecutiveNoDecisionCount} cycles with no decisions - forcing DOGFOOD run`);
+            const dogfood = this.jobs.find(j => j.name.includes("DOGFOOD") && j.status !== "running");
+            if (dogfood && this.workers.size < 2) {
+              console.log(`[orchestrator] Force-starting DOGFOOD after repeated no-decisions`);
+              await this.startWorker(dogfood);
+            }
+          }
+        } else {
+          this.consecutiveNoDecisionCount = 0;
         }
 
         this.saveState();

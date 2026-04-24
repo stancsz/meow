@@ -133,7 +133,7 @@ async function initDiscord() {
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
   });
 
-  discord.once("ready", () => {
+  discord.once("clientReady", () => {
     console.log(`[mission-agent] Discord connected as ${discord!.user?.tag}`);
   });
 

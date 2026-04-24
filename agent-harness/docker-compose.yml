@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   agent-harness:
     build:
@@ -27,5 +25,7 @@ services:
       - ./.claude:/app/.claude
       - ../agent-kernel:/app/agent-kernel:rw
       - ./JOB.md:/app/JOB.md:ro
-      - /c/Users/stanc/github/meow-1/agent-harness:/app/agent-harness:rw
+      - ./src:/app/src:rw
+      - ./jobs:/app/jobs:rw
+      - /c/Users/stanc/github/meow-1/.git:/app/.git:ro
       - ./computer:/app/agent-harness/computer:rw

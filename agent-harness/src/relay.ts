@@ -20,7 +20,7 @@ import { MemoryStore } from "./core/memory";
 import { getSkillContext } from "./sidecars/skill-manager";
 import { MeowAgentClient } from "./core/meow-agent";
 import { logFallback, type FallbackLogEntry } from "./sidecars/fallback-logger";
-import { TokenBuffer } from "../../agent-kernel/src/sidecars/streaming";
+import { TokenBuffer } from "/app/agent-kernel/src/sidecars/streaming.ts";
 
 // ============================================================================
 // Config

@@ -407,6 +407,7 @@ export class MemoryStore {
         summary: "",
         status: "active",
         messages: [],
+        compressedSummaries: [],  // Initialize for hierarchical memory
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
