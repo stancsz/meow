@@ -7,7 +7,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
+import { runLeanAgent } from "../../../agent-kernel/src/core/lean-agent.ts";
 import { installSkillFromPath } from "./skill-manager.ts";
 
 export interface DistillationResult {

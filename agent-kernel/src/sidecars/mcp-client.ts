@@ -292,27 +292,46 @@ export async function callMCPTool(serverName: string, toolName: string, args: Re
  * Also initializes MCP connection from the skill-level connection pool.
  * Returns a summary of connected servers.
  */
-export async function loadMCPConfig(): Promise<{ servers: string[]; failed: string[] }> {
+export async function loadMCPConfig(customPath?: string): Promise<{ servers: string[]; failed: string[] }> {
   const result = { servers: [] as string[], failed: [] as string[] };
   try {
-    const configPath = join(process.env.HOME || process.env.USERPROFILE || "", ".meow", "mcp.json");
+    const configPath = customPath || join(process.env.HOME || process.env.USERPROFILE || "", ".meow", "mcp.json");
     if (!existsSync(configPath)) {
       return result;
     }
     const content = readFileSync(configPath, "utf-8");
-    const config = JSON.parse(content) as { servers?: MCPServerConfig[] };
+    const config = JSON.parse(content);
+    
+    let serverConfigs: MCPServerConfig[] = [];
 
-    if (config.servers) {
-      for (const server of config.servers) {
-        try {
-          await connectMCPServer(server);
-          const tools = connectedServers.get(server.name)?.getAllTools() || [];
-          console.log(`[MCP] Connected to ${server.name} (${tools.length} tools)`);
-          result.servers.push(server.name);
-        } catch (err: any) {
-          console.error(`[MCP] Failed to connect to ${server.name}: ${err.message}`);
-          result.failed.push(server.name);
-        }
+    // Native format: { "servers": [ { name, command, args, ... } ] }
+    if (config.servers && Array.isArray(config.servers)) {
+      serverConfigs = config.servers;
+    } 
+    // Claude/Standard format: { "mcpServers": { "name": { command, args, ... } } }
+    else if (config.mcpServers && typeof config.mcpServers === "object") {
+      for (const [name, srv] of Object.entries(config.mcpServers)) {
+        const s = srv as any;
+        serverConfigs.push({
+          name,
+          command: s.command || "",
+          args: s.args || [],
+          env: s.env || {},
+          cwd: s.cwd || ""
+        });
+      }
+    }
+
+    for (const server of serverConfigs) {
+      if (!server.command) continue;
+      try {
+        await connectMCPServer(server);
+        const tools = connectedServers.get(server.name)?.getAllTools() || [];
+        console.log(`[MCP] Connected to ${server.name} (${tools.length} tools)`);
+        result.servers.push(server.name);
+      } catch (err: any) {
+        console.error(`[MCP] Failed to connect to ${server.name}: ${err.message}`);
+        result.failed.push(server.name);
       }
     }
   } catch {

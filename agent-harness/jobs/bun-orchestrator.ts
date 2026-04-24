@@ -4,22 +4,42 @@
  *
  * This refactors bun-scheduler from a simple loop into an agent-driven
  * mission manager. It parses JOB.md, uses an LLM to prioritize tasks,
- * and manages worker processes (Claude Code) with interactive prompt handling.
+ * and manages worker processes (Meow Agent Kernel) with autonomous execution.
  */
 
 import { spawn, ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runLeanAgent } from "../agent-kernel/src/core/lean-agent.ts";
+import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
 import { getSkillContext } from "../src/sidecars/skill-manager.ts";
 import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const JOB_MD = join(__dirname, "JOB.md");
+
+// Manual .env loader for Bun
+const envPath = join(__dirname, "..", "..", ".env");
+if (existsSync(envPath)) {
+  const envContent = readFileSync(envPath, "utf-8");
+  for (const line of envContent.split("\n")) {
+    const [key, ...val] = line.split("=");
+    if (key && val.length) process.env[key.trim()] = val.join("=").trim();
+  }
+}
+
+const JOB_MD = join(__dirname, "..", "JOB.md");
 const JOBS_FILE = join(__dirname, "..", "data", "orchestrator.json");
-const CLAUDE_CLI = "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js";
+
+// Meow CLI entry point
+const MEOW_CLI = join(__dirname, "..", "..", "agent-kernel", "cli", "index.ts");
+console.log(`[orchestrator] Using MEOW_CLI: ${MEOW_CLI}`);
+
 const MEOW_RUN = join(__dirname, "..", "src", "meow-run.ts");
+
+// Ensure API Key is set for the Planner Agent
+if (!process.env.LLM_API_KEY) {
+  process.env.LLM_API_KEY = process.env.ANTHROPIC_API_KEY;
+}
 
 // ============================================================================
 // Types
@@ -32,6 +52,7 @@ interface Job {
   lastRun: string | null;
   history: any[];
   priority: number;
+  briefing?: string; // Strategic directions from the Commander
 }
 
 interface WorkerState {
@@ -129,7 +150,7 @@ class Orchestrator {
       }
     }
     this.saveState();
-    // Note: writeJobsToMd disabled - JOB.md is read-only
+    this.writeJobsToMd(); // Synchronize badges back to Markdown
   }
 
   private writeJobsToMd() {
@@ -158,9 +179,9 @@ class Orchestrator {
     }).join("\n\n---\n\n");
 
     // Include available skills to avoid reinventing the wheel
-    const skillContext = getSkillContext(process.env.CLAUDE_CWD || "/app");
+    const skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
 
-    const prompt = `You are the Mission Orchestrator. 
+    const prompt = `You are the Mission Commander (Embers). 
 Current Missions defined in JOB.md:
 ---
 ${jobsSummary}
@@ -168,16 +189,20 @@ ${jobsSummary}
 
 ${skillContext}
 
-Your goal is to decide which jobs to START or ABORT.
-We have ${this.workers.size} workers currently running. Max is 2.
-
-Consider dependencies: If one job needs to happen before another, prioritize it.
-If a job has failed multiple times, mark it as "BLOCKED" in your reason.
+Your goal is to decide which jobs to START or ABORT, and provide STRATEGIC DIRECTIONS for each.
+Don't just repeat the prompt. Think like a lead engineer. Tell the agent:
+1. What the high-level goal is.
+2. What specific skills they should use (from the list above).
+3. Any pitfalls to avoid from previous failed runs.
 
 Respond with a JSON block:
 {
   "actions": [
-    { "type": "START", "job": "Job Name" },
+    { 
+      "type": "START", 
+      "job": "Job Name", 
+      "briefing": "strategic directions to the agent... talk to them like a technical lead." 
+    },
     { "type": "ABORT", "job": "Job Name", "reason": "why" }
   ]
 }
@@ -191,7 +216,10 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
         for (const action of plan.actions || []) {
           if (action.type === "START") {
             const job = this.jobs.find(j => j.name === action.job);
-            if (job && job.status !== "running") await this.startWorker(job);
+            if (job && job.status !== "running") {
+              job.briefing = action.briefing; // Store the strategic direction
+              await this.startWorker(job);
+            }
           } else if (action.type === "ABORT") {
             this.abortWorker(action.job, action.reason);
           }
@@ -221,16 +249,22 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
     job.lastRun = new Date().toISOString();
     this.saveState();
 
+    const fullPrompt = job.briefing 
+      ? `MISSION BRIEFING FROM COMMANDER:\n${job.briefing}\n\nGOAL:\n${job.prompt}`
+      : job.prompt;
+
     const proc = spawn("bun", [
-      "run", "--bun", CLAUDE_CLI,
-      "--dangerously-skip-permissions",
-      "--mcp-config", "/app/mcp-bridge.json",
+      "run", MEOW_CLI,
+      "--auto",
+      "--dangerous",
+      "--mcp-config", join(__dirname, "..", "mcp-bridge.json"),
       "--",
-      job.prompt
+      fullPrompt
     ], {
-      cwd: process.env.CLAUDE_CWD || "/app",
+      cwd: process.env.MEOW_CWD || join(__dirname, ".."),
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env },
+      shell: process.platform === "win32"
     });
 
     const state: WorkerState = {
@@ -253,8 +287,11 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
     });
 
     proc.stderr?.on("data", (chunk: Buffer) => {
+      const str = chunk.toString();
       state.lastOutput = Date.now();
-      process.stderr.write(`[${job.name}:err] ${chunk.toString()}`);
+      console.error(`[${job.name}:err] ${str}`);
+      // Also add to buffer so the distiller can see errors if needed
+      state.buffer += str;
     });
 
     proc.on("close", async (code) => {
@@ -274,7 +311,7 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
             job.name,
             job.prompt,
             state.buffer,
-            process.env.CLAUDE_CWD || "/app"
+            process.env.MEOW_CWD || "/app"
           );
           if (result.success) {
             console.log(`[orchestrator] 💎 Skill Distilled: ${result.skillName}`);
@@ -291,26 +328,20 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
   }
 
   private handleInteractivePrompts(state: WorkerState, latestOutput: string) {
-    // Patterns for Claude Code interaction
-    // Examples: "Allow tool use? [y/N]", "Proceed? (y/n)", etc.
+    // Meow in --auto --dangerous mode is fully autonomous and doesn't prompt for tool use.
+    // However, if it ever needs to prompt for manual input (e.g. workspace trust), 
+    // we can add patterns here.
     const patterns = [
       /\[y\/n\]/i,
       /\(y\/n\)/i,
-      /\? \[y\/N\]/i,
-      /Proceed\?/i,
-      /Allow tool use\?/i
+      /trust/i
     ];
 
     for (const pattern of patterns) {
-      if (pattern.test(latestOutput) || pattern.test(state.buffer.slice(-100))) {
-        console.log(`[orchestrator] INT-MODE DETECTED for ${state.jobName}: "${latestOutput.trim()}"`);
-        
-        // Strategy: Auto-approve safe-looking tools
-        // This is where a "Safety Agent" would decide.
-        // For now, we auto-approve to keep it working.
-        console.log(`[orchestrator] Auto-approving for ${state.jobName}`);
+      if (pattern.test(latestOutput)) {
+        console.log(`[orchestrator] Interaction requested by Meow for ${state.jobName}: "${latestOutput.trim()}"`);
+        // Strategy: Auto-approve trust/permissions for headless operation
         state.proc.stdin?.write("y\n");
-        state.buffer = ""; // Clear buffer after responding
         break;
       }
     }
@@ -325,6 +356,7 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
       this.syncJobsFromMd();
       await this.plan();
       this.monitorWorkers();
+      this.writeJobsToMd(); // Keep JOB.md in sync
       await new Promise(r => setTimeout(r, 10000)); // Tick every 10s
     }
   }

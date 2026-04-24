@@ -328,9 +328,10 @@ async function main() {
   let tickMode = false;
   let acpMode = false;
   let meowChanMode = false;
+  let mcpConfigPath: string | undefined = undefined;
 
   // Parse flags
-  const filteredArgs = args.filter((arg) => {
+  const filteredArgs = args.filter((arg, index) => {
     if (arg === "--dangerous" || arg === "-d") {
       dangerous = true;
       return false;
@@ -349,6 +350,14 @@ async function main() {
     }
     if (arg === "--acp") {
       acpMode = true;
+      return false;
+    }
+    if (arg === "--mcp-config") {
+      mcpConfigPath = args[index + 1];
+      return false;
+    }
+    // Skip the value of --mcp-config if we are currently looking at it
+    if (index > 0 && args[index - 1] === "--mcp-config") {
       return false;
     }
     if (arg === "--meow-chan") {
@@ -440,7 +449,7 @@ async function main() {
   // Initialize MCP client sidecar — wire its tools into the tool registry
   const { registerTool } = await import("../src/sidecars/tool-registry.ts");
   setMCPToolRegistrar(registerTool);
-  await loadMCPConfig();
+  await loadMCPConfig(mcpConfigPath);
 
   const tools = getAllTools();
   console.log(`${colors.dim}${t("tools_loaded", { n: tools.length, m: skills.length })}${colors.reset}`);

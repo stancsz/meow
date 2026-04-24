@@ -331,6 +331,56 @@ const builtInTools: Tool[] = [
       }
     },
   },
+  {
+    name: "multi_consult",
+    description: "Get second opinions from multiple expert models simultaneously (GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro)",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "The specific question or code to review" },
+      },
+      required: ["prompt"],
+    },
+    execute: async (args: unknown, context: ToolContext) => {
+      const { prompt } = args as { prompt: string };
+      const experts = [
+        { name: "GPT-4o", model: "gpt-4o", apiKey: process.env.OPENAI_API_KEY },
+        { name: "Claude 3.5 Sonnet", model: "claude-3-5-sonnet", apiKey: process.env.ANTHROPIC_API_KEY },
+        { name: "Gemini 1.5 Pro", model: "gemini-1.5-pro", apiKey: process.env.GEMINI_API_KEY },
+      ];
+
+      const consultations = experts.map(async (expert) => {
+        if (!expert.apiKey) {
+          return { expert: expert.name, success: false, content: "", error: "API key not configured" };
+        }
+        try {
+          const { runLeanAgent } = await import("../core/lean-agent.ts");
+          const result = await runLeanAgent(prompt, {
+            model: expert.model,
+            maxIterations: 1,
+            apiKey: expert.apiKey,
+            systemPrompt: "You are a senior code reviewer. Provide a concise, expert analysis.",
+            dangerous: false,
+          });
+          return { expert: expert.name, success: true, content: result.content, error: "" };
+        } catch (e: any) {
+          return { expert: expert.name, success: false, content: "", error: e.message };
+        }
+      });
+
+      const results = await Promise.all(consultations);
+
+      const summary = results.map((r) => {
+        if (r.success) {
+          return `## ${r.expert}\n${r.content}`;
+        } else {
+          return `## ${r.expert} [FAILED]\n${r.error}`;
+        }
+      }).join("\n\n---\n\n");
+
+      return { content: `[Multi-Consult Results]\n\n${summary}` };
+    },
+  },
 ];
 
 // ============================================================================

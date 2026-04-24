@@ -81,8 +81,9 @@ meowclaw/                     # Desktop App
 - **generateStream** — AsyncGenerator yield-based streaming as primary test interface
 - **maxBudgetUSD** — budget limiting per agent run
 - **Fork sessions** — session-store supports forking for branching conversations
-- **GAP-SLASH-001** — /help and /plan now work (dogfooded via evolve)
 - **GAP-ABORT-002** — SIGINT handler enables Ctrl+C to abort operations
+- **Orchestrator Switch** — Job orchestrator now uses Meow Agent Kernel for worker tasks (dogfooding)
+- **--mcp-config** — CLI flag to load custom MCP server configurations
 - **On-demand learning** — /learn <capability> dynamically acquires skills from harvest list
 - **P0-PN capability system** — graduated lifecycle: harvest → trick → skill → sidecar → core
 - **11 harvest candidates** — ex-skill, context7, autoresearch, gstack, mirofish, and more
@@ -125,6 +126,12 @@ bun run start --dangerous "ls -la"
 
 # Resume last session
 bun run start --resume
+
+# Load custom MCP config
+bun run start --mcp-config <path> "task"
+
+# Run job orchestrator (agent-harness)
+bun run orchestrate
 
 # In-session commands:
 /help              # Show all commands
