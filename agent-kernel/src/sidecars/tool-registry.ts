@@ -25,6 +25,8 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   timeoutMs?: number;  // Timeout for tool execution in milliseconds
   workspacePath?: string;  // Restrict file operations to this directory
+  /** EPOCH 17: Callback for state changes during tool execution */
+  onStateChange?: (state: string, message?: string) => void;
 }
 
 export interface ToolResult {
@@ -481,6 +483,9 @@ export async function executeTool(
   // This wires the auto-approve learning layer into the main permission flow
   const { checkPermissionWithLearning, recordApproval } = await import("./permissions.ts");
 
+  // EPOCH 17: Emit state change when starting tool execution
+  context.onStateChange?.("EXECUTING", `Running ${toolName}...`);
+
   const permission = checkPermissionWithLearning(toolName, args);
 
   if (permission.action === "deny") {
@@ -497,6 +502,9 @@ export async function executeTool(
       recordApproval(toolName, args);
       // Continue to execute
     } else {
+      // EPOCH 17: Emit waiting state when waiting for permission
+      context.onStateChange?.("WAITING", "Waiting for permission...");
+      
       // Prompt for permission
       const { promptPermission } = await import("./permissions.ts");
       const allowed = await promptPermission(toolName, args);
@@ -537,6 +545,11 @@ export async function executeTool(
     }
   }
 
-  return tool.execute(coercedArgs, context);
+  const result = await tool.execute(coercedArgs, context);
+  
+  // EPOCH 17: Emit thinking state when tool execution completes
+  context.onStateChange?.("THINKING", "Processing result...");
+  
+  return result;
 }
 

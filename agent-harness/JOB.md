@@ -4,12 +4,19 @@
 **Goal:** Use tools to observe the outside world and our own internal metrics to find the next most valuable capability to build.
 
 ## Methodology
-1. **External Browsing**: Use MCP/tools to browse changelogs, blogs, and repos of leading AI agents (Cursor, Windsurf, Letta, Mem0, Builder.io). Look for the *newest features* and interaction patterns.
-2. **Local Pain-Sourcing**: Scan our own `dogfood/validation/` logs, fallback metrics, and recurrent errors. Fix our own house before adopting shiny object features.
+1. **GitHub Weekly Trending (MANDATORY DAILY CHECK)**: You MUST navigate to `https://github.com/trending?since=weekly` at the start of DISCOVER.
+   - **Primary**: Use `browseros` MCP plugin.
+   - **Fallback**: If `browseros` fails, write a quick local script (e.g. Node `fetch` or `curl`) to pull the raw HTML of `https://github.com/trending?since=weekly`, parse out the `href` links for repositories, and analyze the top 10. You are a developer; do not let a broken MCP plugin stop your research.
+   - Scan for any repositories related to Agentic AI, Autonomous Coding, or LLM capabilities.
+   - **BURN TOKENS**: Do not just read the readmes. Dive deep into their implementation details, docs, and core design.
+   - Constantly learn what makes these other people's projects good, and specifically identify the capability gap between them and Meowju.
+2. **External Browsing**: Supplement with changelogs, blogs, and repos of explicitly leading AI agents (Cursor, Windsurf, Letta, Mem0, Builder.io). Look for the *newest features* and interaction patterns to meet their standards.
+3. **Local Pain-Sourcing**: Scan our own `dogfood/validation/` logs, fallback metrics, and recurrent errors.
 
 ## Output Zone: `evolve/backlog/`
-- For each new finding, create a proposal at `evolve/backlog/{topic}.md`.
-- Assign a priority score (1-5).
+- **Daily Trending Inventory**: Keep a running log of interesting trending projects at `evolve/backlog/github_trending_inventory.md`.
+- For each new finding/gap, create a proposal at `evolve/backlog/{topic}.md`.
+- Assign a priority score (1-5), prioritizing closing gaps with top-tier competitor projects.
 - Include links to original external sources if discovered via browser.
 
 ---
@@ -52,5 +59,23 @@
 2. **If FAIL**: Extract exact stack trace/error. Send it to the Orchestrator to spawn a `FIX` mission automatically. The epoch is BLOCKED.
 3. **If PASS**: 
    - Record success in `dogfood/validation/epoch-{n}-history.json`.
-   - Trigger the Memory Consolidator (Enzo) to store the successful pattern in long-term memory.
    - Unlock the orchestrator to pick the next DISCOVER item.
+
+---
+
+# 🛡️ THE SACRED CORE: Self-Preservation Rules
+**CRITICAL**: You are an agent that edits its own codebase. If you break your own orchestration scripts, you will "die" (crash the loop endlessly).
+
+## Protected Files
+The following files are **SACRED** and constitute your own brain stem and evolution loop:
+- `agent-harness/JOB.md`
+- `agent-harness/jobs/bun-orchestrator.ts`
+- `agent-harness/src/relay.ts`
+- `agent-harness/Dockerfile` & `docker-compose.yml`
+
+## Core Evolution Protocol
+You may NEVER modify a protected file during a standard BUILD phase unless the PLAN explicitly follows this rigorous protocol:
+1. **Simulation First**: You must write a standalone test script that mocks the orchestrator loop to prove your change works.
+2. **Atomic Edits**: Never rewrite the whole orchestrator. Make micro-edits.
+3. **No Breaking Changes**: You may add features, but you may NEVER rename existing variables, remove existing state checks, or change the JSON schema expected by the terminal outputs.
+4. **Self-Sabotage Check**: If your change could theoretically cause an infinite loop, lockup, or `ReferenceError` in the orchestrator, ABORT immediately.

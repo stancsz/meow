@@ -11,6 +11,7 @@
  * the TypeScript imports from within the /app context.
  */
 import { spawn } from "node:child_process";
+import { AgentState } from "/app/agent-kernel/src/types/agent-state.ts";
 
 const MEOW_TIMEOUT_MS = parseInt(process.env.MEOW_TIMEOUT_MS || "300000");
 
@@ -81,25 +82,31 @@ export class MeowAgentClient {
   /**
    * Streaming prompt - calls lean-agent's runLeanAgentSimpleStream via meow-stream.ts.
    * Tokens are delivered to onToken callback as they arrive, enabling real-time display.
+   * EPOCH 17: Also supports onStateChange callback for rich state indicators.
    */
   async promptStreaming(
     text: string,
-    onToken: (token: string) => void
+    onToken: (token: string) => void,
+    onStateChange?: (state: AgentState, message?: string) => void
   ): Promise<string> {
     const words = text.split(" ");
     return new Promise((resolve, reject) => {
       // Use meow-stream.ts which calls runLeanAgentSimpleStream with onToken
       const meowStreamPath = "/app/meow-stream.ts";
-      const proc = spawn(
-        "bun",
-        ["run", "--bun", meowStreamPath, "--", ...words],
-        {
-          cwd: process.env.CLAUDE_CWD || "/app",
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env },
-          shell: false,
-        }
-      );
+      const args = [
+        "run",
+        "--bun",
+        meowStreamPath,
+        "--",
+        ...words,
+      ];
+
+      const proc = spawn("bun", args, {
+        cwd: process.env.CLAUDE_CWD || "/app",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env },
+        shell: false,
+      });
 
       let stdout = "";
       let stderr = "";
@@ -112,7 +119,35 @@ export class MeowAgentClient {
       });
 
       proc.stderr?.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
+        const text = chunk.toString();
+        stderr += text;
+
+        // EPOCH 17: Parse state change events from stderr
+        // Format: "[state:THINKING] Thinking..." or "[state:EXECUTING] Executing commands..."
+        if (onStateChange && text.includes("[state:")) {
+          const match = text.match(/\[state:(\w+)\](?:\s+(.+))?/);
+          if (match) {
+            const stateStr = match[1];
+            const stateMessage = match[2]?.trim();
+            // Map string to AgentState enum
+            const stateMap: Record<string, AgentState> = {
+              THINKING: AgentState.THINKING,
+              INDEXING: AgentState.INDEXING,
+              READING: AgentState.READING,
+              WRITING: AgentState.WRITING,
+              EXECUTING: AgentState.EXECUTING,
+              WAITING_PERMISSION: AgentState.WAITING_PERMISSION,
+              WAITING: AgentState.WAITING_PERMISSION,
+              SUMMARIZING: AgentState.SUMMARIZING,
+              COMPLETE: AgentState.COMPLETE,
+              ERROR: AgentState.ERROR,
+            };
+            const state = stateMap[stateStr];
+            if (state) {
+              onStateChange(state, stateMessage);
+            }
+          }
+        }
       });
 
       let timedOut = false;

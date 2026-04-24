@@ -21,6 +21,7 @@ import { getSkillContext } from "./sidecars/skill-manager";
 import { MeowAgentClient } from "./core/meow-agent";
 import { logFallback, type FallbackLogEntry } from "./sidecars/fallback-logger";
 import { TokenBuffer } from "/app/agent-kernel/src/sidecars/streaming.ts";
+import { AgentState, AGENT_STATE_EMOJI, AGENT_STATE_DESCRIPTION } from "/app/agent-kernel/src/types/agent-state.ts";
 
 // ============================================================================
 // Config
@@ -375,8 +376,29 @@ async function sendChunksWithRateLimit(message: Message, chunks: string[]): Prom
 }
 
 /**
+ * State change handler for streaming messages.
+ * Edits the Discord message to show agent state emoji and description.
+ */
+async function handleStateChange(
+  responseMessage: Message,
+  state: AgentState,
+  stateMessage?: string
+): Promise<void> {
+  const emoji = AGENT_STATE_EMOJI[state] || "🐱";
+  const description = stateMessage || AGENT_STATE_DESCRIPTION[state] || "...";
+  const statusText = `${emoji} ${description}`;
+
+  try {
+    await responseMessage.edit(statusText);
+  } catch {
+    // If edit fails (message too old, rate limited, etc), ignore
+  }
+}
+
+/**
  * Send streaming message with real-time token display.
  * Uses TokenBuffer for code fence aware buffering and updates Discord message as tokens arrive.
+ * EPOCH 17: Also displays rich agent state indicators (🤔 thinking, ⚡ executing, etc.)
  */
 async function sendStreamingMessage(
   meow: MeowAgentClient,
@@ -402,7 +424,7 @@ async function sendStreamingMessage(
     // Start with thinking indicator
     let responseMessage: Message;
     try {
-      responseMessage = await message.reply("🐱 thinking...");
+      responseMessage = await message.reply("🤔 Thinking...");
     } catch (e) {
       // Fallback if we can't send initial message
       reject(e);
@@ -412,12 +434,21 @@ async function sendStreamingMessage(
     // Collect full content
     let fullContent = "";
 
-    // Stream via meow's promptStreaming
+    // State change callback for EPOCH 17 rich state indicators
+    const onStateChange = (state: AgentState, stateMessage?: string) => {
+      handleStateChange(responseMessage, state, stateMessage);
+    };
+
+    // Stream via meow's promptStreaming with state change callback
     try {
-      fullContent = await meow.promptStreaming(prompt, (token) => {
-        tokenBuffer.add(token);
-        fullContent += token;
-      });
+      fullContent = await meow.promptStreaming(
+        prompt,
+        (token) => {
+          tokenBuffer.add(token);
+          fullContent += token;
+        },
+        onStateChange
+      );
     } catch (e: any) {
       // Edit the thinking message to show error
       try {

@@ -375,14 +375,22 @@ class Orchestrator {
   private async plan(): Promise<void> {
     console.log("[orchestrator] Commander Agent planning...");
 
-    // Build enhanced context about current state
-    const epochStatus = this.checkEpochGates();
-
-    // Health metrics and gap analysis - wrap in try/catch to prevent cascading errors
+    // Build enhanced context about current state - all wrapped to prevent cascading errors
+    let epochStatus = "";
     let healthMetrics = "";
     let outputFreshness = "";
     let errorCorrelation = "";
     let gapAnalysis = "";
+    let skillContext = "";
+    let memoryContext = "";
+
+    try {
+      epochStatus = this.checkEpochGates();
+    } catch (e) {
+      console.error("[orchestrator] Error getting epoch status:", e);
+      epochStatus = "Error loading epoch status";
+    }
+
     try {
       healthMetrics = this.buildHealthMetrics();
       outputFreshness = this.checkOutputFreshness();
@@ -401,10 +409,14 @@ Last Run: ${j.lastRun || "Never"}
 Recent Learnings: ${recentLearnings}${errorContext}`;
     }).join("\n\n---\n\n");
 
-    const skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
+    try {
+      skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
+    } catch (e) {
+      console.error("[orchestrator] Error getting skill context:", e);
+      skillContext = "";
+    }
 
     // Recall recent memories related to current goals (may fail if memory store not initialized)
-    let memoryContext = "";
     try {
       const relevantMemories = searchMemory("current goals architecture preferences", 5);
       memoryContext = relevantMemories.length > 0 ? "\n## RECALLED FROM PALACE\n" + formatSearchResults(relevantMemories) : "";
@@ -412,56 +424,72 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
       memoryContext = "";
     }
 
-    const commanderSystemPrompt = `You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with PROACTIVE IMPROVEMENT.
+    // Build system prompt using string concatenation to avoid template literal issues
+    const safeEpochStatus = epochStatus || "";
+    const safeMemoryContext = memoryContext || "";
+    const safeHealthMetrics = healthMetrics || "";
+    const safeOutputFreshness = outputFreshness || "";
+    const safeErrorCorrelation = errorCorrelation || "";
+    const safeGapAnalysis = gapAnalysis || "";
+    const safeSkillContext = skillContext || "";
 
-## Your Authority
-You have SOLE AUTHORITY to decide which jobs run and in what priority.
-You MUST respond with a JSON decision object - nothing else.
-
-## EPOCH GATE STATUS
-${epochStatus}
-
-${memoryContext}
-
-${healthMetrics}
-
-${outputFreshness}
-
-${errorCorrelation}
-
-${gapAnalysis}
-
-${skillContext}
-
-## MISSION: 4-PHASE TEST-DRIVEN EVOLUTION
-
-You are Embers, a strict orchestrator. Your loop is:
-1. **DISCOVER**: Find ideas via MCP browsing (external) or reading internal error logs (internal).
-2. **PLAN**: Choose ONE idea from DISCOVER, write architecture & validation tests (TDD). 
-3. **BUILD**: Implement the code necessary to pass the tests generated in PLAN.
-4. **DOGFOOD**: Run the tests. If they pass, loop to DISCOVER. If they fail, feed errors back to BUILD.
-
-## Decision Rules
-
-### CAUSAL SEQUENCE (STRICT TDD)
-- Do not RUN **PLAN** unless **DISCOVER** has produced a backlog.
-- Do not RUN **BUILD** unless **PLAN** has produced a `.test.ts` file and architecture spec.
-- Do not RUN **DOGFOOD** unless **BUILD** has claimed implementation is complete.
-
-### SELF-HEALING & QUALITY GATE
-- If DOGFOOD reports a test failure, send the exact stack trace back to **BUILD** to fix it immediately.
-- Max 2 concurrent jobs. Focus the agent.
-- Fix broken internal systems (pain points) before researching external new features.
-
-## Decision Format
-Respond with JSON:
-{
-  "reasoning": "Why you made these decisions",
-  "decisions": [
-    { "type": "RUN", "job": "DISCOVER|PLAN|BUILD|DOGFOOD", "briefing": "Exact details of what to perform in this phase" },
-    { "type": "IDLE", "job": "...", "reason": "Why waiting" }
-  ]
-}`;
+    const commanderSystemPrompt = [
+      "You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with PROACTIVE IMPROVEMENT.",
+      "",
+      "## Your Authority",
+      "You have SOLE AUTHORITY to decide which jobs run and in what priority.",
+      "You MUST respond with a JSON decision object - nothing else.",
+      "",
+      "## EPOCH GATE STATUS",
+      safeEpochStatus,
+      "",
+      safeMemoryContext,
+      "",
+      safeHealthMetrics,
+      "",
+      safeOutputFreshness,
+      "",
+      safeErrorCorrelation,
+      "",
+      safeGapAnalysis,
+      "",
+      safeSkillContext,
+      "",
+      "## MISSION: 4-PHASE TEST-DRIVEN EVOLUTION",
+      "",
+      "You are Embers, a strict orchestrator. Your loop is:",
+      "1. **DISCOVER**: Find ideas via MCP browsing (external) or reading internal error logs (internal).",
+      "2. **PLAN**: Choose ONE idea from DISCOVER, write architecture & validation tests (TDD).",
+      "3. **BUILD**: Implement the code necessary to pass the tests generated in PLAN.",
+      "4. **DOGFOOD**: Run the tests. If they pass, loop to DISCOVER. If they fail, feed errors back to BUILD.",
+      "",
+      "## Decision Rules",
+      "",
+      "### CAUSAL SEQUENCE (STRICT TDD)",
+      "- Do not RUN **PLAN** unless **DISCOVER** has produced a backlog.",
+      "- Do not RUN **BUILD** unless **PLAN** has produced a `.test.ts` file and architecture spec.",
+      "- Do not RUN **DOGFOOD** unless **BUILD** has claimed implementation is complete.",
+      "",
+      "### SELF-PRESERVATION (THE SACRED CORE)",
+      "- **CRITICAL**: The files `JOB.md`, `bun-orchestrator.ts`, `relay.ts`, and `Dockerfile` are your brain stem.",
+      "- Modifying these files risks killing yourself (the agent loop).",
+      "- You may NOT schedule a **BUILD** job that edits these files unless the **PLAN** explicitly includes a localized integration test simulating the orchestrator environment.",
+      "",
+      "### SELF-HEALING & QUALITY GATE",
+      "- If DOGFOOD reports a test failure, send the exact stack trace back to **BUILD** to fix it immediately.",
+      "- Max 2 concurrent jobs. Focus the agent.",
+      "- Fix broken internal systems (pain points) before researching external new features.",
+      "",
+      "## Decision Format",
+      'Respond with JSON:',
+      '{',
+      '  "reasoning": "Why you made these decisions",',
+      '  "decisions": [',
+      '    { "type": "RUN", "job": "DISCOVER|PLAN|BUILD|DOGFOOD", "briefing": "Exact details of what to perform in this phase" },',
+      '    { "type": "IDLE", "job": "...", "reason": "Why waiting" }',
+      '  ]',
+      '}'
+    ].join("\n");
 
     try {
       const result = await runLeanAgent("Analyze current status and decide next orchestration actions.", {

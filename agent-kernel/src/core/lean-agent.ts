@@ -316,19 +316,19 @@ export async function runLeanAgent(
     ];
   }
 
-  const context = { dangerous, abortSignal, cwd: process.cwd(), timeoutMs };
+  // EPOCH 17: State tracking
+  const onStateChange = options.onStateChange;
+  const setState = (state: AgentState, message?: string) => {
+    onStateChange?.(state, message);
+  };
+
+  const context = { dangerous, abortSignal, cwd: process.cwd(), timeoutMs, onStateChange: setState };
   let iterations = 0;
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
   let totalCostUSD = 0;
   let lastContent = "";
   let isGraceIteration = false;
-  
-  // EPOCH 17: State tracking
-  const onStateChange = options.onStateChange;
-  const setState = (state: AgentState, message?: string) => {
-    onStateChange?.(state, message);
-  };
 
   while (iterations < maxIterations || (isGraceIteration && iterations <= maxIterations + 1)) {
     // EPOCH 17: Emit thinking state at start of iteration
@@ -640,7 +640,7 @@ export async function* runLeanAgentStream(
         args = {};
       }
 
-      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs });
+      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs, onStateChange: options.onStateChange });
       yield { type: "tool_end", toolName: toolCall.function.name, toolResult: result.error || result.content };
 
       messages.push({
@@ -798,7 +798,7 @@ export async function runLeanAgentSimpleStream(
         args = {};
       }
 
-      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs });
+      const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs, onStateChange: options.onStateChange });
 
       messages.push({
         role: "tool",
