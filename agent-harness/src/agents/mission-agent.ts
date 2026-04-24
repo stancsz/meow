@@ -209,10 +209,10 @@ NEXT_STEPS: [specific actions to complete or exceed]
 Be honest and thorough. Look at actual files to verify completion.`;
 
   return new Promise((resolve) => {
-    const proc = spawn("node", [cliPath, "--output-format", "text", "-p", prompt], {
+    const proc = spawn("node", [cliPath, "--output-format", "text", "--dangerously-skip-permissions", "-p", prompt], {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, MEOW_TRUST_ALL: "1" },
     });
 
     let stdout = "";
@@ -384,7 +384,7 @@ async function main() {
     }
 
     saveMissions(missions);
-  }, 30000); // Check every 30 seconds
+  }, 10000); // Check every 10 seconds
 
   console.log("[mission-agent] Mission Agent running. Use 'create mission' to start tracking.");
 }

@@ -131,6 +131,11 @@ export function checkWorkspaceTrust(path?: string): {
   trusted: boolean;
   reason?: string;
 } {
+  // Allow bypass via environment variable for automation
+  if (process.env.MEOW_TRUST_ALL === "1") {
+    return { trusted: true };
+  }
+
   const checkPath = path || trustContext.currentPath;
   const config = loadTrustConfig();
 

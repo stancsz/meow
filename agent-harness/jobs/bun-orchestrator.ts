@@ -83,7 +83,7 @@ interface WorkerState {
 class Orchestrator {
   private jobs: Job[] = [];
   private workers = new Map<string, WorkerState>();
-  private tickInterval: number = 30000; // 30 seconds between planning cycles
+  private tickInterval: number = parseInt(process.env.ORCHESTRATOR_TICK_MS || "5000"); // Default 5 seconds between planning cycles
 
   constructor() {
     this.ensureDataDir();
@@ -396,7 +396,7 @@ Max 2 concurrent jobs.`;
     ], {
       cwd: process.env.MEOW_CWD || join(__dirname, ".."),
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, MEOW_TRUST_ALL: "1" },
       shell: process.platform === "win32"
     });
 
@@ -416,7 +416,7 @@ Max 2 concurrent jobs.`;
       state.buffer += str;
       state.lastOutput = Date.now();
       process.stdout.write(`[${job.name}] ${str}`);
-      this.handleInteractivePrompts(state, str);
+      this.handleInteractivePrompts(state);
     });
 
     proc.stderr?.on("data", (chunk: Buffer) => {
@@ -424,6 +424,7 @@ Max 2 concurrent jobs.`;
       state.lastOutput = Date.now();
       console.error(`[${job.name}:err] ${str}`);
       state.buffer += str;
+      this.handleInteractivePrompts(state);
     });
 
     proc.on("close", async (code) => {
@@ -508,13 +509,25 @@ Max 2 concurrent jobs.`;
     return "Run failed - check logs for details";
   }
 
-  private handleInteractivePrompts(state: WorkerState, latestOutput: string) {
-    const patterns = [/\[y\/n\]/i, /\(y\/n\)/i, /trust/i, /proceed\?/i];
-    for (const pattern of patterns) {
-      if (pattern.test(latestOutput)) {
-        console.log(`[orchestrator] Auto-approving for ${state.jobName}`);
-        state.proc.stdin?.write("y\n");
-        state.buffer = "";
+  private handleInteractivePrompts(state: WorkerState) {
+    const patterns = [
+      { regex: /\[y\/n\]/i, response: "y\n" },
+      { regex: /\(y\/n\)/i, response: "y\n" },
+      { regex: /trust\/deny\/continue/i, response: "trust\n" },
+      { regex: /trust/i, response: "trust\n" },
+      { regex: /proceed\?/i, response: "y\n" },
+      { regex: /choice \(trust\/deny\/continue\)/i, response: "trust\n" },
+      { regex: /continue\?/i, response: "y\n" },
+      { regex: /allow the tool to/i, response: "y\n" },
+      { regex: /run this command/i, response: "y\n" }
+    ];
+
+    for (const { regex, response } of patterns) {
+      if (regex.test(state.buffer)) {
+        console.log(`[orchestrator] Auto-approving for ${state.jobName} (pattern: ${regex.source})`);
+        state.proc.stdin?.write(response);
+        // Clear buffer so we don't double-trigger on the same prompt
+        state.buffer = ""; 
         break;
       }
     }

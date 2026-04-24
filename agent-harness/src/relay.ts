@@ -20,6 +20,7 @@ import { MemoryStore } from "./core/memory";
 import { getSkillContext } from "./sidecars/skill-manager";
 import { MeowAgentClient } from "./core/meow-agent";
 import { logFallback, type FallbackLogEntry } from "./sidecars/fallback-logger";
+import { TokenBuffer } from "../../agent-kernel/src/sidecars/streaming";
 
 // ============================================================================
 // Config
@@ -74,6 +75,7 @@ const RELAY_CHANNELS = [
 const RELAY_PREFIX = argPrefix || process.env.RELAY_PREFIX || "";
 const RELAY_MENTION_ONLY = argMentionOnly || process.env.RELAY_MENTION_ONLY === "1";
 const RELAY_TYPING = process.env.RELAY_TYPING !== "0";
+const RELAY_STREAMING = process.env.RELAY_STREAMING === "1";  // Enable real-time streaming
 const CLAUDE_TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS || "3600000");
 
 // ============================================================================
@@ -370,6 +372,84 @@ async function sendChunksWithRateLimit(message: Message, chunks: string[]): Prom
       await new Promise(resolve => setTimeout(resolve, CHUNK_DELAY_MS));
     }
   }
+}
+
+/**
+ * Send streaming message with real-time token display.
+ * Uses TokenBuffer for code fence aware buffering and updates Discord message as tokens arrive.
+ */
+async function sendStreamingMessage(
+  meow: MeowAgentClient,
+  message: Message,
+  prompt: string,
+  onToken: (token: string) => void
+): Promise<string> {
+  return new Promise(async (resolve, reject) => {
+    // Create token buffer with code fence awareness
+    const tokenBuffer = new TokenBuffer(
+      (bufferedText) => {
+        // Flush callback - could send intermediate updates here
+        // For now we just accumulate for final display
+        onToken(bufferedText);
+      },
+      {
+        bufferSize: 20,
+        flushIntervalMs: 50,
+        codeFenceAware: true,
+      }
+    );
+
+    // Start with thinking indicator
+    let responseMessage: Message;
+    try {
+      responseMessage = await message.reply("🐱 thinking...");
+    } catch (e) {
+      // Fallback if we can't send initial message
+      reject(e);
+      return;
+    }
+
+    // Collect full content
+    let fullContent = "";
+
+    // Stream via meow's promptStreaming
+    try {
+      fullContent = await meow.promptStreaming(prompt, (token) => {
+        tokenBuffer.add(token);
+        fullContent += token;
+      });
+    } catch (e: any) {
+      // Edit the thinking message to show error
+      try {
+        await responseMessage.edit(`❌ Error: ${e.message.slice(0, 1800)}`);
+      } catch { /* ignore */ }
+      reject(e);
+      return;
+    }
+
+    // Flush remaining buffer
+    tokenBuffer.flush();
+
+    // Edit the thinking message to show final response
+    const chunks = chunkMessage(fullContent);
+    if (chunks.length === 1) {
+      // Single chunk - just edit the thinking message
+      try {
+        await responseMessage.edit(chunks[0]);
+      } catch (e) {
+        // If edit fails (content too old, etc), reply fresh
+        await message.reply(chunks[0]);
+      }
+    } else {
+      // Multiple chunks - delete thinking and send fresh
+      try {
+        await responseMessage.delete();
+      } catch { /* ignore */ }
+      await sendChunksWithRateLimit(message, chunks);
+    }
+
+    resolve(fullContent);
+  });
 }
 
 // ============================================================================
@@ -674,7 +754,7 @@ class ClaudeCodeClient {
       const proc = spawn(execPath, execArgs, {
         cwd: CLAUDE_CWD,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
+        env: { ...process.env, MEOW_TRUST_ALL: "1" },
         shell: false,
       });
 

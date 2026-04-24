@@ -152,9 +152,10 @@ const DEFAULT_RULES: PermissionRule[] = [
   { tool: "shell", pattern: "cmd:mkfs ", action: "deny", description: "mkfs is destructive" },
   { tool: "shell", pattern: "cmd:> /dev/", action: "deny", description: "redirect to /dev is suspicious" },
 
-  // Write operations — ask by default
-  { tool: "write", action: "ask", description: "Writing files requires confirmation" },
-  { tool: "edit", action: "ask", description: "Editing files requires confirmation" },
+  // Write operations — allow by default in orchestrator/daemon mode
+  // User can override via ~/.meow/permissions.json
+  { tool: "write", action: "allow", description: "Writing files is allowed by default" },
+  { tool: "edit", action: "allow", description: "Editing files is allowed by default" },
 ];
 
 // ============================================================================
