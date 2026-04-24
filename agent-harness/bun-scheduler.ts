@@ -159,7 +159,13 @@ async function runJob(job: Job, timeoutMs: number = JOB_TIMEOUT_MS): Promise<{ s
 
     const proc = spawn(
       "bun",
-      ["run", "--bun", CLAUDE_CLI, "--print", `--dangerously-skip-permissions`, job.prompt],
+      [
+        "run", "--bun", CLAUDE_CLI,
+        "--print",
+        `--dangerously-skip-permissions`,
+        `--max-budget-usd`, "10.00",
+        job.prompt
+      ],
       {
         cwd: process.env.CLAUDE_CWD || "/app",
         stdio: ["ignore", "pipe", "pipe"],
@@ -218,23 +224,23 @@ async function tick(): Promise<void> {
   const jobs = syncJobsFromMd();
   const now = Date.now();
 
-  for (const job of jobs) {
-    // Skip if currently running
-    if (job.running) {
-      continue;
-    }
+  // Collect all due jobs that aren't currently running
+  const dueJobs = jobs.filter(job => !job.running && (job.nextRun === null || now >= job.nextRun));
 
-    // Determine if job is due
-    const isDue = job.nextRun === null || now >= job.nextRun;
+  if (dueJobs.length === 0) {
+    return;
+  }
 
-    if (!isDue) {
-      continue;
-    }
+  console.log(`[scheduler] ${dueJobs.length} job(s) due — launching in parallel`);
 
-    // Mark as running and set next run to 60 minutes from now
+  // Launch all due jobs in parallel
+  const promises = dueJobs.map(async (job) => {
+    // Mark as running immediately
     job.running = true;
     job.nextRun = now + JOB_TIMEOUT_MS;
     saveJobs(jobs);
+
+    console.log(`[scheduler] Starting: ${job.name}`);
 
     // Execute job with 60 minute timeout
     const result = await runJob(job, JOB_TIMEOUT_MS);
@@ -244,21 +250,20 @@ async function tick(): Promise<void> {
       timestamp: now,
       status: result.timedOut ? "timeout" : (result.success ? "success" : "failed"),
       output: result.output.slice(0, 1000),
-      durationMs: result.timedOut ? JOB_TIMEOUT_MS : (now - now), // first run, duration approximate
+      durationMs: result.timedOut ? JOB_TIMEOUT_MS : (Date.now() - now),
     });
     job.lastStatus = result.timedOut ? "timeout" : (result.success ? "success" : "failed");
     job.lastRun = now;
     job.running = false;
 
-    // If job finished early (didn't use full hour), schedule next run sooner
-    // But still enforce minimum 60 min between START times
-    // nextRun already set to start + 60min, so we just ensure the gap is respected
-
     saveJobs(jobs);
+    console.log(`[scheduler] Completed: ${job.name} (${result.timedOut ? "timeout" : result.success ? "success" : "failed"})`);
+  });
 
-    // Run next job immediately (don't wait for tick interval)
-    // tick() will be called again in the loop for remaining due jobs
-  }
+  // Wait for all jobs to complete in parallel
+  await Promise.all(promises);
+
+  console.log(`[scheduler] All due jobs finished`);
 }
 
 // ============================================================================
