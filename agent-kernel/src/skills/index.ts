@@ -23,6 +23,9 @@ import { xlsx } from "./xlsx.ts";
 import { tutorial } from "./tutorial.ts";
 import { autoresearch } from "./autoresearch.ts";
 import { hunt } from "./hunt.ts";
+import { mine } from "./mine.ts";
+import { remember } from "./remember.ts";
+import { palace } from "./palace.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -45,6 +48,9 @@ const allSkills: Skill[] = [
   tutorial,
   autoresearch,
   hunt,
+  mine,
+  remember,
+  palace,
 ];
 
 // Auto-register on import

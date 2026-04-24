@@ -62,15 +62,15 @@ export function registerSkill(skill: Skill): void {
 }
 
 export function getAllSkills(): Skill[] {
-  return [...builtInSkills];
+  return builtInSkills.filter(Boolean);
 }
 
 export function findSkill(name: string): Skill | undefined {
   const lower = name.toLowerCase();
   return builtInSkills.find(
     (s) =>
-      s.name.toLowerCase() === lower ||
-      s.aliases?.some((a) => a.toLowerCase() === lower)
+      s && s.name && (s.name.toLowerCase() === lower ||
+      s.aliases?.some((a) => a.toLowerCase() === lower))
   );
 }
 

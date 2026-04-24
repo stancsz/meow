@@ -15,7 +15,7 @@
  *   await memorySearch("What did I learn about Go?");
  */
 
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -64,11 +64,11 @@ function ensureMemoryDir(): void {
   }
 }
 
-function getDb(): Database.Database {
+function getDb(): Database {
   if (db) return db;
 
   ensureMemoryDir();
-  db = new Database(FTS_DB_PATH);
+  db = new Database(FTS_DB_PATH, { create: true });
 
   // Enable FTS5
   db.exec(`
@@ -142,12 +142,10 @@ export function storeMemory(
   const tags = JSON.stringify(options.tags || []);
   const importance = options.importance ?? 3;
 
-  const stmt = database.prepare(`
+  const result = database.query(`
     INSERT INTO memories (key, value, timestamp, tags, source, session_id, importance, wing, room, drawer)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const result = stmt.run(
+  `).run(
     key,
     value,
     new Date().toISOString(),
@@ -189,7 +187,7 @@ export function searchMemory(
   }
 
   // Use FTS5 for full-text search
-  const stmt = database.prepare(`
+  const stmt = database.query(`
     SELECT m.*, bm25(memories_fts) as rank,
            snippet(memories_fts, 1, '[', ']', '...', 20) as snippet
     FROM memories_fts
@@ -202,7 +200,7 @@ export function searchMemory(
   params.push(limit);
 
   try {
-    const rows = stmt.all(query, limit) as any[];
+    const rows = stmt.all(...params) as any[];
     return rows.map((row) => ({
       entry: {
         id: row.id,
@@ -213,13 +211,17 @@ export function searchMemory(
         source: row.source as MemoryEntry["source"],
         sessionId: row.session_id,
         importance: row.importance,
+        wing: row.wing,
+        room: row.room,
+        drawer: row.drawer,
       },
       rank: row.rank,
       snippet: row.snippet,
     }));
-  } catch {
+  } catch (e: any) {
+    console.error("[memory-fts] Search failed, falling back:", e.message);
     // If FTS query fails, fall back to LIKE search
-    const fallbackStmt = database.prepare(`
+    const fallbackStmt = database.query(`
       SELECT * FROM memories
       WHERE value LIKE ? OR key LIKE ? OR tags LIKE ?
       ORDER BY importance DESC, timestamp DESC
@@ -237,6 +239,9 @@ export function searchMemory(
         source: row.source as MemoryEntry["source"],
         sessionId: row.session_id,
         importance: row.importance,
+        wing: row.wing,
+        room: row.room,
+        drawer: row.drawer,
       },
       rank: 0,
       snippet: row.value.slice(0, 100),
@@ -246,7 +251,7 @@ export function searchMemory(
 
 export function getRecentMemories(limit: number = 20): MemoryEntry[] {
   const database = getDb();
-  const stmt = database.prepare(`
+  const stmt = database.query(`
     SELECT * FROM memories
     ORDER BY timestamp DESC
     LIMIT ?
@@ -267,7 +272,7 @@ export function getRecentMemories(limit: number = 20): MemoryEntry[] {
 
 export function getMemoriesByTag(tag: string, limit: number = 20): MemoryEntry[] {
   const database = getDb();
-  const stmt = database.prepare(`
+  const stmt = database.query(`
     SELECT * FROM memories
     WHERE tags LIKE ?
     ORDER BY importance DESC, timestamp DESC
@@ -289,21 +294,21 @@ export function getMemoriesByTag(tag: string, limit: number = 20): MemoryEntry[]
 
 export function deleteMemory(id: number): boolean {
   const database = getDb();
-  const stmt = database.prepare("DELETE FROM memories WHERE id = ?");
+  const stmt = database.query("DELETE FROM memories WHERE id = ?");
   const result = stmt.run(id);
   return result.changes > 0;
 }
 
 export function clearLowImportanceMemories(threshold: number = 2): number {
   const database = getDb();
-  const stmt = database.prepare("DELETE FROM memories WHERE importance < ?");
+  const stmt = database.query("DELETE FROM memories WHERE importance < ?");
   const result = stmt.run(threshold);
   return result.changes;
 }
 
 export function updateMemoryImportance(id: number, importance: number): boolean {
   const database = getDb();
-  const stmt = database.prepare("UPDATE memories SET importance = ? WHERE id = ?");
+  const stmt = database.query("UPDATE memories SET importance = ? WHERE id = ?");
   const result = stmt.run(importance, id);
   return result.changes > 0;
 }
@@ -376,7 +381,7 @@ export function storeSessionMemory(
 
 export function getSessionMemories(sessionId: string): MemoryEntry[] {
   const database = getDb();
-  const stmt = database.prepare(`
+  const stmt = database.query(`
     SELECT * FROM memories
     WHERE session_id = ?
     ORDER BY timestamp DESC
@@ -409,10 +414,10 @@ export function getMemoryStats(): {
 } {
   const database = getDb();
 
-  const totalStmt = database.prepare("SELECT COUNT(*) as count FROM memories");
+  const totalStmt = database.query("SELECT COUNT(*) as count FROM memories");
   const total = (totalStmt.get() as any).count;
 
-  const sourceStmt = database.prepare("SELECT source, COUNT(*) as count FROM memories GROUP BY source");
+  const sourceStmt = database.query("SELECT source, COUNT(*) as count FROM memories GROUP BY source");
   const sourceRows = sourceStmt.all() as any[];
   const bySource: Record<string, number> = {};
   for (const row of sourceRows) {
@@ -420,7 +425,7 @@ export function getMemoryStats(): {
   }
 
   // Get tag distribution (approximate)
-  const tagStmt = database.prepare("SELECT tags FROM memories");
+  const tagStmt = database.query("SELECT tags FROM memories");
   const tagRows = tagStmt.all() as any[];
   const byTag: Record<string, number> = {};
   for (const row of tagRows) {
@@ -432,10 +437,10 @@ export function getMemoryStats(): {
     } catch {}
   }
 
-  const timeStmt = database.prepare("SELECT MIN(timestamp) as oldest, MAX(timestamp) as newest FROM memories");
+  const timeStmt = database.query("SELECT MIN(timestamp) as oldest, MAX(timestamp) as newest FROM memories");
   const timeRow = timeStmt.get() as any;
 
-  const avgStmt = database.prepare("SELECT AVG(importance) as avg FROM memories");
+  const avgStmt = database.query("SELECT AVG(importance) as avg FROM memories");
   const avgRow = avgStmt.get() as any;
 
   return {

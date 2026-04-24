@@ -89,7 +89,7 @@ test-results/
 agent-harness/scratch/
 agent-harness/data/
 agent-harness/dogfood/results/
-agent-harness/evolve/research/
+agent-harness/evolve/
 agent-harness/computer/
 agent-harness/design/proposals/
 agent-harness/logs/

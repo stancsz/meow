@@ -30,7 +30,7 @@ const builtInCommands: Record<string, Command> = {
     name: "help",
     description: "Show available commands",
     execute: async (_, __) => ({
-      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /name, /lang, /auto, /mine, /palace",
+      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /name, /lang, /auto, /mine, /palace, /remember",
     }),
   },
   exit: {
@@ -139,6 +139,7 @@ const builtInCommands: Record<string, Command> = {
     },
   },
   palace: {
+    // ... (previous implementation remains)
     name: "palace",
     description: "Search the memory Palace: /palace <query> [--wing <wing>] [--room <room>]",
     execute: async (args, _) => {
@@ -162,6 +163,38 @@ const builtInCommands: Record<string, Command> = {
 
       const results = searchMemory(query, 10, filters);
       return { content: formatSearchResults(results) };
+    },
+  },
+  remember: {
+    name: "remember",
+    description: "Store a specific memory: /remember <fact> [--wing <wing>] [--room <room>] [--tags <t1,t2>]",
+    execute: async (args, _) => {
+      const { storeMemory } = await import("./memory-fts.ts");
+      const parts = args.split(/\s+/);
+      const factParts = [];
+      const options: any = { source: "user", tags: [] };
+
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === "--wing") {
+          options.wing = parts[++i];
+        } else if (parts[i] === "--room") {
+          options.room = parts[++i];
+        } else if (parts[i] === "--tags") {
+          options.tags = parts[++i]?.split(",") || [];
+        } else {
+          factParts.push(parts[i]);
+        }
+      }
+
+      const fact = factParts.join(" ");
+      if (!fact) return { error: "Please provide the fact to remember." };
+
+      try {
+        const id = storeMemory("Memory", fact, options);
+        return { content: `Memory stored successfully (ID: ${id}) in Wing: ${options.wing || "default"}` };
+      } catch (e: any) {
+        return { error: `Failed to store memory: ${e.message}` };
+      }
     },
   },
 };

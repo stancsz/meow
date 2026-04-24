@@ -1,187 +1,111 @@
-# Meow 🐱 — Claude Code, Fully Realized
+# Meowju 🐱 — The Sovereign Agentic Kernel
 
-> *"OpenClaw has all the features. Meow gives them to Claude Code."*
+[![Dogfooding: ACTIVE](https://img.shields.io/badge/Dogfooding-ACTIVE-green.svg)](#the-quality-gate)
+[![Memory: MemPalace](https://img.shields.io/badge/Memory-MemPalace-blue.svg)](#-the-palace-mempalace)
+[![Identity: Meowju](https://img.shields.io/badge/Identity-Meowju-purple.svg)](#autonomous-sovereignty)
 
-Claude Code is powerful, but OpenClaw has the **features that matter**:
+> **"Autonomy is not just execution. It is evolution."**
 
-- Persistent memory across sessions
-- Background goal-tracking agents
-- Skill ecosystem you can install from GitHub
-- "Soul" that restores on any machine
-
-**Meow brings OpenClaw's DNA to Claude Code.**
-
-```
-OpenClaw DNA ──────► Meow Harness ──────► Claude Code
-                      │
-                      ├── Memory (soul persists)
-                      ├── Missions (background agent)
-                      └── Skills (install from GitHub)
-```
+Meowju is a high-performance, autonomous agentic kernel designed to surpass the limitations of stateless AI assistants. It combines a rigorous **OODA loop** (Observe, Orient, Decide, Act) with a bio-inspired **Structured Memory Palace** and an antifragile **Quality Gate** to create a system that doesn't just solve tasks—it learns and improves itself.
 
 ---
 
-## What Meow Unlocks
+## 🎨 The Philosophy
 
-### 🧠 Memory That Never Forgets
-Claude Code starts fresh every session. Meow remembers:
-- User profiles and relationships
-- Conversation history compressed into context
-- Your preferences, your goals, your patterns
-- Backed up to GitHub — restore anywhere
+Meowju is built on three immutable pillars:
 
-### 🎯 Missions That Work While You Sleep
-OpenClaw has background task agents. Meow gives Claude Code the same:
-- Define a goal, walk away
-- Agent evaluates progress every 30 seconds
-- Posts updates to Discord (edits existing message, no spam)
-- **100% completion? Keeps going. Pushes for excellence.**
+### 1. 🏰 The Palace (MemPalace)
+Forget vector-dumping. Meowju uses a structured biological hierarchy to organize "The Soul":
+- **Wings**: High-level context (Projects, Workspaces, Identity).
+- **Rooms**: Domain-specific knowledge (Code, Docs, Research).
+- **Drawers**: Verbatim snapshots of files and sessions.
+*Searchable via SQLite FTS5 with sub-millisecond recall.*
 
-### 🧩 Skills from OpenClaw's Ecosystem
-OpenClaw's skill ecosystem — now for Claude Code:
-```
-"Install the knowledge-base skill"
-→ Clones from GitHub, installs, ready to use
-```
-Any skill in the OpenClaw format Just Works.
+### 2. 🛡️ The Quality Gate
+**No Slops.** Meowju enforces an "Antifragile Selection" process:
+- **Evolution Epochs**: Every change must survive a validation cycle.
+- **Mandatory Dogfooding**: Code isn't committed until the kernel proves it works by using it.
+- **Sloppy Block**: Unverified implementations freeze the evolution loop until fixed.
 
-### 💾 Soul Backup to GitHub
-```
-"backup yourself"
-→ Pushed to your GitHub. Never lose your agent.
-
-"restore yourself"
-→ Pulled anywhere. Meow is never lost.
-```
+### 3. 🌀 Sovereign Autonomy
+Meowju isn't a "tool." It's an **Orchestrator**:
+- **Multi-Agent Consultation**: Real-time consensus between Claude 3.5, GPT-4o, and Gemini 1.5.
+- **Autonomous Mining**: Verbatim ingestion of entire codebases to build internal mental models.
+- **Background Missions**: Orchestrated Job cycles that run until excellence is achieved.
 
 ---
 
-## Sidecar Architecture
+## 🛠️ The Stack
 
-Meow is a **sidecar harness** — it runs alongside Claude Code, not inside it:
-
+```mermaid
+graph TD
+    A[User / Mission] --> B[Orchestrator]
+    B --> C{OODA Loop}
+    C -->|Observe| D[MemPalace / FTS5]
+    C -->|Orient| E[Quality Gate]
+    C -->|Decide| F[LLM Mesh]
+    C -->|Act| G[MCP / Shell / Git]
+    G --> H[Dogfood Results]
+    H -->|Validate| E
 ```
-┌─────────────────┐       ┌─────────────────┐
-│   Claude Code    │◄─────►│   Meow Harness  │
-│   (Your Agent)  │       │  (OpenClaw DNA) │
-└─────────────────┘       └─────────────────┘
-```
 
-Claude Code does the thinking. Meow handles:
-- Memory persistence
-- Background mission tracking
-- Skill installation
-- Long-term context
-
-**Your agent, fully realized.**
+- **Runtime**: [Bun](https://bun.sh) (Native high-speed execution)
+- **Engine**: OpenAI-compatible (Optimized for MiniMax M2.7 & Claude 3.5)
+- **Memory**: SQLite FTS5 + Verbatim Storage
+- **Identity**: Sovereign Git Identity (`meowju`)
 
 ---
 
-## Quick Start
+## 🚀 Quickstart: Deploy the Kernel
+
+Meowju runs in a dedicated harness to ensure cross-platform consistency and isolation.
 
 ```bash
-git clone https://github.com/stancsz/agent-kernel
-cd agent-kernel/agent-harness
+git clone https://github.com/stancsz/meow
+cd meow/agent-harness
+
+# Provision the environment
 cp .env.example .env
-# Add DISCORD_TOKEN and GH_PAT
+# Set LLM_API_KEY (Anthropic or OpenAI-compatible)
+
+# Launch the sovereign loop
 docker-compose up --build
 ```
 
-Meow connects to Discord. You're ready.
-
----
-
-## Use Meow Inside Claude Code
-
+### Starting a Mission
+Edit `JOB.md` to define your goals, then run:
 ```bash
-git submodule add https://github.com/stancsz/agent-kernel ~/.claude/agent-kernel
-```
-
-In `~/.claude/settings.json`:
-
-```json
-{
-  "skills": {
-    "agent-kernel": {
-      "path": "~/.claude/agent-kernel/.claude/skills/agent-kernel"
-    }
-  }
-}
-```
-
-Then in Claude Code:
-
-```
-/agent-kernel backup                    # Backup soul to GitHub
-/agent-kernel mission create <title>  # Start a mission
-/agent-kernel skills install <repo>   # Add OpenClaw skills
+bun run orchestrate
 ```
 
 ---
 
-## Mission Commands
+## 🎮 The Command Interface
 
-```
-create mission <title>               # Create
-add goals to <mission>: <goal1>     # Define done
-start mission <name>                 # Begin tracking
-mission status                      # Check progress
-complete mission <name>             # Finish
-cancel mission <name>                # Cancel
-list missions                       # See all
-```
+Meowju provides a set of sovereign slash commands for direct kernel interaction:
 
-**Example:**
-
-```
-create mission improve docs
-add goals to improve docs: add quickstart section, add troubleshooting guide
-start mission improve docs
-```
-
-Go make coffee. Meow watches, evaluates, updates Discord.
+- `/mine <path>` — Verbatim ingestion of a project into the Palace.
+- `/palace <query>` — Multi-dimensional search across Wings and Rooms.
+- `/auto status` — Monitor the self-improvement daemon.
+- `/tasks` — View current mission orchestration status.
 
 ---
 
-## Memory Architecture
+## 🔬 Workspace Organization
 
-```
-Soul (GitHub-backed)
-├── Who you are
-├── What you care about
-└── How you work
+Meowju maintains a strict "Zone" hygiene to prevent project clutter:
 
-Context Thread (recent)
-└── Last N messages for continuity
-
-Compressed History (summarized)
-└── Old conversations → tiny summaries
-```
-
-No context bloat. Just memory that matters.
+| Zone | Path | Purpose |
+| :--- | :--- | :--- |
+| **Research** | `evolve/research/` | Deep-dives & competitor harvesting |
+| **Dogfood** | `dogfood/results/` | Validation & capability audits |
+| **Design** | `design/proposals/` | Interface & interaction prototypes |
+| **Scratch** | `scratch/` | Temporary artifacts & one-offs |
 
 ---
 
-## Design Philosophy
+## ⚖️ License & Ethical Autonomy
 
-1. **Sidecar, not replacement** — Claude Code stays Claude Code
-2. **OpenClaw parity** — if OpenClaw has it, Meow brings it
-3. **Memory-first** — continuity enables real intelligence
-4. **Agentic** — background processes that work while you sleep
-5. **Excellence** — 100% completion is a waypoint, not the destination
+Meowju is open-source. Use it to build, learn, and evolve.
 
----
-
-## For Open Code Users
-
-Meow works with Open Code too:
-
-```bash
-MEOW_CWD=/path/to/opencode ./meow --agent --mission <id>
-```
-
-Same memory, same missions. Your harness, your choice.
-
----
-
-*Meow: Claude Code, fully realized.*
+*"Your agent, fully realized. Your soul, never lost."*
