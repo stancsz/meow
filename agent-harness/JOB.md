@@ -1,4 +1,4 @@
-# EVOLVE: Research & Learn from Other Agents
+# EVOLVE: Research & Self-Improve
 [EPOCH: WAITING_FOR_DOGFOOD]
 
 ## Epoch Gate System
@@ -6,18 +6,31 @@
 **CRITICAL RULE:** EVOLVE cannot start a new epoch until DOGFOOD validates the PREVIOUS epoch's promised capabilities.
 
 Each EVOLVE iteration follows this cycle:
-1. **Research** → Find a pattern/capability to adopt
+1. **Research** → Find a capability gap or error to fix
 2. **Promise** → Document what will be implemented (exact feature name)
 3. **Wait** → DOGFOOD must validate it works before EVOLVE continues
 
+## Auto-Research: Find Your Own Gaps
+
+**Priority Order:**
+1. **Self-Fixes** - Errors in YOUR code (not external agents)
+2. **Missing Features** - Capabilities you need but don't have
+3. **External Patterns** - Worthwhile patterns from other agents
+
+**Look at your recent failures:**
+1. Review `dogfood/validation/*.json` for SLOPPY/NOT_IMPLEMENTED epochs
+2. Find patterns in job history errors
+3. Research how to fix the most impactful gap
+
 ## Research Targets (choose one per epoch)
-- **Cursor** - Streaming, code fence handling, context management
-- **Claude Code** - Tool permissions, slash commands, session management
-- **Builder.io** - Component generation, iterative refinement
-- **Windsurf** - Cascade architecture, multi-agent coordination
+- **Self-healing** - Errors you've encountered (ENOENT, Module not found, etc)
+- **Streaming** - Better code fence handling, continuation signals
+- **Context** - Session compaction, memory management
+- **Permissions** - Better auto-approve patterns
+- **External** - Cursor, Claude Code, Windsurf patterns
 
 ## Output: Epoch Promise
-Write to `/app/agent-harness/evolve/epoch/{epoch-n}/{promise.md`:
+Write to `/app/evolve/epoch/{epoch-n}/{promise.md`:
 ```
 === EPOCH PROMISE ===
 
@@ -37,8 +50,8 @@ Write to `/app/agent-harness/evolve/epoch/{epoch-n}/{promise.md`:
 ```
 
 ## Epoch History
-- Epoch 1-6: Completed (see evolve/research/)
-- Epoch 7: IN PROGRESS - Focus on P0 fixes from cross-tool synthesis
+- Epoch 1-16: See dogfood/validation/ for status
+- Epoch 17+: Active self-improvement research
 
 ---
 

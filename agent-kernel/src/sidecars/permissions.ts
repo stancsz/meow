@@ -11,7 +11,7 @@
 //   field:  field:value matches JSON field values
 //
 // Rules are loaded from ~/.agent-kernel/permissions.json
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import * as readline from "node:readline";
@@ -375,8 +375,129 @@ const colors = {
 };
 
 // ============================================================================
+// Learning Layer - Auto-Approve After Threshold
+// ============================================================================
+
+export const APPROVAL_THRESHOLD = 3;
+export const approvalCount = new Map<string, number>();
+
+function hashParams(params: unknown): string {
+  return JSON.stringify(params || {});
+}
+
+function isDangerous(params: unknown): boolean {
+  if (params === undefined || params === null) return false;
+  const str = typeof params === "string" ? params : JSON.stringify(params);
+  return /\brm\s+-rf\b/i.test(str) ||
+         /\bdd\b/.test(str) ||
+         /\bsudo\s+rm\b/i.test(str);
+}
+
+/**
+ * Check permission with auto-approve learning.
+ * Promotes "ask" to "allow" after APPROVAL_THRESHOLD approvals.
+ * 
+ * Flow:
+ * 1. Always block dangerous patterns
+ * 2. Check learning layer FIRST (before default rules)
+ * 3. Check existing rules (default allow/deny/ask patterns)
+ */
+export function checkPermissionWithLearning(
+  tool: string,
+  params?: unknown
+): PermissionResult {
+  // Always block dangerous patterns
+  if (isDangerous(params)) {
+    return { action: "deny", reason: "dangerous pattern" };
+  }
+
+  // Check learning layer FIRST (before default rules)
+  // This allows learned commands to override default allow rules
+  const key = `${tool}:${hashParams(params)}`;
+  const count = approvalCount.get(key) || 0;
+
+  if (count >= APPROVAL_THRESHOLD) {
+    return { action: "allow", reason: `learned pattern (${count} approvals)` };
+  }
+
+  // Check existing rules (default allow/deny patterns)
+  const existing = checkPermission(tool, params);
+  return existing;
+}
+
+/**
+ * Record user approval for learning.
+ * Call this when user approves a permission request.
+ */
+export function recordApproval(tool: string, params?: unknown): void {
+  const key = `${tool}:${hashParams(params)}`;
+  approvalCount.set(key, (approvalCount.get(key) || 0) + 1);
+  // Persist on each approval
+  saveLearnedPatterns();
+}
+
+/**
+ * Reset all learned approval patterns.
+ * Call this for /permissions reset command.
+ */
+export function resetLearnedPatterns(): void {
+  approvalCount.clear();
+  // Also clear from persistence
+  saveLearnedPatterns();
+}
+
+/**
+ * Save learned patterns to permissions.json for persistence.
+ */
+function saveLearnedPatterns(): void {
+  const configPath = join(homedir(), ".meow", "permissions.json");
+  
+  // Build learned patterns object
+  const learnedPatterns: Record<string, number> = {};
+  for (const [key, count] of approvalCount) {
+    learnedPatterns[key] = count;
+  }
+  
+  try {
+    let config: any = {};
+    if (existsSync(configPath)) {
+      const content = readFileSync(configPath, "utf-8");
+      config = JSON.parse(content);
+    }
+    config.learnedPatterns = learnedPatterns;
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+  } catch {
+    // Silently fail - persistence is not critical
+  }
+}
+
+/**
+ * Load learned patterns from permissions.json on startup.
+ */
+function loadLearnedPatterns(): void {
+  const configPath = join(homedir(), ".meow", "permissions.json");
+  
+  try {
+    if (existsSync(configPath)) {
+      const content = readFileSync(configPath, "utf-8");
+      const config = JSON.parse(content);
+      if (config.learnedPatterns && typeof config.learnedPatterns === "object") {
+        for (const [key, count] of Object.entries(config.learnedPatterns)) {
+          if (typeof count === "number") {
+            approvalCount.set(key, count);
+          }
+        }
+      }
+    }
+  } catch {
+    // Silently fail
+  }
+}
+
+// ============================================================================
 // Initialize
 // ============================================================================
 
 loadPermissions();
+loadLearnedPatterns();
 

@@ -2,19 +2,24 @@
  * permissions.ts
  *
  * Skill to test and manage permission rules with pattern matching.
- * Usage: /permissions [check|list|add|remove|test] [args]
+ * Usage: /permissions [check|list|add|remove|test|reset] [args]
  */
 import type { Skill, SkillContext, SkillResult } from "./loader.ts";
 import {
   checkPermission,
   checkPermissionSimple,
+  checkPermissionWithLearning,
   getRules,
   addRule,
   removeRule,
   formatRules,
   testPattern,
+  resetLearnedPatterns,
+  approvalCount,
+  APPROVAL_THRESHOLD,
   type PermissionAction,
 } from "../sidecars/permissions.ts";
+
 export const permissions: Skill = {
   name: "permissions",
   description: "Test and manage pattern-matching permission rules",
@@ -41,11 +46,15 @@ export const permissions: Skill = {
         return handleRemove(parts[1], parts.slice(2).join(" "));
       case "testpattern":
         return handleTestPattern(parts[1] || "shell", parts[2], parts.slice(3).join(" "));
+      case "reset":
+        resetLearnedPatterns();
+        return { content: "Learned patterns cleared. Run /permissions list to confirm commands are back to 'ask'." };
       default:
         return { content: "", error: "Unknown command. Run /permissions help." };
     }
   },
 };
+
 const HELP = [
   "MEOW PERMISSIONS SKILL",
   "",
@@ -57,6 +66,7 @@ const HELP = [
   "  /permissions list                  List all rules",
   "  /permissions add <tool> <action> <pattern>  Add a rule",
   "  /permissions remove <tool> <pattern>  Remove a rule",
+  "  /permissions reset                 Clear learned approval patterns",
   "",
   "Pattern types:",
   "  ^regex       Anchored regex (starts with ^)",
@@ -70,11 +80,19 @@ const HELP = [
   "  /permissions check shell \"rm -rf /\"",
   "  /permissions testpattern shell \"^rm \" \"rm -rf /\"",
   "  /permissions list",
+  "  /permissions reset",
 ].join("\n");
+
 function handleCheck(tool: string, command: string): SkillResult {
-  const result = tool === "shell"
-    ? checkPermissionSimple(tool, command)
-    : checkPermission(tool, command);
+  // EPOCH 21: Use checkPermissionWithLearning to show learning status
+  const params = tool === "shell" ? { cmd: command } : command;
+  const result = checkPermissionWithLearning(tool, params);
+  
+  // Get learning status for this tool+params
+  const key = `${tool}:${JSON.stringify(params || {})}`;
+  const approvalCountValue = approvalCount.get(key) || 0;
+  const isLearned = approvalCountValue >= APPROVAL_THRESHOLD;
+  
   const icon = result.action === "allow" ? "[ALLOW]"
     : result.action === "deny" ? "[DENY] "
     : "[ASK]  "; 
@@ -83,14 +101,24 @@ function handleCheck(tool: string, command: string): SkillResult {
     "Reason: " + (result.reason || "no matching rule"),
   ];
   if (result.rule?.description) lines.push("Description: " + result.rule.description);
+  
+  // EPOCH 21: Show learning status
+  if (isLearned) {
+    lines.push("Learning: ✅ AUTO-APPROVED (learned pattern with " + approvalCountValue + " approvals)");
+  } else if (approvalCountValue > 0) {
+    lines.push("Learning: 🔄 " + approvalCountValue + "/" + APPROVAL_THRESHOLD + " approvals (auto-approve at " + APPROVAL_THRESHOLD + ")");
+  }
+  
   return { content: lines.join("\n") };
 }
+
 function handleList(): SkillResult {
   const rules = getRules();
   const out = ["## Permission Rules (" + rules.length + " total)", "", formatRules(), "",
     "Note: First matching rule wins. User rules take precedence over defaults."].join("\n");
   return { content: out };
 }
+
 function handleAdd(tool: string, action: string, pattern: string): SkillResult {
   if (!tool || !action || !pattern) {
     return { content: "", error: "Usage: /permissions add <tool> <allow|deny|ask> <pattern>" };
@@ -112,6 +140,7 @@ function handleRemove(tool: string, pattern: string): SkillResult {
   }
   return { content: "", error: "No rule found for " + tool + " with pattern: " + pattern };
 }
+
 function handleTestPattern(tool: string, pattern: string, testInput: string): SkillResult {
   if (!pattern || !testInput) {
     return { content: "", error: "Usage: /permissions testpattern <tool> <pattern> <input>" };

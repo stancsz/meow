@@ -477,9 +477,11 @@ export async function executeTool(
   args: unknown,
   context: ToolContext
 ): Promise<ToolResult> {
-  const { checkPermission } = await import("./permissions.ts");
+  // EPOCH 21: Use checkPermissionWithLearning instead of checkPermission
+  // This wires the auto-approve learning layer into the main permission flow
+  const { checkPermissionWithLearning, recordApproval } = await import("./permissions.ts");
 
-  const permission = checkPermission(toolName, args);
+  const permission = checkPermissionWithLearning(toolName, args);
 
   if (permission.action === "deny") {
     return {
@@ -491,6 +493,8 @@ export async function executeTool(
   if (permission.action === "ask") {
     // If already in dangerous mode, auto-allow
     if (context.dangerous) {
+      // EPOCH 21: Record approval in dangerous mode too (user explicitly enabled it)
+      recordApproval(toolName, args);
       // Continue to execute
     } else {
       // Prompt for permission
@@ -502,7 +506,9 @@ export async function executeTool(
           error: `[${toolName}:DENIED] Permission denied by user`,
         };
       }
-      // Permission granted - continue to execute
+      // EPOCH 21: Permission granted - record for learning (after 3 approvals, auto-approve)
+      recordApproval(toolName, args);
+      // Continue to execute
     }
   }
 

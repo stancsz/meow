@@ -14,9 +14,11 @@ import { spawn, ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
-import { getSkillContext } from "../src/sidecars/skill-manager.ts";
-import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
+import { runLeanAgent } from "/app/agent-kernel/src/core/lean-agent.ts";
+import { getSkillContext } from "/app/src/sidecars/skill-manager.ts";
+import { distillJobToSkill } from "/app/src/sidecars/skill-distiller.ts";
+import { consolidateJobMemories } from "/app/src/sidecars/memory-consolidator.ts";
+import { searchMemory, formatSearchResults, storeMemory } from "/app/agent-kernel/src/sidecars/memory-fts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -216,13 +218,170 @@ class Orchestrator {
   private consecutiveNoDecisionCount = 0;
 
   /**
+   * Build health metrics from job histories
+   */
+  private buildHealthMetrics(): string {
+    const lines: string[] = ["## Health Metrics"];
+    for (const job of this.jobs) {
+      const total = job.history.length;
+      if (total === 0) {
+        lines.push(`- **${job.name}**: No history yet`);
+        continue;
+      }
+      const failures = job.history.filter(h => h.exitCode !== 0).length;
+      const successRate = total > 0 ? ((total - failures) / total * 100).toFixed(0) : 100;
+      const avgDuration = total > 0
+        ? Math.round(job.history.reduce((sum, h) => sum + h.duration, 0) / total)
+        : 0;
+
+      // Find recurring errors
+      const errorCounts = new Map<string, number>();
+      for (const h of job.history) {
+        if (h.learnings && (h.learnings.includes("Error") || h.learnings.includes("Failed"))) {
+          const words = h.learnings.split(" ").slice(0, 5).join(" ");
+          errorCounts.set(words, (errorCounts.get(words) || 0) + 1);
+        }
+      }
+      const recurringErrors = Array.from(errorCounts.entries())
+        .filter(([_, count]) => count >= 2)
+        .map(([err]) => err);
+
+      lines.push(`- **${job.name}**: ${successRate}% success (${total} runs), avg ${avgDuration}ms${recurringErrors.length > 0 ? `, RECURRING: ${recurringErrors.slice(0, 2).join(", ")}` : ""}`);
+    }
+    return lines.join("\n");
+  }
+
+  /**
+   * Check if output directories are producing fresh content
+   */
+  private checkOutputFreshness(): string {
+    const now = Date.now();
+    const staleThreshold = 3 * 60 * 60 * 1000; // 3 hours
+    const lines: string[] = ["## Output Freshness"];
+
+    const dirs: { path: string; name: string }[] = [
+      { path: join(EVOLVE_DIR, "research"), name: "EVOLVE research" },
+      { path: join(DOGFOOD_DIR, "validation"), name: "DOGFOOD validation" },
+      { path: join(DESIGN_DIR, "proposals"), name: "DESIGN proposals" },
+    ];
+
+    for (const dir of dirs) {
+      if (!existsSync(dir.path)) {
+        lines.push(`- **${dir.name}**: Not present`);
+        continue;
+      }
+      try {
+        const files = (readdirSync(dir.path) as string[])
+          .filter(f => !f.startsWith("."));
+
+        // Get most recent file mtime
+        let newest = 0;
+        for (const entry of files) {
+          try {
+            const st = require("node:fs").statSync(join(dir.path, entry));
+            newest = Math.max(newest, st.mtimeMs);
+          } catch {}
+        }
+
+        const age = now - newest;
+        const stale = age > staleThreshold;
+        lines.push(`- **${dir.name}**: ${stale ? "⚠️ STALE" : "✓ Fresh"} (${files.length} files, last ${Math.round(age / 60000)}m ago)`);
+      } catch (e) {
+        lines.push(`- **${dir.name}**: Error checking - ${e}`);
+      }
+    }
+    return lines.join("\n");
+  }
+
+  /**
+   * Correlate errors across job histories to find root causes
+   */
+  private correlateErrors(): string {
+    const errorPatterns = new Map<string, Set<string>>();
+
+    for (const job of this.jobs) {
+      for (const h of job.history) {
+        if (h.learnings && h.learnings.includes("Error")) {
+          // Extract error keywords
+          const errors = ["ENOENT", "ReferenceError", "TypeError", "SyntaxError", "Module not found", "Cannot find", "timeout", "BLOCKED", "failed"];
+          for (const err of errors) {
+            if (h.learnings.includes(err)) {
+              if (!errorPatterns.has(err)) errorPatterns.set(err, new Set());
+              errorPatterns.get(err)!.add(job.name);
+            }
+          }
+        }
+      }
+    }
+
+    const lines: string[] = ["## Error Correlation (Root Causes)"];
+    for (const [err, jobs] of errorPatterns) {
+      if (jobs.size > 1) {
+        lines.push(`- **${err}**: Affects ${Array.from(jobs).join(", ")}`);
+      }
+    }
+    return lines.length > 1 ? lines.join("\n") : "";
+  }
+
+  /**
+   * Get gap analysis from validation files
+   */
+  private getGapAnalysis(): string {
+    const validationDir = join(DOGFOOD_DIR, "validation");
+    if (!existsSync(validationDir)) return "";
+
+    const lines: string[] = ["## Gap Analysis (from DOGFOOD validations)"];
+    const unvalidated: string[] = [];
+    const sloppy: string[] = [];
+
+    try {
+      const files = (readdirSync(validationDir) as string[]).filter(f => f.endsWith(".json") && !f.includes("RECONCILIATION"));
+      for (const file of files.slice(-10)) {
+        try {
+          const content = readFileSync(join(validationDir, file), "utf-8");
+          const val = JSON.parse(content);
+          if (val.status === "NOT_IMPLEMENTED" || val.status === "SLOPPY") {
+            sloppy.push(`${file}: ${val.status} - ${val.verdict?.slice(0, 80) || "see file"}`);
+          }
+        } catch {}
+      }
+    } catch {}
+
+    if (sloppy.length > 0) {
+      lines.push("### Unfixed Issues (DOGFOOD found problems)");
+      for (const issue of sloppy.slice(0, 5)) {
+        lines.push(`- ${issue}`);
+      }
+    } else {
+      lines.push("- No open issues found");
+    }
+
+    return lines.join("\n");
+  }
+
+  /**
    * Commander Agent - decides what to work on next
    */
   private async plan(): Promise<void> {
     console.log("[orchestrator] Commander Agent planning...");
 
-    // Build context about current state
+    // Build enhanced context about current state
     const epochStatus = this.checkEpochGates();
+
+    // Health metrics and gap analysis - wrap in try/catch to prevent cascading errors
+    let healthMetrics = "";
+    let outputFreshness = "";
+    let errorCorrelation = "";
+    let gapAnalysis = "";
+    try {
+      healthMetrics = this.buildHealthMetrics();
+      outputFreshness = this.checkOutputFreshness();
+      errorCorrelation = this.correlateErrors();
+      gapAnalysis = this.getGapAnalysis();
+    } catch (e) {
+      console.error("[orchestrator] Error building context metrics:", e);
+    }
+
     const jobsSummary = this.jobs.map(j => {
       const recentLearnings = j.history.slice(-2).map(h => h.learnings).filter(Boolean).join("; ") || "None yet";
       const errorContext = j.lastError ? `\nLAST ERROR: ${j.lastError}` : "";
@@ -234,7 +393,16 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
 
     const skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
 
-    const commanderSystemPrompt = `You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with STRICT EPOCH GATES.
+    // Recall recent memories related to current goals (may fail if memory store not initialized)
+    let memoryContext = "";
+    try {
+      const relevantMemories = searchMemory("current goals architecture preferences", 5);
+      memoryContext = relevantMemories.length > 0 ? "\n## RECALLED FROM PALACE\n" + formatSearchResults(relevantMemories) : "";
+    } catch (e) {
+      memoryContext = "";
+    }
+
+    const commanderSystemPrompt = `You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with PROACTIVE IMPROVEMENT.
 
 ## Your Authority
 You have SOLE AUTHORITY to decide which jobs run and in what priority.
@@ -243,36 +411,44 @@ You MUST respond with a JSON decision object - nothing else.
 ## EPOCH GATE STATUS
 ${epochStatus}
 
-## Current Capability Loops
-${jobsSummary}
+${memoryContext}
+
+${healthMetrics}
+
+${outputFreshness}
+
+${errorCorrelation}
+
+${gapAnalysis}
 
 ${skillContext}
 
-## STRICT EPOCH GATE RULES
+## MISSION: PROACTIVE CAPABILITY IMPROVEMENT
 
-1. **EVOLVE cannot start new epoch** unless DOGFOOD validates the previous epoch's promise
-2. **DOGFOOD must validate** the exact test cases in the promise file
-3. **DESIGN only prototypes** capabilities that are VALIDATED by DOGFOOD
-4. **No sloppy implementations** - if DOGFOOD finds something broken, EVOLVE must wait until fixed
+You are Embers, a research-driven improvement engine. Your role is to:
+1. **SCAN** - Look for capability gaps, recurring errors, stale outputs
+2. **RESEARCH** - Decide what to investigate/improve next
+3. **VALIDATE** - Ensure improvements actually work via DOGFOOD
 
 ## Decision Rules
 
-### THE QUALITY GATE (STRICT)
-- **NO SLOPS**:Max 2 concurrent jobs.
- 
-## SELF-HEALING (NEW AUTHORITY)
-If a job has a 'Last Error', you must decide:
-1. **FIX**: If the error is specific and actionable (e.g. ReferenceError, ENOENT), issue a RUN decision with a briefing focused on FIXING that exact error.
-2. **IGNORE**: If the error is transient or expected, mark it as IDLE and explain why.
-3. **UNBLOCK**: If you believe the root cause is resolved, move the job back to IDLE state.
+### SELF-HEALING
+- If STALE outputs detected → RUN EVOLVE to produce new research
+- If recurring errors found → RUN DOGFOOD to diagnose root cause
+- If implementation missing → Issue EVOLVE promise for that capability
 
-## Decison Format
+### QUALITY GATE
+- Max 2 concurrent jobs
+- EVOLVE cannot start new epoch unless DOGFOOD validates the previous epoch's promise
+- DESIGN only prototypes VALIDATED capabilities
+
+## Decision Format
 Respond with JSON:
 {
-  "reasoning": "...",
+  "reasoning": "Why you made these decisions",
   "decisions": [
-    { "type": "RUN", "job": "...", "briefing": "FIX: [description of fix]" },
-    { "type": "IDLE", "job": "...", "reason": "Ignoring transient error [x]" }
+    { "type": "RUN", "job": "EVOLVE|DOGFOOD|DESIGN", "briefing": "What to research/fix" },
+    { "type": "IDLE", "job": "...", "reason": "Why not running" }
   ]
 }`;
 
@@ -578,6 +754,21 @@ Respond with JSON:
         }
       }
 
+      // 🧠 CROSS-SESSION MEMORY CONSOLIDATION
+      try {
+        const result = await consolidateJobMemories(
+          job.name,
+          job.prompt,
+          state.buffer,
+          code
+        );
+        if (result.success) {
+          console.log(`[orchestrator] 🏰 Palace updated: ${result.message}`);
+        }
+      } catch (e) {
+        console.error("[orchestrator] Memory consolidation failed:", e);
+      }
+
       this.saveState();
     });
   }
@@ -651,6 +842,21 @@ Respond with JSON:
         state.buffer = ""; 
         break;
       }
+    }
+
+    // 📖 VIRTUAL CONTEXT PAGING (Letta Style)
+    // If buffer exceeds ~20k chars, summarize and compact to save context
+    if (state.buffer.length > 20000) {
+      console.log(`[orchestrator] 📟 Context Pressure detected for ${state.jobName} (${state.buffer.length} chars). Compacting...`);
+      // We don't clear the whole buffer because the subprocess needs its history,
+      // but we can "page" the high-level summary into long-term memory mid-run.
+      storeMemory(`${state.jobName}: Context Page`, state.buffer.slice(0, 10000), {
+        source: "session",
+        tags: ["context-paging"],
+        importance: 2
+      });
+      // Slide the window
+      state.buffer = state.buffer.slice(10000);
     }
   }
 

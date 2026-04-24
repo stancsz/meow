@@ -197,6 +197,26 @@ const builtInCommands: Record<string, Command> = {
       }
     },
   },
+  permissions: {
+    name: "permissions",
+    description: "Manage permission learning: /permissions [status|reset]",
+    execute: async (args, _) => {
+      const { formatRules, resetLearnedPatterns } = await import("./permissions.ts");
+      const action = args.trim().toLowerCase();
+
+      if (action === "reset") {
+        resetLearnedPatterns();
+        return { content: "Learned permission patterns have been reset." };
+      }
+
+      if (action === "status") {
+        const rules = formatRules();
+        return { content: `Permission rules:\n${rules}` };
+      }
+
+      return { content: "Usage: /permissions [status|reset]\n  status - Show current permission rules\n  reset  - Clear all learned approval patterns" };
+    },
+  },
 };
 
 // Custom/user commands registry
