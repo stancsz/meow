@@ -21,8 +21,8 @@ const JOBS_FILE = join(__dirname, "data", "jobs.json");
 const CLAUDE_CLI = "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js";
 const TICK_INTERVAL_MS = 30000;      // 30 seconds
 const JOB_TIMEOUT_MS = 3600000;      // 60 minutes per job
-const HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds
-const STALL_THRESHOLD_MS = 30000;  // 30 seconds of no output = stuck (was 60s)
+const HEARTBEAT_INTERVAL_MS = 60000; // 60 seconds
+const STALL_THRESHOLD_MS = 180000;  // 3 minutes of no output = stuck
 const MAX_STALLS = 3;               // after 3 stalls, kill the job
 const JOB_STAGGER_MS = 60000;          // 60 seconds between job starts (to avoid rate limits)
 
@@ -92,21 +92,34 @@ setInterval(() => {
 function parseJobMd(markdown: string): { name: string; prompt: string }[] {
   const jobs: { name: string; prompt: string }[] = [];
 
-  // Split by blank lines (each job is separated by \n\n)
-  const sections = markdown.split(/\n\n+/);
+  // Normalize line endings (handle both \r\n and \n)
+  const normalized = markdown.replace(/\r\n/g, '\n');
 
-  for (const section of sections) {
-    // First line should be an H1
-    const lines = section.split('\n');
-    const h1Match = lines[0].match(/^#\s+(.+)$/);
-    if (!h1Match) continue;
+  // Match H1 headings and capture everything until the next H1 or end of file
+  // Format: # Job Name\n ...content...
+  const h1Regex = /^# (.+)$/gm;
+  let lastIndex = 0;
+  let match;
 
-    const name = h1Match[1].trim();
-    // Everything after the H1 is the prompt
-    const prompt = lines.slice(1).join('\n').trim().replace(/^"/, '').replace(/"$/, '');
+  while ((match = h1Regex.exec(normalized)) !== null) {
+    const name = match[1].trim();
+    const start = match.index + match[0].length;
+    const end = h1Regex.lastIndex;
 
-    if (name && prompt) {
-      jobs.push({ name, prompt });
+    // Find the next H1 position (look ahead)
+    const nextMatch = normalized.slice(end).match(/^# /m);
+    const contentEnd = nextMatch ? end + (nextMatch.index || 0) : normalized.length;
+
+    let content = normalized.slice(start, contentEnd).trim();
+
+    // Remove the "apply https://...principals" line if present
+    content = content.replace(/^apply https:\/\/github\.com\/karpathy\/autoresearch's principals? in this task\.\s*/i, '');
+
+    // Strip leading/trailing quotes
+    content = content.replace(/^"/, '').replace(/"$/, '');
+
+    if (name && content) {
+      jobs.push({ name, prompt: content });
     }
   }
 
@@ -207,8 +220,9 @@ async function runJob(job: Job, timeoutMs: number = JOB_TIMEOUT_MS): Promise<{ s
       "bun",
       [
         "run", "--bun", CLAUDE_CLI,
-        "--print",
-        `--dangerously-skip-permissions`,
+        "--dangerously-skip-permissions",
+        "--mcp-config", "/app/mcp-bridge.json",
+        "--",
         job.prompt
       ],
       {

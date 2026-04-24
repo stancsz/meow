@@ -16,6 +16,10 @@ export interface Skill {
   name: string;           // slash command name (e.g., "simplify")
   description: string;    // description for the model
   aliases?: string[];     // alternative names
+  /** Contribution to the core system prompt when this skill is available. */
+  systemPromptContribution?: string;
+  /** Optional specific tools provided by this skill. */
+  tools?: any[];
   execute: (args: string, context: SkillContext) => Promise<SkillResult>;
 }
 

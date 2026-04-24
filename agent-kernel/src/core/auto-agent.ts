@@ -24,6 +24,7 @@ import {
   shouldPauseAutonomous,
   isTerminalFocused,
 } from "../sidecars/auto-mode.ts";
+import { logHistory } from "../sidecars/history-logger.ts";
 
 export type { InterruptController };
 export { createInterruptController, getInterruptController };
@@ -112,6 +113,23 @@ async function observe(options: AutoAgentOptions, ic?: InterruptController): Pro
     // Git not available or not a repo
   }
 
+  // Check for program.md (Autoresearch style planning)
+  try {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const programPath = join(process.cwd(), ".meow", "program.md");
+    if (existsSync(programPath)) {
+      const program = readFileSync(programPath, "utf-8");
+      observations.push({
+        type: "tick",
+        content: `Current Plan (from program.md):\n${program}`,
+        timestamp: now,
+        confidence: 1.0,
+      });
+    }
+  } catch {
+    // No program.md or error reading it
+  }
+
   return observations;
 }
 
@@ -178,7 +196,8 @@ async function act(
       try {
         const { execSync } = await import("node:child_process");
         execSync("git add -A", { encoding: "utf-8", timeout: 5000 });
-        const result = execSync('git commit -m "chore: auto-save"', { encoding: "utf-8", timeout: 5000 });
+        const commitMsg = options.systemPrompt?.includes("orientation") ? `chore: ${options.systemPrompt}` : "chore: meow auto-save";
+        const result = execSync(`git commit -m "${commitMsg}"`, { encoding: "utf-8", timeout: 5000 });
         return { content: result.toString(), success: true };
       } catch (e: any) {
         return { content: `Commit failed: ${e.message}`, success: false };
@@ -326,6 +345,12 @@ export async function runAutoAgent(
     }
 
     // Record tick result
+      confidence,
+      ticks,
+      iterations: 0,
+    });
+
+    // Record tick result (Restore existing push for compatibility)
     results.push({
       observation: observations.map(o => o.content).join("\n") || "No observations",
       orientation: summary,
@@ -334,6 +359,19 @@ export async function runAutoAgent(
       confidence,
       ticks,
       iterations: 0,
+    });
+
+    // KARPATHY-STYLE LOGGING: Record to history.tsv
+    logHistory({
+      timestamp: new Date().toISOString(),
+      missionId: "auto-" + Date.now().toString().slice(-6),
+      tick: ticks,
+      observation: observations.map(o => o.content).join(" "),
+      orientation: summary,
+      decision: execute ? `Executing: ${action}` : "Skipping",
+      action: action,
+      result: actionResult,
+      confidence: confidence,
     });
 
     // Progress indicator for tick mode

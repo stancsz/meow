@@ -1,55 +1,8 @@
-# use browseros to talk to [gemini.com](https://gemini.google.com/)
-apply https://github.com/karpathy/autoresearch's principals in this task. 
+# BrowserOS Gemini Research
+Using browseros MCP at http://host.docker.internal:9000/mcp, go to https://google.com, find the search box, type "Agentic AI advancements", and press Enter. Then summarize the top 3 findings and save them to /app/agent-harness/computer/gemini-research.md
 
-"Using browseros, visit gemini.google.com and search for 'Agentic AI advancements' in the last 24 hours.
+# Dogfood agent-kernel Audit
+Read /app/agent-kernel/tests/gaps.test.ts and create /app/agent-harness/computer/kernel-audit.md with a summary of what capabilities it validates and the top gaps identified.
 
-Instructions for Continuity:
-
-Current Benchmark: Identify the top 3 features of Claude Code (CLI focus) and Eigent (Desktop focus) as of April 2026.
-
-Gap Analysis: Compare these to the current ./meow-agent-kernel.
-
-Action: If a discrepancy exists, write a specific implementation plan to ./kernel/roadmaps/gap_closure.md.
-
-Self-Correction: If you find you have reached a dead end, search for the latest 'Agentic AI Postmortem' or 'Architecture Analysis' to find a new path.
-
-Persistence: Do not stop until you have proposed a PR-ready architecture update. If the work is complete, perform a 'Quality Scan' of your own proposal and look for one further optimization in performance or latency."
-
-# Dogfood agent-kernel
-apply https://github.com/karpathy/autoresearch's principals in this task. 
-
-"Initialize a 'Dogfooding Loop' for the agent-kernel.
-
-The Workflow:
-
-Capabilities Audit: Run all tests in ./tests/capabilities. Match them against the Claude Code feature list (Terminal control, file diffing, context window management).
-
-Iterative Fix: If a test fails or a capability is missing, you are authorized to modify the kernel code to fix it.
-
-Validation: After every code change, re-run the tests.
-
-Improvement Phase: If all tests pass, analyze the agent-kernel for 'Token Efficiency'—can you reduce the system prompt length or improve the reasoning-to-action ratio?
-
-Loop Rule: If tests fail, you must stay in the loop. If tests pass, you move to the 'Improvement Phase'. Only terminate if no further performance gains > 5% are identified."
-
-
-# Desktop Agent Development
-apply https://github.com/karpathy/autoresearch's principals in this task. 
-
-"In ./agent-harness/computer, build a functional Desktop Agent.
-
-Build-Test-Improve Loop:
-
-Tool Integration: Map the tools in tool-registry.ts (Click, Type, Screenshot, OCR) to a central computer_controller.ts.
-
-Benchmarking: Compare your current logic to the architecture of Goose (Rust-based performance) and Eigent (Multi-agent coordination).
-
-Continuous Execution: >    - Step A: Implement a 'Screen Recognition' module.
-
-Step B: Run the ./scripts/test-desktop-nav.sh simulation.
-
-Step C: If it fails, use the error logs to refactor computer_controller.ts.
-
-Polish: Once navigation works, implement 'Human-in-the-Loop' triggers (like Eigent) for uncertain actions.
-
-Continuity: If any logic is incomplete, describe the current state in BUILD_STATUS.md and immediately start the next step. Do not exit until the agent can successfully perform a multi-app task (e.g., 'Open Browser, copy text, paste into Notepad')."
+# Desktop Agent Status
+Read /app/agent-harness/computer/computer_controller.ts and update /app/agent-harness/computer/BUILD_STATUS.md with the current implementation status including what features work and what is incomplete.

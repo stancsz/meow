@@ -10,6 +10,8 @@ import {
   getToolDefinitions,
   executeTool,
 } from "../sidecars/tool-registry.ts";
+import { classifyError, ErrorCategory } from "../sidecars/error-classifier.ts";
+import { getAllSkills } from "../skills/loader.ts";
 
 // ============================================================================
 // Types
@@ -27,6 +29,8 @@ export interface LeanAgentOptions {
   messages?: any[];
   timeoutMs?: number;
   maxBudgetUSD?: number;  // Maximum budget in USD cents (e.g., 0.50 = 50 cents)
+  /** Enable one final 'grace' turn when limits are hit to summarize progress. */
+  grace?: boolean;
   /** Optional list of tool names to allow. If not set, all tools are available. */
   allowedTools?: string[];
 }
@@ -232,10 +236,18 @@ function buildSystemPrompt(allowedTools?: string[]) {
   const tools = getToolDefinitions(allowedTools);
   const toolList = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
 
+  // Load skill contributions (Modular Skill Discovery)
+  const coreSkillPrompts = getAllSkills()
+    .map((s: any) => s.systemPromptContribution)
+    .filter(Boolean)
+    .join("\n\n");
+
   return `You are Agentic Kernel, a lean sovereign autonomous cognitive engine.
 
 You have access to tools:
 ${toolList}
+
+${coreSkillPrompts}
 
 When using tools:
 1. Parse the user's intent
@@ -298,15 +310,26 @@ export async function runLeanAgent(
   }
 
   const context = { dangerous, abortSignal, cwd: process.cwd(), timeoutMs };
-  let iterations = 0;
-  let totalPromptTokens = 0;
-  let totalCompletionTokens = 0;
   let totalCostUSD = 0;
   let lastContent = "";
+  let isGraceIteration = false;
 
-  while (iterations < maxIterations) {
+  while (iterations < maxIterations || (isGraceIteration && iterations <= maxIterations + 1)) {
     if (abortSignal?.aborted) {
       return { content: "Interrupted", iterations, completed: false };
+    }
+
+    // Determine if this is the final grace iteration
+    const limitReached = iterations >= maxIterations || (maxBudgetUSD !== undefined && totalCostUSD > maxBudgetUSD);
+    if (limitReached && options.grace && !isGraceIteration) {
+      isGraceIteration = true;
+      // Inject grace prompt
+      messages.push({
+        role: "system",
+        content: "LIMIT REACHED. You have one final turn to summarize your progress, what is left to do, and finalize state. No more tools can be used.",
+      });
+    } else if (limitReached && !isGraceIteration) {
+      break; // Exit if no grace or already did grace
     }
 
     iterations++;
@@ -322,9 +345,20 @@ export async function runLeanAgent(
         response = await client.chat.completions.create({
           model,
           messages,
-          tools: getOpenAITools(options.allowedTools),
-          tool_choice: "auto",
+          tools: isGraceIteration ? undefined : getOpenAITools(options.allowedTools),
+          tool_choice: isGraceIteration ? "none" : "auto",
         }, { signal: ac.signal });
+      } catch (e: any) {
+        const classified = classifyError(e);
+        if (classified.category === ErrorCategory.TRANSIENT && classified.backoffMs) {
+          // Simple retry for transient errors if not at limit
+          if (iterations < maxIterations) {
+            await new Promise(r => setTimeout(r, classified.backoffMs!));
+            iterations--; // retry this iteration count
+            continue;
+          }
+        }
+        throw e;
       } finally {
         clearTimeout(timer);
         abortSignal?.removeEventListener("abort", () => ac.abort());
@@ -415,6 +449,17 @@ export async function runLeanAgent(
         });
       }
     } catch (e: any) {
+      const classified = classifyError(e);
+      
+      // If it's a recovery or logic error, we feed it back to the agent instead of crashing
+      if (classified.category === ErrorCategory.RECOVERY || classified.category === ErrorCategory.LOGIC) {
+        messages.push({
+          role: "system",
+          content: `ERROR: ${classified.message}\nSUGGESTION: ${classified.suggestion || "Fix the command and try again."}`,
+        });
+        continue;
+      }
+
       // Tool-related errors - return what we have so far
       const errorMsg = e?.message || "";
       if (errorMsg.includes("tool") || errorMsg.includes("not found") || errorMsg.includes("empty")) {

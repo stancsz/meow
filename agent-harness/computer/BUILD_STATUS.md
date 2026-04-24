@@ -1,7 +1,7 @@
 # Desktop Agent — Build Status
 
 **Last updated:** 2026-04-24
-**Status:** Core modules fully functional — all critical bugs fixed, hOCR bounding boxes implemented, macOS drag improved
+**Status:** Core modules fully functional — all critical bugs fixed, hOCR bounding boxes implemented, macOS drag improved, auto-detection added
 
 ---
 
@@ -9,7 +9,7 @@
 
 | Module | File | Status | Notes |
 |--------|------|--------|-------|
-| Controller | `computer_controller.ts` | ✅ Complete | macOS/Linux/Windows, simulated mode |
+| Controller | `computer_controller.ts` | ✅ Complete | macOS/Linux/Windows, simulated mode, auto-detection |
 | Screen Recognition | `screen_recognition.ts` | ✅ Complete | Tesseract/macOS/Vision/mock engines |
 | Human-in-the-Loop | `human_in_the_loop.ts` | ✅ Complete | Risk scoring, approval gates, 3 channels |
 | Agent Orchestrator | `computer_agent.ts` | ✅ Complete | Plan→Act→Verify loop, HITL integration |
@@ -55,6 +55,7 @@
 - Platform detection: darwin, linux, win32
 - Simulated mode (`SIMULATE_DESKTOP=1`) for Docker/headless environments
 - Error recovery: retry with exponential backoff, failure logging
+- `init()` auto-detects tesseract, screencapture, or DISPLAY availability at startup and enables simulated mode automatically when no display is found (Linux headless)
 
 ### ✅ screen_recognition.ts
 - `capture()` — full-screen screenshot + OCR → ScreenState
@@ -115,17 +116,17 @@
 - macOS drag uses `cliclick` or PyAutoGUI (was broken AppleScript workaround)
 - Linux drag uses stepwise movement for reliability
 - All type exports in `index.ts` are valid (non-existent types removed)
+- `init()` auto-detects OCR engine and automatically enables simulated mode when no display is found (Linux headless)
 
 ---
 
 ## Known Gaps
 
-| Gap | Severity | Status | Notes |
-|-----|----------|--------|-------|
 | No real element-position OCR | Medium | ✅ Fixed | `parseHocrOutput()` parses tesseract hOCR output for real bbox coords |
 | No real mouse drag on macOS | Medium | ✅ Fixed | `drag()` now uses `cliclick` (preferred) or Python/PyAutoGUI fallback |
 | No real accessibility tree on Linux | Medium | Open | `getA11yTree()` returns only window name on Linux |
 | Linux drag is single-step teleportation | Low | ✅ Fixed | Stepwise movement now used for reliability |
+| macOS AX tree has no position data | Medium | Open | `getA11yTree()` extracts role/title/value but `boundingBox` is stubbed on macOS (position TBD from AXPosition) |
 | No LLM screen summary endpoint set | Low | Open | `enableLLMSummary` defaults to false; set `LLM_SCREEN_SUMMARY_ENDPOINT` |
 | No config file (JSON/YAML) | Low | Open | All config via env vars or programmatic `configure()` |
 | No persistent task history | Low | Open | history is in-memory; no disk persistence |

@@ -12,6 +12,8 @@
  */
 
 import type { Skill, SkillContext, SkillResult } from "./loader.ts";
+import { logHistory } from "../sidecars/history-logger.ts";
+import { createLineageCheckpoint } from "../sidecars/checkpointing.ts";
 
 // ============================================================================
 // Types
@@ -220,10 +222,14 @@ function extractFollowUpQuestion(original: string, results: SearchResult[]): str
 // ============================================================================
 
 export const autoresearch: Skill = {
-  name: "research",
   description:
     "Autonomous deep research with OODA loop: question → search → synthesize → hypothesize → validate → repeat",
   aliases: ["autoresearch", "deep-research", "investigate"],
+  systemPromptContribution: `When conducting deep research:
+1. Always state your current hypothesis clearly.
+2. Search for disconfirming evidence, not just confirming evidence.
+3. Show your work by listing URLs consulted.
+4. Maintain a 'Lineage Checkpoint' before and after major findings.`,
 
   async execute(args: string, _ctx: SkillContext): Promise<SkillResult> {
     const question = args.trim();
@@ -253,8 +259,24 @@ Note: Uses web search to gather current information.`,
 
     try {
       console.log(`[autoresearch] Starting research: ${question}`);
+      
+      // Lineage Checkpoint (Autoresearch style)
+      await createLineageCheckpoint(`research-start: ${question.slice(0, 20)}`);
 
       const { findings, hypotheses, sources, iterations } = await runResearchLoop(question, 3);
+
+      // Log progress to history.tsv
+      logHistory({
+        timestamp: new Date().toISOString(),
+        missionId: "research-" + Date.now().toString().slice(-6),
+        tick: iterations,
+        confidence: 0.9,
+        orientation: "Research complete",
+        decision: "Finalizing findings",
+        action: "summarize",
+        result: `Found ${sources.length} sources and ${hypotheses.length} hypotheses`,
+        observation: question,
+      });
 
       const sourcesList =
         sources.length > 0

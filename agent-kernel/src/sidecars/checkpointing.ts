@@ -107,6 +107,25 @@ export async function restoreCheckpoint(): Promise<{ success: boolean; message: 
 }
 
 /**
+ * Lineage Checkpoint (Autoresearch style):
+ * Creates a real commit on a side-branch to track research iteration.
+ * This is persistent even if stashes are cleared.
+ */
+export async function createLineageCheckpoint(tag: string): Promise<{ success: boolean; hash?: string; stderr?: string }> {
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("git add -A", { encoding: "utf-8", timeout: 5000 });
+    const msg = `research-iteration: ${tag}`;
+    const result = execSync(`git commit --allow-empty -m "${msg}"`, { encoding: "utf-8", timeout: 5000 });
+    const hash = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+    return { success: true, hash };
+  } catch (e: any) {
+    return { success: false, stderr: e.message };
+  }
+}
+
+
+/**
  * Check if a checkpoint is currently active.
  */
 export function hasCheckpoint(): boolean {
@@ -153,6 +172,20 @@ export async function initializeCheckpointing(): Promise<void> {
   if (writeTool) registerTool(wrapToolWithCheckpoint(writeTool));
   if (editTool) registerTool(wrapToolWithCheckpoint(editTool));
 }
+
+// Register /checkpoint command
+registerCommand({
+  name: "checkpoint",
+  description: "Create a lineage checkpoint (git commit) for the current state",
+  execute: async (args: string[]) => {
+    const tag = args[0] || "manual-checkpoint";
+    const result = await createLineageCheckpoint(tag);
+    if (result.success) {
+      return { content: `Lineage checkpoint created: ${result.hash} (${tag})` };
+    }
+    return { content: `Failed to create checkpoint: ${result.stderr}` };
+  },
+});
 
 // Tool interface (re-exported for type use)
 interface Tool {
