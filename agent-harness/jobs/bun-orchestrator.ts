@@ -331,29 +331,39 @@ class Orchestrator {
     if (!existsSync(validationDir)) return "";
 
     const lines: string[] = ["## Gap Analysis (from DOGFOOD validations)"];
-    const unvalidated: string[] = [];
-    const sloppy: string[] = [];
+    const notImplemented: Array<{file: string, verdict: string, exact_fix?: string, attempt_count?: number}> = [];
 
     try {
       const files = (readdirSync(validationDir) as string[]).filter(f => f.endsWith(".json") && !f.includes("RECONCILIATION"));
-      for (const file of files.slice(-10)) {
+      for (const file of files.slice(-15)) {
         try {
           const content = readFileSync(join(validationDir, file), "utf-8");
           const val = JSON.parse(content);
-          if (val.status === "NOT_IMPLEMENTED" || val.status === "SLOPPY") {
-            sloppy.push(`${file}: ${val.status} - ${val.verdict?.slice(0, 80) || "see file"}`);
+          if (val.status === "NOT_IMPLEMENTED") {
+            notImplemented.push({
+              file,
+              verdict: val.verdict?.slice(0, 100) || "see file",
+              exact_fix: val.exact_fix,
+              attempt_count: val.attempt_count || 0
+            });
           }
         } catch {}
       }
     } catch {}
 
-    if (sloppy.length > 0) {
-      lines.push("### Unfixed Issues (DOGFOOD found problems)");
-      for (const issue of sloppy.slice(0, 5)) {
-        lines.push(`- ${issue}`);
+    if (notImplemented.length > 0) {
+      lines.push("### NOT_IMPLEMENTED (EVOLVE must fix these)");
+      for (const issue of notImplemented) {
+        lines.push(`- ${issue.file}: ${issue.verdict}`);
+        if (issue.exact_fix) {
+          lines.push(`  EXACT FIX: ${issue.exact_fix}`);
+        }
+        if (issue.attempt_count > 0) {
+          lines.push(`  Attempts: ${issue.attempt_count}`);
+        }
       }
     } else {
-      lines.push("- No open issues found");
+      lines.push("- No NOT_IMPLEMENTED epochs found");
     }
 
     return lines.join("\n");
@@ -423,38 +433,39 @@ ${gapAnalysis}
 
 ${skillContext}
 
-## MISSION: PROACTIVE CAPABILITY IMPROVEMENT
+## MISSION: 4-PHASE TEST-DRIVEN EVOLUTION
 
-You are Embers, a research-driven improvement engine. Your role is to:
-1. **SCAN** - Look for capability gaps, recurring errors, stale outputs
-2. **RESEARCH** - Decide what to investigate/improve next
-3. **VALIDATE** - Ensure improvements actually work via DOGFOOD
+You are Embers, a strict orchestrator. Your loop is:
+1. **DISCOVER**: Find ideas via MCP browsing (external) or reading internal error logs (internal).
+2. **PLAN**: Choose ONE idea from DISCOVER, write architecture & validation tests (TDD). 
+3. **BUILD**: Implement the code necessary to pass the tests generated in PLAN.
+4. **DOGFOOD**: Run the tests. If they pass, loop to DISCOVER. If they fail, feed errors back to BUILD.
 
 ## Decision Rules
 
-### SELF-HEALING
-- If STALE outputs detected → RUN EVOLVE to produce new research
-- If recurring errors found → RUN DOGFOOD to diagnose root cause
-- If implementation missing → Issue EVOLVE promise for that capability
+### CAUSAL SEQUENCE (STRICT TDD)
+- Do not RUN **PLAN** unless **DISCOVER** has produced a backlog.
+- Do not RUN **BUILD** unless **PLAN** has produced a `.test.ts` file and architecture spec.
+- Do not RUN **DOGFOOD** unless **BUILD** has claimed implementation is complete.
 
-### QUALITY GATE
-- Max 2 concurrent jobs
-- EVOLVE cannot start new epoch unless DOGFOOD validates the previous epoch's promise
-- DESIGN only prototypes VALIDATED capabilities
+### SELF-HEALING & QUALITY GATE
+- If DOGFOOD reports a test failure, send the exact stack trace back to **BUILD** to fix it immediately.
+- Max 2 concurrent jobs. Focus the agent.
+- Fix broken internal systems (pain points) before researching external new features.
 
 ## Decision Format
 Respond with JSON:
 {
   "reasoning": "Why you made these decisions",
   "decisions": [
-    { "type": "RUN", "job": "EVOLVE|DOGFOOD|DESIGN", "briefing": "What to research/fix" },
-    { "type": "IDLE", "job": "...", "reason": "Why not running" }
+    { "type": "RUN", "job": "DISCOVER|PLAN|BUILD|DOGFOOD", "briefing": "Exact details of what to perform in this phase" },
+    { "type": "IDLE", "job": "...", "reason": "Why waiting" }
   ]
 }`;
 
     try {
       const result = await runLeanAgent("Analyze current status and decide next orchestration actions.", {
-        maxIterations: 5,
+        maxIterations: 15,
         systemPrompt: commanderSystemPrompt,
         dangerous: true
       });

@@ -1,111 +1,56 @@
-# EVOLVE: Research & Self-Improve
-[EPOCH: WAITING_FOR_DOGFOOD]
+# DISCOVER: External Research & Pain-Sourcing
+[STATE: IDLE]
 
-## Epoch Gate System
+**Goal:** Use tools to observe the outside world and our own internal metrics to find the next most valuable capability to build.
 
-**CRITICAL RULE:** EVOLVE cannot start a new epoch until DOGFOOD validates the PREVIOUS epoch's promised capabilities.
+## Methodology
+1. **External Browsing**: Use MCP/tools to browse changelogs, blogs, and repos of leading AI agents (Cursor, Windsurf, Letta, Mem0, Builder.io). Look for the *newest features* and interaction patterns.
+2. **Local Pain-Sourcing**: Scan our own `dogfood/validation/` logs, fallback metrics, and recurrent errors. Fix our own house before adopting shiny object features.
 
-Each EVOLVE iteration follows this cycle:
-1. **Research** → Find a capability gap or error to fix
-2. **Promise** → Document what will be implemented (exact feature name)
-3. **Wait** → DOGFOOD must validate it works before EVOLVE continues
-
-## Auto-Research: Find Your Own Gaps
-
-**Priority Order:**
-1. **Self-Fixes** - Errors in YOUR code (not external agents)
-2. **Missing Features** - Capabilities you need but don't have
-3. **External Patterns** - Worthwhile patterns from other agents
-
-**Look at your recent failures:**
-1. Review `dogfood/validation/*.json` for SLOPPY/NOT_IMPLEMENTED epochs
-2. Find patterns in job history errors
-3. Research how to fix the most impactful gap
-
-## Research Targets (choose one per epoch)
-- **Self-healing** - Errors you've encountered (ENOENT, Module not found, etc)
-- **Streaming** - Better code fence handling, continuation signals
-- **Context** - Session compaction, memory management
-- **Permissions** - Better auto-approve patterns
-- **External** - Cursor, Claude Code, Windsurf patterns
-
-## Output: Epoch Promise
-Write to `/app/evolve/epoch/{epoch-n}/{promise.md`:
-```
-=== EPOCH PROMISE ===
-
-## Capability to Implement
-{Name of exact feature}
-
-## What It Does
-{1-2 sentence description}
-
-## Implementation Criteria (how DOGFOOD will validate)
-1. {Specific test case}
-2. {Specific test case}
-3. {Must be reproducible}
-
-## From Research: {Source}
-{Who has this pattern and how do they do it?}
-```
-
-## Epoch History
-- Epoch 1-16: See dogfood/validation/ for status
-- Epoch 17+: Active self-improvement research
+## Output Zone: `evolve/backlog/`
+- For each new finding, create a proposal at `evolve/backlog/{topic}.md`.
+- Assign a priority score (1-5).
+- Include links to original external sources if discovered via browser.
 
 ---
 
-# DOGFOOD: Validate & Fix Capabilities
-[EPOCH: MUST_VALIDATE_EVOLVE]
+# PLAN: Architecture & Test-Driven Design (TDD)
+[STATE: IDLE]
 
-## Mission
-**BLOCK EVOLVE until promised capabilities are REAL and WORKING.**
+**Goal:** Take ONE top-priority item from the DISCOVER backlog and architect it rigorously. Do NOT write implementation code yet.
 
-## Validation Method
-For each promise from EVOLVE's epoch:
-1. Read the promise file at `/app/agent-harness/evolve/epoch/{n}/promise.md`
-2. Execute the exact test cases listed in "Implementation Criteria"
-3. If tests PASS: Write validation to `/app/agent-harness/dogfood/validation/{epoch-n}-{capability}.json`
-4. If tests FAIL: Mark as SLOPPY and report what specifically is broken
+## Methodology
+1. **Lock Epoch**: Choose exactly ONE feature to work on. Do not multitask.
+2. **Architecture Spec**: Draft an `architecture.md` defining how this fits the Meow ecosystem (sidecars, MCP, registry, etc.). Check the Sovereign Palace memory to avoid past mistakes.
+3. **Test Generation**: Write an executable test file (e.g., `feature.test.ts`) that will verify this feature. It must strictly test the boundaries and failure cases.
 
-## Validation Output Format
-```json
-{
-  "epoch": 7,
-  "capability": "{name}",
-  "status": "VALIDATED | SLOPPY | NOT_IMPLEMENTED",
-  "tests": [
-    { "name": "test case 1", "result": "PASS | FAIL", "evidence": "..." }
-  ],
-  "verdict": "Detailed assessment - is this real or fake?",
-  "blocking": true | false
-}
-```
-
-## If SLOPPY Implementation Found
-1. Report exactly what's wrong (be specific - not "it's broken" but "X function returns Y instead of Z when condition W")
-2. Suggest exact fix
-3. Re-run after fix to confirm
-
-## If VALIDATED
-1. Notify "EVOLVE can proceed to next epoch"
-2. Mark capability as "proven" in CAPABILITY_STATUS.md
+## Output Zone: `evolve/epoch/{n}/`
+- `plan_architecture.md`
+- `validation.test.ts`
 
 ---
 
-# DESIGN: Prototype UI for Validated Capabilities
-[EPOCH: WAITING_FOR_VALIDATION]
+# BUILD: Strict Implementation
+[STATE: IDLE]
 
-## Mission
-Design human-agent interfaces for capabilities that have been VALIDATED by DOGFOOD.
+**Goal:** Write the actual implementation code to satisfy the `validation.test.ts` generated in the PLAN step.
 
-## Rules
-- Only prototype for capabilities that have `status: VALIDATED` in dogfood validation/
-- Do NOT design for capabilities that are still in research or sloppy implementation
+## Methodology
+1. Read `plan_architecture.md` and `validation.test.ts`.
+2. Modify or create TypeScript codebase files.
+3. Do not modify the test file to artificially pass. Adapt the code to the test. If the plan was fundamentally flawed, abort back to PLAN.
 
-## Design Targets (validated capabilities only)
-- After Epoch 7 validates "code fence aware chunking" → Design streaming progress indicator
-- After Epoch 7 validates "TokenBuffer" → Design agent "thinking" indicator
+---
 
-## Output
-Write proposals to `/app/agent-harness/design/proposals/{validated-capability}-{date}.md`
+# DOGFOOD: Automated Quality Gate
+[STATE: IDLE]
+
+**Goal:** Provide an automated, undeniable verdict on whether the BUILD was successful.
+
+## Methodology
+1. Run `bun test path/to/validation.test.ts` for the current epoch.
+2. **If FAIL**: Extract exact stack trace/error. Send it to the Orchestrator to spawn a `FIX` mission automatically. The epoch is BLOCKED.
+3. **If PASS**: 
+   - Record success in `dogfood/validation/epoch-{n}-history.json`.
+   - Trigger the Memory Consolidator (Enzo) to store the successful pattern in long-term memory.
+   - Unlock the orchestrator to pick the next DISCOVER item.
