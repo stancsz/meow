@@ -330,15 +330,36 @@ async function simulatedType(text: string): Promise<TypeResult> {
 
 async function simulatedScreenshot(): Promise<ScreenshotResult> {
   const outFile = join(CONFIG.screenshotDir, `sim_${Date.now()}.png`);
-  await safeShell(`convert xc:black -size 1920x1080 png:${outFile} 2>/dev/null || dd if=/dev/urandom bs=1 count=1024 of=${outFile} 2>/dev/null; echo "simulated screenshot" > /tmp/last_screenshot.txt`);
-  const base64 = await safeShell(`base64 ${outFile} 2>/dev/null | tr -d '\\n'`);
-  return {
-    success: true,
-    filePath: outFile,
-    base64,
-    width: 1920,
-    height: 1080,
-  };
+  await safeShell(`mkdir -p ${CONFIG.screenshotDir}`);
+
+  // Generate a valid minimal PNG (8x1 grayscale) using pure Node.js to avoid
+  // external tool dependencies. Falls back to synthetic base64 if fs unavailable.
+  try {
+    const { writeFileSync } = await import("node:fs");
+    // Minimal valid PNG: 8x1 black pixel, pre-encoded as base64
+    const minimalPng = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAECAAAAABhMmhJAAAADklEQVQI12NgGAWjAAMAABwAAWjmK4kAAAAASUVORK5CYII=",
+      "base64"
+    );
+    writeFileSync(outFile, minimalPng);
+    return {
+      success: true,
+      filePath: outFile,
+      base64: minimalPng.toString("base64"),
+      width: 1920,
+      height: 1080,
+    };
+  } catch {
+    // Fallback: return a synthetic result with a placeholder base64 string
+    const placeholder = Buffer.from("PLACEHOLDER_SIM_SCREENSHOT").toString("base64");
+    return {
+      success: true,
+      filePath: outFile,
+      base64: placeholder,
+      width: 1920,
+      height: 1080,
+    };
+  }
 }
 
 // ============================================================================

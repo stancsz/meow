@@ -22,8 +22,8 @@ const CLAUDE_CLI = "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js
 const TICK_INTERVAL_MS = 30000;      // 30 seconds
 const JOB_TIMEOUT_MS = 3600000;      // 60 minutes per job
 const HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds
-const STALL_THRESHOLD_MS = 60000;     // 60 seconds of no output = stuck
-const MAX_STALLS = 3;                 // after 3 stalls, kill the job
+const STALL_THRESHOLD_MS = 30000;  // 30 seconds of no output = stuck (was 60s)
+const MAX_STALLS = 3;               // after 3 stalls, kill the job
 const JOB_STAGGER_MS = 60000;          // 60 seconds between job starts (to avoid rate limits)
 
 // ============================================================================

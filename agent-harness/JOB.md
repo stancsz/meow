@@ -1,4 +1,6 @@
 # use browseros to talk to [gemini.com](https://gemini.google.com/)
+apply https://github.com/karpathy/autoresearch's principals in this task. 
+
 "Using browseros, visit gemini.google.com and search for 'Agentic AI advancements' in the last 24 hours.
 
 Instructions for Continuity:
@@ -14,6 +16,8 @@ Self-Correction: If you find you have reached a dead end, search for the latest 
 Persistence: Do not stop until you have proposed a PR-ready architecture update. If the work is complete, perform a 'Quality Scan' of your own proposal and look for one further optimization in performance or latency."
 
 # Dogfood agent-kernel
+apply https://github.com/karpathy/autoresearch's principals in this task. 
+
 "Initialize a 'Dogfooding Loop' for the agent-kernel.
 
 The Workflow:
@@ -30,6 +34,8 @@ Loop Rule: If tests fail, you must stay in the loop. If tests pass, you move to 
 
 
 # Desktop Agent Development
+apply https://github.com/karpathy/autoresearch's principals in this task. 
+
 "In ./agent-harness/computer, build a functional Desktop Agent.
 
 Build-Test-Improve Loop:
