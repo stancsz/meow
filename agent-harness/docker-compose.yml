@@ -27,3 +27,5 @@ services:
       - ./.claude:/app/.claude
       - ../agent-kernel:/app/agent-kernel:rw
       - ./JOB.md:/app/JOB.md:ro
+      - /c/Users/stanc/github/meow-1/agent-harness:/app/agent-harness:rw
+      - ./computer:/app/agent-harness/computer:rw

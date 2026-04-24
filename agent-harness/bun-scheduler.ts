@@ -47,25 +47,25 @@ interface JobRun {
 
 function parseJobMd(markdown: string): { name: string; prompt: string }[] {
   const jobs: { name: string; prompt: string }[] = [];
-  const h1Regex = /^# (.+)$/gm;
-  let match;
 
-  while ((match = h1Regex.exec(markdown)) !== null) {
-    const name = match[1].trim();
-    const start = match.index + match[0].length;
-    const end = h1Regex.lastIndex;
-    const content = markdown.slice(start, end).trim();
+  // Split by blank lines (each job is separated by \n\n)
+  const sections = markdown.split(/\n\n+/);
 
-    // Find next H1 or end of file
-    const nextH1Match = markdown.slice(end).match(/^# /m);
-    const prompt = nextH1Match
-      ? content.slice(0, content.lastIndexOf(`# ${nextH1Match[1]}`)).trim()
-      : content.trim();
+  for (const section of sections) {
+    // First line should be an H1
+    const lines = section.split('\n');
+    const h1Match = lines[0].match(/^#\s+(.+)$/);
+    if (!h1Match) continue;
+
+    const name = h1Match[1].trim();
+    // Everything after the H1 is the prompt
+    const prompt = lines.slice(1).join('\n').trim().replace(/^"/, '').replace(/"$/, '');
 
     if (name && prompt) {
       jobs.push({ name, prompt });
     }
   }
+
   return jobs;
 }
 
@@ -159,7 +159,7 @@ async function runJob(job: Job, timeoutMs: number = JOB_TIMEOUT_MS): Promise<{ s
 
     const proc = spawn(
       "bun",
-      ["run", "--bun", CLAUDE_CLI, "--continue", "--prompt", job.prompt],
+      ["run", "--bun", CLAUDE_CLI, "--print", `--dangerously-skip-permissions`, job.prompt],
       {
         cwd: process.env.CLAUDE_CWD || "/app",
         stdio: ["ignore", "pipe", "pipe"],
@@ -244,7 +244,7 @@ async function tick(): Promise<void> {
       timestamp: now,
       status: result.timedOut ? "timeout" : (result.success ? "success" : "failed"),
       output: result.output.slice(0, 1000),
-      durationMs: result.timedOut ? JOB_TIMEOUT_MS : (now - job.lastRun!),
+      durationMs: result.timedOut ? JOB_TIMEOUT_MS : (now - now), // first run, duration approximate
     });
     job.lastStatus = result.timedOut ? "timeout" : (result.success ? "success" : "failed");
     job.lastRun = now;
@@ -310,6 +310,29 @@ async function runJobNow(jobName: string): Promise<void> {
   if (!job) {
     console.error(`Job not found: ${jobName}`);
     console.error("Run 'list' to see available jobs.");
+    return;
+  }
+
+  if (job.running) {
+    console.log(`Job "${jobName}" is already running. Waiting for completion...`);
+    // Poll until job finishes
+    while (job.running) {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      const updated = loadJobs();
+      const updatedJob = updated.find((j) => j.name === jobName);
+      if (updatedJob) {
+        job.running = updatedJob.running;
+        job.lastStatus = updatedJob.lastStatus;
+        job.lastRun = updatedJob.lastRun;
+        job.history = updatedJob.history;
+      }
+    }
+    console.log(`Previous run completed: ${job.lastStatus}`);
+    console.log(`History: ${job.history.length} run(s)`);
+    if (job.history.length > 0) {
+      const last = job.history[job.history.length - 1];
+      console.log(`Last: ${last.status} - ${last.output.slice(0, 100)}...`);
+    }
     return;
   }
 
