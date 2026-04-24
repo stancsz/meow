@@ -95,6 +95,52 @@ class Orchestrator {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   }
 
+  /**
+   * Check epoch gates - determine if EVOLVE can proceed to next epoch
+   * based on DOGFOOD validation status.
+   */
+  private checkEpochGates(): string {
+    const validationDir = join(DOGFOOD_DIR, "validation");
+    const evolveEpochDir = join(EVOLVE_DIR, "epoch");
+
+    let status = "No epoch history yet.";
+
+    // Check for latest epoch promise
+    if (existsSync(evolveEpochDir)) {
+      const epochs = (readdirSync(evolveEpochDir) as string[])
+        .filter(f => f.startsWith("epoch-"))
+        .sort()
+        .reverse();
+
+      if (epochs.length > 0) {
+        const latestEpoch = epochs[0];
+        const promiseFile = join(evolveEpochDir, latestEpoch, "promise.md");
+
+        // Check for validation file for this epoch
+        let validationStatus = "NOT_VALIDATED";
+        if (existsSync(validationDir)) {
+          const validations = (readdirSync(validationDir) as string[])
+            .filter(f => f.startsWith(latestEpoch.replace("epoch-", "")));
+
+          if (validations.length > 0) {
+            const latestValidation = validations.sort().reverse()[0];
+            try {
+              const validation = JSON.parse(
+                readFileSync(join(validationDir, latestValidation), "utf-8")
+              );
+              validationStatus = validation.status || "UNKNOWN";
+            } catch {}
+          }
+        }
+
+        const canProceed = validationStatus === "VALIDATED";
+        status = `Epoch ${latestEpoch}: ${validationStatus}\nCan EVOLVE proceed: ${canProceed ? "YES ✅" : "NO ❌ (DOGFOOD must validate first)"}`;
+      }
+    }
+
+    return status;
+  }
+
 
   private loadState() {
     if (existsSync(JOBS_FILE)) {
@@ -168,77 +214,40 @@ class Orchestrator {
     console.log("[orchestrator] Commander Agent planning...");
 
     // Build context about current state
+    const epochStatus = this.checkEpochGates();
     const jobsSummary = this.jobs.map(j => {
       const recentLearnings = j.history.slice(-2).map(h => h.learnings).filter(Boolean).join("; ") || "None yet";
       return `## ${j.name}
 Status: ${j.status} (iteration ${j.iteration})
 Last Run: ${j.lastRun || "Never"}
-Recent Learnings: ${recentLearnings}
-Prompt: ${j.prompt.slice(0, 200)}...`;
+Recent Learnings: ${recentLearnings}`;
     }).join("\n\n---\n\n");
-
-    // Check what outputs already exist to avoid redundant work
-    const existingOutputs = this.getExistingOutputs();
 
     const skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
 
-    const prompt = `You are the Commander Agent (Embers). Your role is to decide what Meow should work on next.
+    const prompt = `You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with STRICT EPOCH GATES.
+
+## EPOCH GATE STATUS
+${epochStatus}
 
 ## Current Capability Loops
 ${jobsSummary}
 
-## Existing Outputs (avoid redundancy)
-${existingOutputs}
-
 ${skillContext}
 
-## Your Decision Framework
+## STRICT EPOCH GATE RULES
 
-You orchestrate THREE continuous improvement loops:
-
-1. **EVOLVE** - Research what other agents do. Never "done" - always finding new patterns to learn from.
-2. **DOGFOOD** - Test and fix Meow's own capabilities. Never "done" - always more to test/fix.
-3. **DESIGN** - Prototype better human-agent interfaces. Never "done" - always iterating on interaction patterns.
+1. **EVOLVE cannot start new epoch** unless DOGFOOD validates the previous epoch's promise
+2. **DOGFOOD must validate** the exact test cases in the promise file
+3. **DESIGN only prototypes** capabilities that are VALIDATED by DOGFOOD
+4. **No sloppy implementations** - if DOGFOOD finds something broken, EVOLVE must wait until fixed
 
 ## Decision Rules
 
-- If a job has "improved" status, it means it learned something. Decide:
-  - Should we run it again to build on the learnings?
-  - Should we switch to a different loop?
-  - Should we mark it "idle" and prioritize something else?
-
-- If a job failed, diagnose why and decide:
-  - Should we retry with a different approach?
-  - Should we mark it "blocked" and move on?
-
-- Balance between the three loops:
-  - Don't spend all time on EVOLVE if DOGFOOD reveals broken things
-  - Don't test endlessly if DESIGN has a promising prototype
-  - Context matters - what will make Meow most capable right now?
-
-## Output Format
-
-Respond with a JSON block:
-{
-  "decisions": [
-    {
-      "type": "RUN",
-      "job": "Job Name",
-      "briefing": "Strategic directions for this run. What should the agent focus on? What learnings from last run should inform this iteration?"
-    },
-    {
-      "type": "SWITCH",
-      "job": "Job Name",
-      "reason": "Why we're switching focus"
-    },
-    {
-      "type": "IDLE",
-      "job": "Job Name",
-      "reason": "Why this loop should rest for now"
-    }
-  ],
-  "reasoning": "Brief explanation of your prioritization decisions"
-}
+### THE QUALITY GATE (STRICT)
+- **NO SLOPS**: If an implementation is "sloppy" (untested, partially broken), DOGFOOD must fix it before EVOLVE can proceed.
+- **EPOCH SEQUENCING**: Every EVOLVE run MUST be followed by a DOGFOOD validation.
+- **MEOWJU IDENTITY**: All autonomous commits must use the identity 'meowju'.
 
 Max 2 concurrent jobs.`;
 

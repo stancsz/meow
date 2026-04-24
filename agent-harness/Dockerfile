@@ -36,8 +36,8 @@ RUN addgroup -g 1001 -S appgroup && \
 RUN mkdir -p /app/.claude/skills && chown -R appuser:appgroup /app/.claude
 
 # Configure git
-RUN git config --global user.email "meow@bot" && \
-    git config --global user.name "Meow Bot"
+RUN git config --global user.email "meowju@meow.bot" && \
+    git config --global user.name "meowju"
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh

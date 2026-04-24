@@ -10,6 +10,7 @@
  * - Calls computer_controller to perform actions
  * - Gates actions through human_in_the_loop when risk is elevated
  * - Verifies action results by re-capturing the screen and comparing
+ * - NEW: Shows ANTICIPATION preview before executing (magic moment)
  *
  * Usage:
  *   const agent = new DesktopAgent();
@@ -19,6 +20,7 @@
  * - Goose: Rust-speed input injection with a shared memory bus
  * - Eigent: Multi-agent coordination with human-in-the-loop safety gates
  * - Our addition: Deferred LLM labeling + continuous screen diff verification
+ * - Anticipation UI: Show intent BEFORE execution (the magic moment)
  */
 
 import {
@@ -36,6 +38,10 @@ import {
   riskAssessment, requiresApproval, promptHuman, approve, reject,
   getPendingRequest, handleCliCommand, type ActionContext, type RiskAssessment,
 } from "./human_in_the_loop.js";
+import {
+  AnticipationUI, createAnticipationUI, detectIntent,
+  type IntentStep, type Confirmation,
+} from "./anticipation-ui.js";
 
 // ============================================================================
 // Types
@@ -54,6 +60,7 @@ export interface TaskResult {
   success: boolean;
   steps: StepResult[];
   summary: string;
+  cancelled?: boolean;
 }
 
 export interface StepResult {
@@ -80,6 +87,9 @@ export interface AgentConfig {
   verifyAfterEachStep: boolean;
   stopOnVerificationFailure: boolean;
   hitlEnabled: boolean;
+  anticipationEnabled: boolean;
+  anticipationChannel: "stdout" | "discord" | "null";
+  autoConfirmLowRisk: boolean;
 }
 
 const DEFAULT_CONFIG: AgentConfig = {
@@ -89,6 +99,9 @@ const DEFAULT_CONFIG: AgentConfig = {
   verifyAfterEachStep: true,
   stopOnVerificationFailure: true,
   hitlEnabled: true,
+  anticipationEnabled: true,
+  anticipationChannel: "stdout",
+  autoConfirmLowRisk: true,
 };
 
 // ============================================================================
@@ -100,9 +113,14 @@ export class DesktopAgent {
   private history: StepResult[] = [];
   private currentStep = 0;
   private lastScreenState: ScreenState | null = null;
+  private anticipationUI: AnticipationUI;
 
   constructor(config: Partial<AgentConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.anticipationUI = createAnticipationUI({
+      channel: this.config.anticipationChannel,
+      autoConfirmLowRisk: this.config.autoConfirmLowRisk,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -118,6 +136,19 @@ export class DesktopAgent {
   }
 
   // ---------------------------------------------------------------------------
+  // Configuration
+  // ---------------------------------------------------------------------------
+
+  setAnticipationChannel(channel: "stdout" | "discord" | "null"): void {
+    this.config.anticipationChannel = channel;
+    this.anticipationUI.setChannel(channel);
+  }
+
+  enableAnticipation(enabled: boolean): void {
+    this.config.anticipationEnabled = enabled;
+  }
+
+  // ---------------------------------------------------------------------------
   // Main Entry Point
   // ---------------------------------------------------------------------------
 
@@ -126,10 +157,11 @@ export class DesktopAgent {
    *
    * Internally:
    * 1. Parses the task into a plan of TaskSteps
-   * 2. Executes each step in sequence
-   * 3. Verifies each step's effect on screen
-   * 4. Handles human-in-the-loop gates
-   * 5. Returns a summary of what was done
+   * 2. ★ ANTICIPATION PREVIEW ★ — show intent before execution
+   * 3. Executes each step in sequence (with progress updates)
+   * 4. Verifies each step's effect on screen
+   * 5. Handles human-in-the-loop gates
+   * 6. Returns a summary of what was done
    */
   async execute(task: string): Promise<TaskResult> {
     this.history = [];
@@ -143,24 +175,75 @@ export class DesktopAgent {
     }
 
     // Parse task into steps
-    const steps = this._parseTask(task);
-    console.log(`[agent] 📋 Plan: ${steps.length} step(s)`);
-    for (const [i, s] of steps.entries()) {
+    const taskSteps = this._parseTask(task);
+    console.log(`[agent] 📋 Plan: ${taskSteps.length} step(s)`);
+    for (const [i, s] of taskSteps.entries()) {
       console.log(`[agent]   ${i + 1}. ${s.description} (${s.tool})`);
     }
 
     // Observe initial screen
     await this._observeScreen();
 
+    // ★★★ ANTICIPATION PREVIEW ★★★
+    // Convert TaskSteps to IntentSteps for the anticipation UI
+    const intentSteps = this._convertToIntentSteps(taskSteps);
+    let confirmed: Confirmation = "cancel";
+    
+    if (this.config.anticipationEnabled) {
+      console.log(`[agent] 🤔 Showing anticipation preview...\n`);
+      confirmed = await this.anticipationUI.preview(intentSteps);
+      
+      if (confirmed === "cancel") {
+        console.log(`[agent] ❌ User cancelled the plan`);
+        return {
+          success: false,
+          steps: [],
+          summary: "Cancelled by user before execution",
+          cancelled: true,
+        };
+      }
+      
+      if (confirmed === "modify") {
+        console.log(`[agent] ✏️  User wants to modify the plan - continuing with reduced steps`);
+        // For now, continue with the plan but flag it
+        // Future: implement interactive plan modification
+      }
+      
+      console.log(`[agent] ✅ User confirmed - executing plan\n`);
+    }
+
     const results: StepResult[] = [];
 
-    for (let i = 0; i < steps.length && i < this.config.maxSteps; i++) {
+    for (let i = 0; i < taskSteps.length && i < this.config.maxSteps; i++) {
       this.currentStep = i;
-      const step = steps[i];
+      const step = taskSteps[i];
 
-      console.log(`[agent] → Step ${i + 1}: ${step.description}`);
+      // Show progress update
+      if (this.config.anticipationEnabled) {
+        await this.anticipationUI.update({
+          step: i + 1,
+          total: taskSteps.length,
+          status: "executing",
+          description: step.description,
+        });
+      } else {
+        console.log(`[agent] → Step ${i + 1}: ${step.description}`);
+      }
+
       const result = await this._executeStep(step, i);
       results.push(result);
+
+      // Update progress to done/failed
+      if (this.config.anticipationEnabled) {
+        await this.anticipationUI.update({
+          step: i + 1,
+          total: taskSteps.length,
+          status: result.success ? "done" : "failed",
+          description: step.description,
+          durationMs: result.durationMs,
+          error: result.error,
+        });
+      }
 
       if (!result.success && (!step.retries || step.retries <= 0)) {
         if (this.config.stopOnVerificationFailure) {
@@ -170,9 +253,29 @@ export class DesktopAgent {
       }
 
       // Brief pause between steps
-      if (i < steps.length - 1) {
+      if (i < taskSteps.length - 1) {
         await this._sleep(this.config.stepDelayMs);
       }
+    }
+
+    // Show completion summary
+    if (this.config.anticipationEnabled) {
+      const success = results.every(r => r.success);
+      await this.anticipationUI.complete({
+        success,
+        steps: results.map((r, i) => ({
+          step: i + 1,
+          total: results.length,
+          status: r.success ? "done" as const : "failed" as const,
+          description: r.description,
+          durationMs: r.durationMs,
+          error: r.error,
+        })),
+        summary: success
+          ? `✅ Completed ${results.length} step(s) successfully.`
+          : `⚠️  ${results.filter(r => !r.success).length}/${results.length} steps failed.`,
+        changes: results.filter(r => r.success).map(r => r.description),
+      });
     }
 
     const success = results.every(r => r.success);
@@ -183,6 +286,32 @@ export class DesktopAgent {
         ? `✅ Completed ${results.length} step(s) successfully.`
         : `⚠️  ${results.filter(r => !r.success).length}/${results.length} steps failed.`,
     };
+  }
+
+  /**
+   * _convertToIntentSteps(taskSteps) — convert internal TaskSteps to IntentSteps
+   * for the anticipation UI.
+   */
+  private _convertToIntentSteps(taskSteps: TaskStep[]): IntentStep[] {
+    return taskSteps.map((step, i) => {
+      const risk = riskAssessment({
+        tool: step.tool,
+        target: step.args.target as string | undefined,
+        details: JSON.stringify(step.args),
+      });
+
+      return {
+        stepNumber: i + 1,
+        action: {
+          tool: step.tool,
+          target: step.args.target as string | undefined,
+          details: JSON.stringify(step.args),
+        },
+        reasoning: step.description,
+        riskLevel: risk.level,
+        riskScore: risk.score,
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -213,7 +342,9 @@ export class DesktopAgent {
     const needsApproval = this.config.hitlEnabled && requiresApproval(action);
     const icon = risk.level === "HIGH" ? "🔴" : risk.level === "MEDIUM" ? "🟡" : "🟢";
 
-    console.log(`[agent]   ${icon} Risk: ${risk.level} (${risk.score}/10) — ${risk.reasons.join("; ") || "no factors"}`);
+    if (!this.config.anticipationEnabled) {
+      console.log(`[agent]   ${icon} Risk: ${risk.level} (${risk.score}/10) — ${risk.reasons.join("; ") || "no factors"}`);
+    }
 
     // Capture before state
     const beforeState = this.lastScreenState;
@@ -221,7 +352,14 @@ export class DesktopAgent {
     // Human-in-the-loop gate
     let approved = true;
     if (needsApproval && risk.level !== "LOW") {
-      console.log(`[agent]   ⏸️  Waiting for human approval...`);
+      if (this.config.anticipationEnabled) {
+        await this.anticipationUI.error("Human approval required for this action", {
+          currentStep: stepIndex + 1,
+          steps: this.anticipationUI.getPendingSteps(),
+        });
+      } else {
+        console.log(`[agent]   ⏸️  Waiting for human approval...`);
+      }
       approved = await promptHuman(action);
       if (!approved) {
         return this._makeStepResult(step, stepIndex, startTime, action, risk, approved, {
@@ -229,7 +367,9 @@ export class DesktopAgent {
           error: "Human rejected this action",
         });
       }
-      console.log(`[agent]   ✅ Human approved — proceeding`);
+      if (!this.config.anticipationEnabled) {
+        console.log(`[agent]   ✅ Human approved — proceeding`);
+      }
     }
 
     // Execute the action
@@ -254,7 +394,9 @@ export class DesktopAgent {
       const diffResult = await compareScreens(beforeState, afterState);
       diff = [...diffResult.added, ...diffResult.removed];
       verified = true; // Verification ran (pass/fail is in diff)
-      console.log(`[agent]   🔍 Screen diff: ${diff.length > 0 ? diff.slice(0, 3).join(", ") : "no visible change"}`);
+      if (!this.config.anticipationEnabled) {
+        console.log(`[agent]   🔍 Screen diff: ${diff.length > 0 ? diff.slice(0, 3).join(", ") : "no visible change"}`);
+      }
     }
 
     const durationMs = Date.now() - startTime;
