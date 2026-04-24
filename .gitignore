@@ -61,6 +61,7 @@ docs/research/competitors/*/
 
 # Meow user data (session logs, tasks, memory)
 .agent-kernel/
+agent-kernel/tests/output/
 
 # Claude Code data
 .claude/
@@ -84,8 +85,19 @@ test-results/
 *.swp
 *.swo
 
+# Meow Agent Harness
+agent-harness/scratch/
+agent-harness/data/
+agent-harness/dogfood/results/
+agent-harness/evolve/research/
+agent-harness/computer/
+agent-harness/design/proposals/
+agent-harness/logs/
+NUL
+*.log
+*.tmp
+*.txt
+flycheck_*
+
 # Dogfood test outputs
 dogfood/
-
-
-agent-harness/data

@@ -30,7 +30,7 @@ const builtInCommands: Record<string, Command> = {
     name: "help",
     description: "Show available commands",
     execute: async (_, __) => ({
-      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /name, /lang, /auto",
+      content: "Available commands: /help, /exit, /plan, /dangerous, /stream, /clear, /tasks, /add, /done, /sessions, /resume, /name, /lang, /auto, /mine, /palace",
     }),
   },
   exit: {
@@ -114,6 +114,54 @@ const builtInCommands: Record<string, Command> = {
       }
 
       return { error: "Usage: /auto [start|stop|status]" };
+    },
+  },
+  mine: {
+    name: "mine",
+    description: "Mine a project or file into the Palace: /mine <path> [--wing <wing>]",
+    execute: async (args, context) => {
+      const { mineProject } = await import("../skills/mine.ts");
+      const parts = args.split(/\s+/);
+      const path = parts[0] || context.cwd;
+      
+      let wing: string | undefined;
+      const wingIdx = parts.indexOf("--wing");
+      if (wingIdx !== -1 && parts[wingIdx + 1]) {
+        wing = parts[wingIdx + 1];
+      }
+
+      try {
+        const count = await mineProject(path, { wing });
+        return { content: `Successfully mined ${count} files into the Palace (Wing: ${wing || "default"}).` };
+      } catch (e: any) {
+        return { error: `Mining failed: ${e.message}` };
+      }
+    },
+  },
+  palace: {
+    name: "palace",
+    description: "Search the memory Palace: /palace <query> [--wing <wing>] [--room <room>]",
+    execute: async (args, _) => {
+      const { searchMemory, formatSearchResults } = await import("./memory-fts.ts");
+      const parts = args.split(/\s+/);
+      const queryParts = [];
+      const filters: any = {};
+
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === "--wing") {
+          filters.wing = parts[++i];
+        } else if (parts[i] === "--room") {
+          filters.room = parts[++i];
+        } else {
+          queryParts.push(parts[i]);
+        }
+      }
+
+      const query = queryParts.join(" ");
+      if (!query) return { error: "Please provide a search query." };
+
+      const results = searchMemory(query, 10, filters);
+      return { content: formatSearchResults(results) };
     },
   },
 };

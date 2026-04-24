@@ -249,13 +249,100 @@ function buildContextPrompt(channelId: string, currentPrompt: string, username: 
 }
 
 // ============================================================================
-// Message chunker
+// Code fence aware chunking - prevents flash/freeze bug
+// See: cursor.com/changelog Apr 15, 2026
+// "Fixed bug where agent conversations with diffs or code blocks would flash and freeze"
 // ============================================================================
 
-function chunkMessage(text: string, maxLen = 1900): string[] {
+const CODE_FENCE = "```";
+
+/**
+ * Split text into chunks, keeping code fences intact.
+ * This prevents the flash/freeze bug where Discord markdown
+ * gets confused by partial code fences like "```co" split mid-block.
+ */
+function chunkMessageCodeFenceAware(text: string, maxLen = 1900): string[] {
   if (text.length <= maxLen) return [text];
+
+  const chunks: string[] = [];
+
+  // Split by code fences first to keep them intact
+  const parts: { type: "text" | "fence"; content: string }[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    const fenceIdx = remaining.indexOf(CODE_FENCE);
+    if (fenceIdx === -1) {
+      // No more fences - rest is plain text
+      if (remaining.length > 0) {
+        parts.push({ type: "text", content: remaining });
+      }
+      break;
+    }
+
+    // Text before fence
+    if (fenceIdx > 0) {
+      parts.push({ type: "text", content: remaining.slice(0, fenceIdx) });
+    }
+
+    // Find closing fence
+    const afterOpenFence = remaining.slice(fenceIdx + CODE_FENCE.length);
+    const closeIdx = afterOpenFence.indexOf(CODE_FENCE);
+
+    if (closeIdx === -1) {
+      // Unclosed fence - treat rest as text
+      parts.push({ type: "text", content: remaining.slice(fenceIdx) });
+    } else {
+      // Complete code block - include opening fence, content, and closing fence
+      const fenceContent = remaining.slice(fenceIdx, fenceIdx + CODE_FENCE.length + closeIdx + CODE_FENCE.length);
+      parts.push({ type: "fence", content: fenceContent });
+      remaining = afterOpenFence.slice(closeIdx + CODE_FENCE.length);
+    }
+  }
+
+  // Now chunk each part, keeping fences as atomic units
+  for (const part of parts) {
+    if (part.type === "fence") {
+      // Code fences stay intact even if > maxLen
+      // Discord will still render them, just might warn
+      if (part.content.length > maxLen) {
+        // Split long code blocks at reasonable boundaries (but keep fences)
+        const innerContent = part.content.slice(CODE_FENCE.length, -CODE_FENCE.length);
+        const langEnd = innerContent.indexOf("\n");
+        const langLine = langEnd > 0 && langEnd < 50 ? innerContent.slice(0, langEnd + 1) : "";
+
+        // Chunk the inner content
+        const innerRemaining = langLine ? innerContent.slice(langLine.length) : innerContent;
+        const innerChunks = chunkTextPortion(innerRemaining, maxLen - CODE_FENCE.length * 2 - (langLine?.length || 0));
+
+        // Rebuild with fences
+        chunks.push(CODE_FENCE + langLine);
+        for (let i = 0; i < innerChunks.length; i++) {
+          chunks.push(innerChunks[i]);
+        }
+        chunks.push(CODE_FENCE);
+      } else {
+        chunks.push(part.content);
+      }
+    } else {
+      // Regular text - chunk it
+      const textChunks = chunkTextPortion(part.content, maxLen);
+      chunks.push(...textChunks);
+    }
+  }
+
+  return chunks;
+}
+
+/**
+ * Chunk text portion (not code fences) using newline-aware splitting.
+ */
+function chunkTextPortion(text: string, maxLen: number): string[] {
+  if (text.length <= maxLen) return [text];
+
   const chunks: string[] = [];
   let remaining = text;
+
   while (remaining.length > 0) {
     let cut = maxLen;
     const nl = remaining.lastIndexOf("\n", maxLen);
@@ -263,7 +350,35 @@ function chunkMessage(text: string, maxLen = 1900): string[] {
     chunks.push(remaining.slice(0, cut));
     remaining = remaining.slice(cut);
   }
+
   return chunks;
+}
+
+/**
+ * Send chunks with rate limiting to prevent Discord rate limits
+ * and reduce flash/freeze by spacing out messages.
+ */
+const CHUNK_DELAY_MS = 100; // 100ms between chunks (Cursor pattern)
+
+async function sendChunksWithRateLimit(message: Message, chunks: string[]): Promise<void> {
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    await message.reply(chunk);
+
+    // Rate limit between chunks, but not after the last one
+    if (i < chunks.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, CHUNK_DELAY_MS));
+    }
+  }
+}
+
+// ============================================================================
+// Message chunker (legacy - kept for compatibility)
+// ============================================================================
+
+function chunkMessage(text: string, maxLen = 1900): string[] {
+  // Use code fence aware chunking
+  return chunkMessageCodeFenceAware(text, maxLen);
 }
 
 // ============================================================================
@@ -1054,9 +1169,7 @@ async function main() {
       console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
 
       const chunks = chunkMessage(reply);
-      for (const chunk of chunks) {
-        await message.reply(chunk);
-      }
+      await sendChunksWithRateLimit(message, chunks);
     } catch (e: any) {
       console.error(`[relay] Error processing ${message.id}:`, e.message);
       try {

@@ -3,11 +3,21 @@
  *
  * Streaming sidecar with token buffering and partial render support.
  * Improves streaming UX by buffering tokens before rendering.
+ *
+ * FLASH/FREEZE BUG FIX (Iteration 7):
+ * Code fences (```) arriving mid-token can cause Discord markdown
+ * confusion and UI flash/freeze. This module now detects fence
+ * boundaries and flushes the buffer appropriately.
+ *
+ * See: cursor.com/changelog Apr 15, 2026
+ * "Fixed bug where agent conversations with diffs or code blocks would flash and freeze"
  */
 
 export interface StreamBufferOptions {
   bufferSize?: number;    // Flush after this many chars (default: 20)
   flushIntervalMs?: number; // Force flush after ms (default: 50)
+  /** Treat code fences as flush boundaries (default: true) */
+  codeFenceAware?: boolean;
 }
 
 // Buffer for accumulating tokens
@@ -25,10 +35,43 @@ export class TokenBuffer {
     this.options = {
       bufferSize: options.bufferSize ?? 20,
       flushIntervalMs: options.flushIntervalMs ?? 50,
+      codeFenceAware: options.codeFenceAware ?? true,
     };
   }
 
+  /**
+   * Add a token to the buffer, checking for code fence boundaries.
+   * If code fence aware, flush when we see ``` to prevent partial fences.
+   */
   add(token: string): void {
+    if (this.options.codeFenceAware) {
+      // Check for code fence boundaries - flush buffer BEFORE the fence
+      // This prevents partial fences like "```co" from being rendered
+      const fenceIdx = token.indexOf("```");
+      if (fenceIdx >= 0) {
+        // Flush any existing buffer first
+        if (this.buffer.length > 0) {
+          this.flushCallback(this.buffer);
+          this.buffer = "";
+        }
+        // Add the token with fence - don't buffer across fence boundaries
+        this.buffer += token;
+        // Flush immediately at fence boundaries
+        this.flush();
+        return;
+      }
+
+      // Track partial backticks - if we have "``" at end, wait for third
+      // This handles the case where ``` arrives as separate tokens
+      if (token.startsWith("``") || token.endsWith("``")) {
+        if (this.buffer.endsWith("`") || this.buffer.endsWith("``")) {
+          // Could be a partial fence forming - buffer it
+          this.buffer += token;
+          return;
+        }
+      }
+    }
+
     this.buffer += token;
     const now = Date.now();
 

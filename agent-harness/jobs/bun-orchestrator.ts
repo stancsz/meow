@@ -1,17 +1,20 @@
 #!/usr/bin/env bun
 /**
- * bun-orchestrator.ts - Intelligent Agentic Job Orchestrator
+ * bun-orchestrator.ts - Continuous Improvement Orchestrator
  *
- * This refactors bun-scheduler from a simple loop into an agent-driven
- * mission manager. It parses JOB.md, uses an LLM to prioritize tasks,
- * and manages worker processes (Meow Agent Kernel) with autonomous execution.
+ * Redesigned as a continuous improvement engine:
+ * - Jobs are NEVER done - they loop back smarter
+ * - Commander Agent decides priorities dynamically
+ * - Each run produces learnings that improve the next run
+ *
+ * Job lifecycle: IDLE → RUNNING → IMPROVED → IDLE (loop)
  */
 
 import { spawn, ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
+import { runLeanAgent } from "/app/agent-kernel/src/core/lean-agent.ts";
 import { getSkillContext } from "../src/sidecars/skill-manager.ts";
 import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
 
@@ -29,12 +32,13 @@ if (existsSync(envPath)) {
 
 const JOB_MD = join(__dirname, "..", "JOB.md");
 const JOBS_FILE = join(__dirname, "..", "data", "orchestrator.json");
+const EVOLVE_DIR = join(__dirname, "..", "evolve");
+const DOGFOOD_DIR = join(__dirname, "..", "dogfood");
+const DESIGN_DIR = join(__dirname, "..", "design");
+const SCRATCH_DIR = join(__dirname, "..", "scratch");
 
 // Meow CLI entry point
 const MEOW_CLI = join(__dirname, "..", "..", "agent-kernel", "cli", "index.ts");
-console.log(`[orchestrator] Using MEOW_CLI: ${MEOW_CLI}`);
-
-const MEOW_RUN = join(__dirname, "..", "src", "meow-run.ts");
 
 // Ensure API Key is set for the Planner Agent
 if (!process.env.LLM_API_KEY) {
@@ -45,14 +49,22 @@ if (!process.env.LLM_API_KEY) {
 // Types
 // ============================================================================
 
+type JobStatus = "idle" | "running" | "improved" | "blocked";
+
 interface Job {
   name: string;
   prompt: string;
-  status: "pending" | "running" | "blocked" | "completed" | "failed";
+  status: JobStatus;
   lastRun: string | null;
-  history: any[];
-  priority: number;
+  lastImproved: string | null;
+  history: Array<{
+    timestamp: string;
+    exitCode: number | null;
+    duration: number;
+    learnings?: string;
+  }>;
   briefing?: string; // Strategic directions from the Commander
+  iteration: number;
 }
 
 interface WorkerState {
@@ -71,7 +83,7 @@ interface WorkerState {
 class Orchestrator {
   private jobs: Job[] = [];
   private workers = new Map<string, WorkerState>();
-  private pollInterval: number = 60000; // 1 minute
+  private tickInterval: number = 30000; // 30 seconds between planning cycles
 
   constructor() {
     this.ensureDataDir();
@@ -79,9 +91,10 @@ class Orchestrator {
   }
 
   private ensureDataDir() {
-    const dataDir = join(__dirname, "data");
+    const dataDir = join(__dirname, "..", "data");
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   }
+
 
   private loadState() {
     if (existsSync(JOBS_FILE)) {
@@ -102,16 +115,14 @@ class Orchestrator {
   private syncJobsFromMd() {
     if (!existsSync(JOB_MD)) return;
     const content = readFileSync(JOB_MD, "utf-8");
-    const h1Regex = /^# (.+)$/gm;
-    let match;
-    const mdJobs: { name: string; prompt: string }[] = [];
 
+    const mdJobs: { name: string; prompt: string }[] = [];
     const lines = content.split("\n");
     let currentJob: { name: string; prompt: string } | null = null;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const h1Match = line.match(/^# (.+?)(?:\s+\[.+\])?$/);
+    for (const line of lines) {
+      // Only match H1 (single # followed by space), not H2+ (## etc)
+      const h1Match = line.match(/^#\s+(.+?)(?:\s*\[.+\])?\s*$/);
       if (h1Match) {
         if (currentJob) mdJobs.push(currentJob);
         currentJob = { name: h1Match[1].trim(), prompt: "" };
@@ -121,137 +132,250 @@ class Orchestrator {
     }
     if (currentJob) mdJobs.push(currentJob);
 
-    // Merge with existing state
-    // Reset "running" jobs to "pending" on restart (orphaned from crashed session)
+    // Build a map of existing job state (history, iteration, etc.) to preserve
+    const existingState = new Map<string, Partial<Job>>();
+    for (const job of this.jobs) {
+      existingState.set(job.name, {
+        history: job.history,
+        iteration: job.iteration,
+        lastRun: job.lastRun,
+        lastImproved: job.lastImproved,
+      });
+    }
+
+    // Rebuild jobs list from JOB.md ONLY - it's the source of truth
+    this.jobs = [];
     for (const md of mdJobs) {
-      const existing = this.jobs.find(j => j.name === md.name);
-      if (existing) {
-        existing.prompt = md.prompt.trim();
-        // If job was running but worker is gone (orphaned), reset to pending
-        if (existing.status === "running" && !this.workers.has(existing.name)) {
-          console.log(`[orchestrator] Resetting orphaned job "${existing.name}" from running→pending`);
-          existing.status = "pending";
-          existing.history.push({
-            timestamp: new Date().toISOString(),
-            exitCode: -1,
-            duration: 0,
-            note: "Orphaned - worker not found on sync"
-          });
-        }
-      } else {
-        this.jobs.push({
-          name: md.name,
-          prompt: md.prompt.trim(),
-          status: "pending",
-          lastRun: null,
-          history: [],
-          priority: 0
-        });
-      }
+      const prev = existingState.get(md.name);
+      this.jobs.push({
+        name: md.name,
+        prompt: md.prompt.trim(),
+        status: "idle", // Always start idle, let Commander decide
+        lastRun: prev?.lastRun || null,
+        lastImproved: prev?.lastImproved || null,
+        history: prev?.history || [],
+        iteration: prev?.iteration || 0,
+      });
+      console.log(`[orchestrator] Synced capability loop: ${md.name}`);
     }
     this.saveState();
-    this.writeJobsToMd(); // Synchronize badges back to Markdown
-  }
-
-  private writeJobsToMd() {
-    let content = "";
-    for (const job of this.jobs) {
-      const badge = 
-        job.status === "running" ? " [RUNNING 🛰️]" :
-        job.status === "completed" ? " [DONE ✅]" :
-        job.status === "failed" ? " [FAILED ❌]" :
-        job.status === "blocked" ? " [BLOCKED 🛑]" : "";
-      
-      content += `# ${job.name}${badge}\n${job.prompt}\n\n`;
-    }
-    writeFileSync(JOB_MD, content.trim() + "\n");
   }
 
   /**
-   * Use an LLM Agent to decide what to do next based on JOB.md and status.
+   * Commander Agent - decides what to work on next
    */
   private async plan(): Promise<void> {
-    console.log("[orchestrator] Agent planning session starting...");
+    console.log("[orchestrator] Commander Agent planning...");
 
-    // Send FULL JOB DESCRIPTIONS to the agent so it knows WHAT each job is.
+    // Build context about current state
     const jobsSummary = this.jobs.map(j => {
-      return `## ${j.name}\nStatus: ${j.status}\nPrompt: ${j.prompt}\nPriority: ${j.priority}\nLast Run: ${j.lastRun || "Never"}`;
+      const recentLearnings = j.history.slice(-2).map(h => h.learnings).filter(Boolean).join("; ") || "None yet";
+      return `## ${j.name}
+Status: ${j.status} (iteration ${j.iteration})
+Last Run: ${j.lastRun || "Never"}
+Recent Learnings: ${recentLearnings}
+Prompt: ${j.prompt.slice(0, 200)}...`;
     }).join("\n\n---\n\n");
 
-    // Include available skills to avoid reinventing the wheel
+    // Check what outputs already exist to avoid redundant work
+    const existingOutputs = this.getExistingOutputs();
+
     const skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
 
-    const prompt = `You are the Mission Commander (Embers). 
-Current Missions defined in JOB.md:
----
+    const prompt = `You are the Commander Agent (Embers). Your role is to decide what Meow should work on next.
+
+## Current Capability Loops
 ${jobsSummary}
----
+
+## Existing Outputs (avoid redundancy)
+${existingOutputs}
 
 ${skillContext}
 
-Your goal is to decide which jobs to START or ABORT, and provide STRATEGIC DIRECTIONS for each.
-Don't just repeat the prompt. Think like a lead engineer. Tell the agent:
-1. What the high-level goal is.
-2. What specific skills they should use (from the list above).
-3. Any pitfalls to avoid from previous failed runs.
+## Your Decision Framework
+
+You orchestrate THREE continuous improvement loops:
+
+1. **EVOLVE** - Research what other agents do. Never "done" - always finding new patterns to learn from.
+2. **DOGFOOD** - Test and fix Meow's own capabilities. Never "done" - always more to test/fix.
+3. **DESIGN** - Prototype better human-agent interfaces. Never "done" - always iterating on interaction patterns.
+
+## Decision Rules
+
+- If a job has "improved" status, it means it learned something. Decide:
+  - Should we run it again to build on the learnings?
+  - Should we switch to a different loop?
+  - Should we mark it "idle" and prioritize something else?
+
+- If a job failed, diagnose why and decide:
+  - Should we retry with a different approach?
+  - Should we mark it "blocked" and move on?
+
+- Balance between the three loops:
+  - Don't spend all time on EVOLVE if DOGFOOD reveals broken things
+  - Don't test endlessly if DESIGN has a promising prototype
+  - Context matters - what will make Meow most capable right now?
+
+## Output Format
 
 Respond with a JSON block:
 {
-  "actions": [
-    { 
-      "type": "START", 
-      "job": "Job Name", 
-      "briefing": "strategic directions to the agent... talk to them like a technical lead." 
+  "decisions": [
+    {
+      "type": "RUN",
+      "job": "Job Name",
+      "briefing": "Strategic directions for this run. What should the agent focus on? What learnings from last run should inform this iteration?"
     },
-    { "type": "ABORT", "job": "Job Name", "reason": "why" }
-  ]
+    {
+      "type": "SWITCH",
+      "job": "Job Name",
+      "reason": "Why we're switching focus"
+    },
+    {
+      "type": "IDLE",
+      "job": "Job Name",
+      "reason": "Why this loop should rest for now"
+    }
+  ],
+  "reasoning": "Brief explanation of your prioritization decisions"
 }
-Only recommend starting jobs that are 'pending' or 'failed'.`;
+
+Max 2 concurrent jobs.`;
 
     try {
       const result = await runLeanAgent(prompt, { maxIterations: 1 });
       const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+
       if (jsonMatch) {
         const plan = JSON.parse(jsonMatch[0]);
-        for (const action of plan.actions || []) {
-          if (action.type === "START") {
-            const job = this.jobs.find(j => j.name === action.job);
-            if (job && job.status !== "running") {
-              job.briefing = action.briefing; // Store the strategic direction
-              await this.startWorker(job);
+        console.log(`[orchestrator] Commander reasoning: ${plan.reasoning || "No reasoning provided"}`);
+
+        // First, mark all jobs not in the RUN list as idle
+        const runJobs = new Set((plan.decisions || []).filter((d: any) => d.type === "RUN").map((d: any) => d.job));
+
+        for (const job of this.jobs) {
+          const isInRunList = runJobs.has(job.name) ||
+            runJobs.has(job.name.split(":")[0]) || // "EVOLVE" matches "EVOLVE: Research..."
+            Array.from(runJobs).some(r => job.name.toLowerCase().includes(r.toLowerCase()));
+          if (!isInRunList) {
+            const decision = plan.decisions?.find((d: any) =>
+              d.job === job.name ||
+              job.name.startsWith(d.job + ":") ||
+              job.name.toLowerCase().includes(d.job.toLowerCase())
+            );
+            if (decision && decision.type === "IDLE" && job.status !== "idle") {
+              console.log(`[orchestrator] ${job.name} → IDLE (${decision.reason})`);
+              job.status = "idle";
             }
-          } else if (action.type === "ABORT") {
-            this.abortWorker(action.job, action.reason);
           }
         }
+
+        // Execute RUN decisions
+        console.log(`[orchestrator] Commander decisions: ${JSON.stringify(plan.decisions)}`);
+        for (const action of plan.decisions || []) {
+          if (action.type === "RUN") {
+            // Fuzzy match: exact, starts with, or contains
+            const job = this.jobs.find(j =>
+              j.name === action.job ||
+              j.name.startsWith(action.job + ":") ||
+              j.name.toLowerCase().includes(action.job.toLowerCase())
+            );
+            if (job && job.status !== "running") {
+              console.log(`[orchestrator] Starting ${job.name}`);
+              job.briefing = action.briefing;
+              await this.startWorker(job);
+            } else if (!job) {
+              console.log(`[orchestrator] Job not found: "${action.job}"`);
+            }
+          }
+        }
+
+        this.saveState();
       }
     } catch (e) {
-      console.error("[orchestrator] Planner Agent failed, using fallback heuristic:", e);
-      // Fallback heuristic
-      const next = this.jobs.find(j => j.status === "pending" || j.status === "failed");
-      if (next && this.workers.size < 2) await this.startWorker(next);
+      console.error("[orchestrator] Commander Agent failed:", e);
+      // Fallback: run the first idle job
+      const next = this.jobs.find(j => j.status === "idle" || j.status === "improved");
+      if (next && this.workers.size < 2) {
+        console.log(`[orchestrator] Fallback: running ${next.name}`);
+        await this.startWorker(next);
+      }
     }
+  }
+
+  private getExistingOutputs(): string {
+    const outputs: string[] = [];
+
+    // EVOLVE research
+    const evolveResearch = join(EVOLVE_DIR, "research");
+    if (existsSync(evolveResearch)) {
+      try {
+        const files = (readdirSync(evolveResearch) as string[]).filter(f => f.endsWith(".md"));
+        if (files.length > 0) {
+          outputs.push(`EVOLVE research docs: ${files.length} existing (${files.slice(0, 3).join(", ")}...)`);
+        }
+      } catch {}
+    }
+
+    // DOGFOOD results
+    const dogfoodResults = join(DOGFOOD_DIR, "results");
+    if (existsSync(dogfoodResults)) {
+      try {
+        const files = (readdirSync(dogfoodResults) as string[]).filter(f => f.endsWith(".json"));
+        if (files.length > 0) {
+          outputs.push(`DOGFOOD test results: ${files.length} existing`);
+        }
+      } catch {}
+    }
+
+    // DESIGN proposals
+    const designProposals = join(DESIGN_DIR, "proposals");
+    if (existsSync(designProposals)) {
+      try {
+        const files = (readdirSync(designProposals) as string[]).filter(f => f.endsWith(".md"));
+        if (files.length > 0) {
+          outputs.push(`DESIGN proposals: ${files.length} existing (${files.slice(0, 3).join(", ")}...)`);
+        }
+      } catch {}
+    }
+
+    return outputs.length > 0 ? outputs.join("\n") : "No existing outputs yet - all loops are fresh";
   }
 
   private abortWorker(jobName: string, reason: string) {
     const worker = this.workers.get(jobName);
     if (worker) {
-      console.log(`[orchestrator] ABORTING ${jobName} per Agent plan: ${reason}`);
+      console.log(`[orchestrator] ABORTING ${jobName}: ${reason}`);
       worker.proc.kill("SIGTERM");
     }
   }
 
   private async startWorker(job: Job) {
     if (this.workers.has(job.name)) return;
+    if (job.status === "blocked") {
+      console.log(`[orchestrator] ${job.name} is blocked, skipping`);
+      return;
+    }
 
-    console.log(`[orchestrator] Starting worker for: ${job.name}`);
+    job.iteration++;
     job.status = "running";
     job.lastRun = new Date().toISOString();
+    console.log(`[orchestrator] Starting ${job.name} (iteration ${job.iteration})`);
     this.saveState();
 
-    const fullPrompt = job.briefing 
-      ? `MISSION BRIEFING FROM COMMANDER:\n${job.briefing}\n\nGOAL:\n${job.prompt}`
-      : job.prompt;
+    // Build the prompt with briefing and iteration context
+    const iterationContext = job.history.length > 0
+      ? `\n\n## Previous Iterations\n${job.history.slice(-2).map((h, i) =>
+          `Iteration ${job.iteration - job.history.length + i + 1}:
+- Exit Code: ${h.exitCode}
+- Duration: ${h.duration}ms
+- Learnings: ${h.learnings || "None documented"}`
+        ).join("\n\n")}`
+      : "";
+
+    const fullPrompt = job.briefing
+      ? `## Commander Briefing\n${job.briefing}\n\n## Mission\n${job.prompt}${iterationContext}`
+      : `${job.prompt}${iterationContext}`;
 
     const proc = spawn("bun", [
       "run", MEOW_CLI,
@@ -290,22 +414,29 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
       const str = chunk.toString();
       state.lastOutput = Date.now();
       console.error(`[${job.name}:err] ${str}`);
-      // Also add to buffer so the distiller can see errors if needed
       state.buffer += str;
     });
 
     proc.on("close", async (code) => {
-      console.log(`[orchestrator] Worker ${job.name} exited with code ${code}`);
+      const duration = Date.now() - state.startedAt;
+      console.log(`[orchestrator] ${job.name} exited with code ${code} (${duration}ms)`);
       this.workers.delete(job.name);
-      job.status = code === 0 ? "completed" : "failed";
+
+      // Extract learnings from the run
+      const learnings = this.extractLearnings(state.buffer, code);
+
       job.history.push({
         timestamp: new Date().toISOString(),
         exitCode: code,
-        duration: Date.now() - state.startedAt
+        duration,
+        learnings
       });
-      
-      // Autonomous Skill Distillation
+
       if (code === 0) {
+        job.status = "improved";
+        job.lastImproved = new Date().toISOString();
+
+        // Attempt to distill skill
         try {
           const result = await distillJobToSkill(
             job.name,
@@ -314,50 +445,83 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
             process.env.MEOW_CWD || "/app"
           );
           if (result.success) {
-            console.log(`[orchestrator] 💎 Skill Distilled: ${result.skillName}`);
+            console.log(`[orchestrator] 💎 Skill distilled: ${result.skillName}`);
           }
         } catch (e) {
-          console.error("[orchestrator] Distillation failed:", e);
+          console.error("[orchestrator] Skill distillation failed:", e);
+        }
+
+        console.log(`[orchestrator] ${job.name} → IMPROVED (${learnings || "Learnings extracted"})`);
+      } else {
+        // Failed - check if it's worth retrying
+        if (job.iteration >= 3) {
+          job.status = "blocked";
+          console.log(`[orchestrator] ${job.name} → BLOCKED (failed ${job.iteration} times)`);
+        } else {
+          job.status = "idle";
+          console.log(`[orchestrator] ${job.name} → IDLE (will retry, iteration ${job.iteration})`);
         }
       }
 
       this.saveState();
-      // writeJobsToMd disabled - JOB.md is mounted read-only in docker
-      // this.writeJobsToMd();
     });
   }
 
-  private handleInteractivePrompts(state: WorkerState, latestOutput: string) {
-    // Meow in --auto --dangerous mode is fully autonomous and doesn't prompt for tool use.
-    // However, if it ever needs to prompt for manual input (e.g. workspace trust), 
-    // we can add patterns here.
+  private extractLearnings(buffer: string, exitCode: number | null): string {
+    // Try to extract key learnings from the output
+    // Look for summary patterns, "Learned:", "Key insight:", etc.
     const patterns = [
-      /\[y\/n\]/i,
-      /\(y\/n\)/i,
-      /trust/i
+      /(?:Learned|Key insight|Key finding|Summary)[:\s]+([^\n]+(?:\n(?![A-Z][a-z]+:)[\s\S]*)?)/gi,
+      /(?:Created|Generated|Wrote)[:\s]+([^\n]+)/gi,
+      /(?:Fixed|Resolved|Solved)[:\s]+([^\n]+)/gi,
     ];
 
+    const learnings: string[] = [];
+
+    for (const pattern of patterns) {
+      const matches = buffer.matchAll(pattern);
+      for (const match of matches) {
+        const finding = match[1]?.trim().slice(0, 100);
+        if (finding && !learnings.includes(finding)) {
+          learnings.push(finding);
+        }
+      }
+    }
+
+    if (learnings.length > 0) {
+      return learnings.slice(0, 3).join("; ");
+    }
+
+    if (exitCode === 0) {
+      return "Completed successfully - no specific learnings extracted";
+    }
+
+    return "Run failed - check logs for details";
+  }
+
+  private handleInteractivePrompts(state: WorkerState, latestOutput: string) {
+    const patterns = [/\[y\/n\]/i, /\(y\/n\)/i, /trust/i, /proceed\?/i];
     for (const pattern of patterns) {
       if (pattern.test(latestOutput)) {
-        console.log(`[orchestrator] Interaction requested by Meow for ${state.jobName}: "${latestOutput.trim()}"`);
-        // Strategy: Auto-approve trust/permissions for headless operation
+        console.log(`[orchestrator] Auto-approving for ${state.jobName}`);
         state.proc.stdin?.write("y\n");
+        state.buffer = "";
         break;
       }
     }
   }
 
   public async start() {
-    console.log("[orchestrator] Running...");
+    console.log("[orchestrator] Continuous Improvement Engine starting...");
+    console.log("[orchestrator] Three loops: EVOLVE | DOGFOOD | DESIGN");
     this.syncJobsFromMd();
-    
-    // Main loop
+
+    // Main loop - never stops
     while (true) {
       this.syncJobsFromMd();
       await this.plan();
       this.monitorWorkers();
-      this.writeJobsToMd(); // Keep JOB.md in sync
-      await new Promise(r => setTimeout(r, 10000)); // Tick every 10s
+      await new Promise(r => setTimeout(r, this.tickInterval));
     }
   }
 
@@ -365,14 +529,13 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
     const now = Date.now();
     for (const [name, state] of this.workers) {
       const elapsed = now - state.lastOutput;
-      if (elapsed > 180000) { // 3 minutes hang
-        console.log(`[orchestrator] Job ${name} HANG DETECTED (${elapsed}ms no output)`);
+      if (elapsed > 180000) { // 3 min hang
+        console.log(`[orchestrator] Hang detected for ${name} (${elapsed}ms no output)`);
         if (!state.isStalled) {
           state.isStalled = true;
-          // Nudge
           state.proc.kill("SIGUSR1");
-        } else if (elapsed > 300000) { // 5 minutes flat-line
-          console.log(`[orchestrator] Terminating ${name}`);
+        } else if (elapsed > 300000) { // 5 min flat-line
+          console.log(`[orchestrator] Killing ${name} (stalled)`);
           state.proc.kill("SIGKILL");
         }
       }

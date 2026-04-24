@@ -717,9 +717,12 @@ describe("GAP-TRACKING: UI/TUI", () => {
    */
   test("GAP-UI-003: No progress indicators", () => {
     const leanAgentSrc = readFileSync("src/core/lean-agent.ts", "utf-8");
-    const hasProgress = leanAgentSrc.includes("spinner") ||
-                        leanAgentSrc.includes("progress") ||
-                        leanAgentSrc.includes("loading");
+    // Check for actual progress UI (spinner, loading indicator, progress bar)
+    // More specific patterns to avoid false positives from 'progress' in messages
+    const hasSpinner = /spinner|loadingIndicator|showProgress|ProgressBar/.test(leanAgentSrc);
+    const hasLoadingUI = /loading\.|\.loading|setLoading|isLoading/.test(leanAgentSrc);
+    const hasProgressBar = /progressBar|updateProgress|progress:/.test(leanAgentSrc);
+    const hasProgress = hasSpinner || hasLoadingUI || hasProgressBar;
     expect(hasProgress).toBe(false);
   });
 

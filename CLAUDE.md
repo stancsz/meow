@@ -65,9 +65,17 @@ agent-kernel/
         ├── harvest.ts       # Learn from competitor repos
         └── evolve.ts        # Antifragile OODA gap-closing loop
 
-meowclaw/                     # Desktop App
-├── electron/                 # Electron main/preload
-└── server/server/            # Next.js dashboard + API
+agent-harness/
+├── computer/                 # General automated outputs
+├── dogfood/                  # Test & dogfood results
+├── evolve/                   # Research & evolution findings
+│   └── research/
+├── design/                   # UI/UX proposals
+├── scratch/                  # Temporary/one-off files
+├── jobs/                     # Orchestrator & worker logic
+├── package.json
+└── src/
+    └── sidecars/             # Harness-specific sidecars
 ```
 
 ## RECENT CHANGES
@@ -87,6 +95,23 @@ meowclaw/                     # Desktop App
 - **On-demand learning** — /learn <capability> dynamically acquires skills from harvest list
 - **P0-PN capability system** — graduated lifecycle: harvest → trick → skill → sidecar → core
 - **11 harvest candidates** — ex-skill, context7, autoresearch, gstack, mirofish, and more
+
+## WORKSPACE ORGANIZATION
+
+To prevent file clutter and keep the project organized, always use the dedicated **Zones**:
+
+| Zone | Path | Purpose |
+| :--- | :--- | :--- |
+| **Research** | `agent-harness/evolve/research/` | Research findings, market analysis |
+| **Dogfood** | `agent-harness/dogfood/results/` | Test results, capability audits |
+| **Design** | `agent-harness/design/proposals/` | UI/UX designs, interaction models |
+| **Computer** | `agent-harness/computer/` | General automated research & outputs |
+| **Scratch** | `agent-harness/scratch/` | Temporary files, one-offs, debug logs |
+
+**Rules:**
+1. **Never** create one-off files in the root or `src/` directories.
+2. Use the `Scratch` zone for any temporary work that doesn't fit a specific mission.
+3. Path references in `JOB.md` should always follow these standards.
 
 ## DOGFOOD NOTES
 

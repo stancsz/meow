@@ -40,7 +40,10 @@ export interface MemoryEntry {
   tags: string[];
   source: "user" | "agent" | "session" | "import" | "evolve";
   sessionId?: string;
-  importance: number; // 1-5 scale for retention
+  importance: number;  // 1-5 scale for retention
+  wing?: string;       // Palace: High-level scope (Project, Workspace, Person)
+  room?: string;       // Palace: Mid-level scope (Topic, Folder, Domain)
+  drawer?: string;     // Palace: Low-level scope (File, Session, Sub-topic)
 }
 
 export interface MemorySearchResult {
@@ -79,29 +82,39 @@ function getDb(): Database.Database {
       tags TEXT NOT NULL,
       source TEXT NOT NULL,
       session_id TEXT,
-      importance INTEGER DEFAULT 3
+      importance INTEGER DEFAULT 3,
+      wing TEXT,
+      room TEXT,
+      drawer TEXT
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       key,
       value,
       tags,
+      wing,
+      room,
+      drawer,
       content='memories',
       content_rowid='id'
     );
 
     -- Triggers to keep FTS5 in sync
     CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-      INSERT INTO memories_fts(rowid, key, value, tags) VALUES (new.id, new.key, new.value, new.tags);
+      INSERT INTO memories_fts(rowid, key, value, tags, wing, room, drawer) 
+      VALUES (new.id, new.key, new.value, new.tags, new.wing, new.room, new.drawer);
     END;
 
     CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-      INSERT INTO memories_fts(memories_fts, rowid, key, value, tags) VALUES('delete', old.id, old.key, old.value, old.tags);
+      INSERT INTO memories_fts(memories_fts, rowid, key, value, tags, wing, room, drawer) 
+      VALUES('delete', old.id, old.key, old.value, old.tags, old.wing, old.room, old.drawer);
     END;
 
     CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-      INSERT INTO memories_fts(memories_fts, rowid, key, value, tags) VALUES('delete', old.id, old.key, old.value, old.tags);
-      INSERT INTO memories_fts(rowid, key, value, tags) VALUES (new.id, new.key, new.value, new.tags);
+      INSERT INTO memories_fts(memories_fts, rowid, key, value, tags, wing, room, drawer) 
+      VALUES('delete', old.id, old.key, old.value, old.tags, old.wing, old.room, old.drawer);
+      INSERT INTO memories_fts(rowid, key, value, tags, wing, room, drawer) 
+      VALUES (new.id, new.key, new.value, new.tags, new.wing, new.room, new.drawer);
     END;
   `);
 
@@ -120,6 +133,9 @@ export function storeMemory(
     source?: MemoryEntry["source"];
     sessionId?: string;
     importance?: number;
+    wing?: string;
+    room?: string;
+    drawer?: string;
   } = {}
 ): number {
   const database = getDb();
@@ -127,8 +143,8 @@ export function storeMemory(
   const importance = options.importance ?? 3;
 
   const stmt = database.prepare(`
-    INSERT INTO memories (key, value, timestamp, tags, source, session_id, importance)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO memories (key, value, timestamp, tags, source, session_id, importance, wing, room, drawer)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -138,16 +154,39 @@ export function storeMemory(
     tags,
     options.source || "agent",
     options.sessionId || null,
-    importance
+    importance,
+    options.wing || null,
+    options.room || null,
+    options.drawer || null
   );
 
   return result.lastInsertRowid as number;
 }
 
-export function searchMemory(query: string, limit: number = 10): MemorySearchResult[] {
+export function searchMemory(
+  query: string, 
+  limit: number = 10,
+  filters: { wing?: string; room?: string; drawer?: string } = {}
+): MemorySearchResult[] {
   const database = getDb();
 
   if (!query.trim()) return [];
+
+  let whereClause = "memories_fts MATCH ?";
+  const params: any[] = [query];
+
+  if (filters.wing) {
+    whereClause += " AND wing = ?";
+    params.push(filters.wing);
+  }
+  if (filters.room) {
+    whereClause += " AND room = ?";
+    params.push(filters.room);
+  }
+  if (filters.drawer) {
+    whereClause += " AND drawer = ?";
+    params.push(filters.drawer);
+  }
 
   // Use FTS5 for full-text search
   const stmt = database.prepare(`
@@ -155,10 +194,12 @@ export function searchMemory(query: string, limit: number = 10): MemorySearchRes
            snippet(memories_fts, 1, '[', ']', '...', 20) as snippet
     FROM memories_fts
     JOIN memories m ON memories_fts.rowid = m.id
-    WHERE memories_fts MATCH ?
+    WHERE ${whereClause}
     ORDER BY rank
     LIMIT ?
   `);
+
+  params.push(limit);
 
   try {
     const rows = stmt.all(query, limit) as any[];
@@ -439,13 +480,15 @@ export function formatMemoryStats(): string {
 }
 
 export function formatSearchResults(results: MemorySearchResult[]): string {
-  if (results.length === 0) return "No memories found.";
+  if (results.length === 0) return "No memories found in the Palace.";
 
-  let output = "## Memory Search Results\n\n";
+  let output = "## 🏰 The Palace Search Results\n\n";
   for (const { entry, snippet } of results) {
+    const scope = [entry.wing, entry.room, entry.drawer].filter(Boolean).join(" > ");
     output += `### [${entry.key}]\n`;
-    output += `${snippet}\n`;
-    output += `*Tags: ${entry.tags.join(", ")} | Source: ${entry.source} | ${entry.timestamp}*\n\n`;
+    if (scope) output += `*Scope: ${scope}*\n`;
+    output += `> ${snippet}\n`;
+    output += `*Tags: ${entry.tags.join(", ")} | Source: ${entry.source} | ${new Date(entry.timestamp).toLocaleString()}*\n\n`;
   }
 
   return output;

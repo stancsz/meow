@@ -345,12 +345,6 @@ export async function runAutoAgent(
     }
 
     // Record tick result
-      confidence,
-      ticks,
-      iterations: 0,
-    });
-
-    // Record tick result (Restore existing push for compatibility)
     results.push({
       observation: observations.map(o => o.content).join("\n") || "No observations",
       orientation: summary,
