@@ -24,6 +24,7 @@ const JOB_TIMEOUT_MS = 3600000;      // 60 minutes per job
 const HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds
 const STALL_THRESHOLD_MS = 60000;     // 60 seconds of no output = stuck
 const MAX_STALLS = 3;                 // after 3 stalls, kill the job
+const JOB_STAGGER_MS = 60000;          // 60 seconds between job starts (to avoid rate limits)
 
 // ============================================================================
 // Types
@@ -288,10 +289,17 @@ async function tick(): Promise<void> {
     return;
   }
 
-  console.log(`[scheduler] ${dueJobs.length} job(s) due — launching in parallel`);
+  console.log(`[scheduler] ${dueJobs.length} job(s) due — launching with ${JOB_STAGGER_MS/1000}s stagger`);
 
-  // Launch all due jobs in parallel
-  const promises = dueJobs.map(async (job) => {
+  // Launch all due jobs in parallel, but stagger the starts by JOB_STAGGER_MS
+  const promises = dueJobs.map(async (job, index) => {
+    // Stagger start times: job 0 starts at 0s, job 1 at 60s, job 2 at 120s, etc.
+    const staggerDelay = index * JOB_STAGGER_MS;
+    if (staggerDelay > 0) {
+      console.log(`[scheduler] Delaying ${job.name} by ${staggerDelay/1000}s (position ${index+1}/${dueJobs.length})`);
+      await new Promise(resolve => setTimeout(resolve, staggerDelay));
+    }
+
     // Mark as running immediately
     job.running = true;
     job.nextRun = now + JOB_TIMEOUT_MS;
