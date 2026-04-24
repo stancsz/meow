@@ -310,6 +310,9 @@ export async function runLeanAgent(
   }
 
   const context = { dangerous, abortSignal, cwd: process.cwd(), timeoutMs };
+  let iterations = 0;
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
   let totalCostUSD = 0;
   let lastContent = "";
   let isGraceIteration = false;

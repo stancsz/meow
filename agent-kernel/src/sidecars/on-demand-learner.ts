@@ -169,7 +169,7 @@ async function getAllSkills(): Promise<Skill[]> {
 // ============================================================================
 
 const CAPABILITY_KEYWORDS: Record<string, string[]> = {
-  "research": ["research", "investigate", "find information", "web search", "study"],
+  "research": ["research", "investigate", "find information", "web search", "study", "autoresearch"],
   "deploy": ["deploy", "kubernetes", "gcp", "aws", "cloud", "infrastructure"],
   "miro": ["miro", "board", "whiteboard", "visual", "diagramming"],
   "kafka": ["kafka", "streaming", "confluent", "events", "mq"],
@@ -425,15 +425,50 @@ function findSourceFiles(dir: string, extensions: string[] = [".ts", ".js", ".py
 }
 
 async function generateImplementation(candidate: LearningCandidate, sourceContent: string, targetFile: string): Promise<string | null> {
-  // Build a minimal implementation based on the candidate type
-  const name = candidate.name.replace(/-/g, "_");
-  const className = name.split("_").map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join("");
+  console.log(`  🧠 Synthesizing implementation using LLM...`);
+  
+  const { runLeanAgent } = await import("../core/lean-agent.ts");
+  
+  const prompt = `You are a skill synthesizer for the Agent-Kernel (Meow).
+  
+  Target Capability: ${candidate.name}
+  Why: ${candidate.why}
+  Target File: ${targetFile}
+  Type: ${candidate.fit}
+  Minimal Slice to implement: ${candidate.minimalSlice}
+  
+  REFERENCE SOURCE CONTENT (from cloned repo):
+  ${sourceContent.slice(0, 5000)}
+  
+  RULES:
+  1. Generate a complete, standalone TypeScript file.
+  2. If type is "skill", it must export a 'const' named '${candidate.name.replace(/-/g, "_")}' that satisfies the Skill interface.
+  3. Include necessary imports (e.g., from "./loader.ts").
+  4. Implement the core logic explained in 'why' and 'minimalSlice'.
+  5. Content ONLY. No markdown blocks.`;
 
-  if (candidate.fit === "skill") {
-    return generateSkillTemplate(candidate, className);
-  } else if (candidate.fit === "sidecar") {
-    return generateSidecarTemplate(candidate, className);
-  } else {
+  try {
+    const result = await runLeanAgent(prompt, {
+      maxIterations: 1,
+      systemPrompt: "You are a senior TypeScript engineer specialized in building AI agents. Generate ONLY valid TypeScript code.",
+      dangerous: false,
+    });
+    
+    // Clean up response (some models might still use markdown blocks)
+    let code = result.content;
+    if (code.includes("```typescript")) {
+      code = code.split("```typescript")[1].split("```")[0];
+    } else if (code.includes("```")) {
+      code = code.split("```")[1].split("```")[0];
+    }
+    
+    return code.trim();
+  } catch (e: any) {
+    console.log(`  ❌ Synthesis failed: ${e.message}`);
+    // Fallback to template if LLM fails
+    const name = candidate.name.replace(/-/g, "_");
+    const className = name.split("_").map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join("");
+    if (candidate.fit === "skill") return generateSkillTemplate(candidate, className);
     return generateSidecarTemplate(candidate, className);
   }
 }

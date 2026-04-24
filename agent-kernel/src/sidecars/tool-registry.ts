@@ -242,7 +242,7 @@ const builtInTools: Tool[] = [
       required: ["cmd"],
     },
     execute: async (args: unknown, context: ToolContext) => {
-      const { cmd } = args as { cmd: string };
+      const { cmd } = args as { path: string; cmd: string };
 
       // Run pre-hooks
       runBeforeHooks({ command: `git ${cmd}`, tool: "git", args: cmd });
@@ -302,6 +302,33 @@ const builtInTools: Tool[] = [
       runAfterHooks({ command: `git ${cmd}`, tool: "git", args: cmd });
 
       return result;
+    },
+  },
+  {
+    name: "consult",
+    description: "Get a second opinion from another model (Mixture-of-Experts)",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "The specific question or code to review" },
+        model: { type: "string", description: "Optional expert model to consult (e.g. 'gpt-4o', 'claude-3-5-sonnet')" },
+      },
+      required: ["prompt"],
+    },
+    execute: async (args: unknown, context: ToolContext) => {
+      const { prompt, model } = args as { prompt: string; model?: string };
+      try {
+        const { runLeanAgent } = await import("../core/lean-agent.ts");
+        const result = await runLeanAgent(prompt, {
+          model: model || "gpt-4o",
+          maxIterations: 1, // Consultations should be single-turn
+          systemPrompt: "You are a senior code reviewer. Provide a concise, expert analysis.",
+          dangerous: false,
+        });
+        return { content: `[Consultation Result from ${model || "gpt-4o"}]:\n${result.content}` };
+      } catch (e: any) {
+        return { content: "", error: `Consultation failed: ${e.message}` };
+      }
     },
   },
 ];
@@ -435,6 +462,25 @@ export async function executeTool(
     return { content: "", error: `Unknown tool: ${toolName}` };
   }
 
-  return tool.execute(args, context);
+  // Argument Coercion (Hermes style)
+  // Fix common model hallucinations like sending strings for boolean/number types
+  const coercedArgs = { ...(args as any) };
+  const params = tool.parameters?.properties as Record<string, any>;
+  if (params) {
+    for (const [key, val] of Object.entries(coercedArgs)) {
+      const schema = params[key];
+      if (schema?.type === "boolean" && typeof val === "string") {
+        coercedArgs[key] = val.toLowerCase() === "true";
+      } else if (schema?.type === "number" && typeof val === "string") {
+        const parsed = parseFloat(val);
+        if (!isNaN(parsed)) coercedArgs[key] = parsed;
+      } else if (schema?.type === "integer" && typeof val === "string") {
+        const parsed = parseInt(val, 10);
+        if (!isNaN(parsed)) coercedArgs[key] = parsed;
+      }
+    }
+  }
+
+  return tool.execute(coercedArgs, context);
 }
 
