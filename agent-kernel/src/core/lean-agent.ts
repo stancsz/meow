@@ -35,7 +35,7 @@ export interface AgentResult {
   content: string;
   iterations: number;
   completed: boolean;
-  messages?: { role: string; content: string }[];
+  messages?: OpenAI.Chat.ChatCompletionMessageParam[];
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -55,7 +55,7 @@ export async function* generateStream(
   options: LeanAgentOptions = {}
 ): AsyncGenerator<string> {
   const abortSignal = options.abortSignal;
-  const timeoutMs = options.timeoutMs ?? 60000;
+  const timeoutMs = options.timeoutMs ?? 600000;
 
   if (abortSignal?.aborted) {
     return;
@@ -84,8 +84,7 @@ export async function* generateStream(
       tools: getOpenAITools(options.allowedTools),
       tool_choice: "auto",
       stream: true,
-      signal: ac.signal,
-    });
+    }, { signal: ac.signal });
   } catch (e: any) {
     cleanup();
     if (ac.signal.aborted) return;
@@ -129,7 +128,7 @@ const COST_PER_MILLION_TOKENS: Record<string, { input: number; output: number }>
 };
 
 function estimateCost(promptTokens: number, completionTokens: number, model: string): number {
-  const pricing = COST_PER_MILLION_TOKENS[model] || COST_PER_MILLION_TOKENS["MiniMax-M2.7"];
+  const pricing = COST_PER_MILLION_TOKENS[model] || COST_PER_MILLION_TOKENS["MiniMax-M2.7"]!;
   const inputCost = (promptTokens / 1_000_000) * pricing.input;
   const outputCost = (completionTokens / 1_000_000) * pricing.output;
   return (inputCost + outputCost) * 100;
@@ -274,7 +273,7 @@ export async function runLeanAgent(
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
   const maxTokens = options.maxTokens || 80000;
-  const timeoutMs = options.timeoutMs ?? 60000;
+  const timeoutMs = options.timeoutMs ?? 600000;
   const maxBudgetUSD = options.maxBudgetUSD;
 
   if (abortSignal?.aborted) {
@@ -325,8 +324,7 @@ export async function runLeanAgent(
           messages,
           tools: getOpenAITools(options.allowedTools),
           tool_choice: "auto",
-          signal: ac.signal,
-        });
+        }, { signal: ac.signal });
       } finally {
         clearTimeout(timer);
         abortSignal?.removeEventListener("abort", () => ac.abort());
@@ -465,7 +463,7 @@ export async function* runLeanAgentStream(
   const maxIterations = options.maxIterations || 50;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
-  const timeoutMs = options.timeoutMs ?? 60000;
+  const timeoutMs = options.timeoutMs ?? 600000;
 
   if (abortSignal?.aborted) {
     yield { type: "error", error: "Interrupted" };
@@ -503,8 +501,7 @@ export async function* runLeanAgentStream(
         tools: getOpenAITools(options.allowedTools),
         tool_choice: "auto",
         stream: true,
-        signal: ac.signal,
-      });
+      }, { signal: ac.signal });
     } catch (e: any) {
       clearTimeout(timer);
       abortSignal?.removeEventListener("abort", () => ac.abort());
@@ -516,7 +513,7 @@ export async function* runLeanAgentStream(
     }
 
     let fullContent = "";
-    let toolCalls: OpenAI.Chat.ChatCompletionMessage.ToolCall[] = [];
+    let toolCalls: OpenAI.Chat.ChatCompletionMessageToolCall[] = [];
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
@@ -593,7 +590,7 @@ export async function runLeanAgentSimpleStream(
   const maxIterations = options.maxIterations || 50;
   const dangerous = options.dangerous || false;
   const abortSignal = options.abortSignal;
-  const timeoutMs = options.timeoutMs ?? 60000;
+  const timeoutMs = options.timeoutMs ?? 600000;
 
   if (abortSignal?.aborted) {
     return { content: "Interrupted", iterations: 0, completed: false };
@@ -632,8 +629,7 @@ export async function runLeanAgentSimpleStream(
         tools: getOpenAITools(options.allowedTools),
         tool_choice: "auto",
         stream: true,
-        signal: ac.signal,
-      });
+      }, { signal: ac.signal });
     } catch (e: any) {
       clearTimeout(timer);
       abortSignal?.removeEventListener("abort", () => ac.abort());
@@ -643,7 +639,7 @@ export async function runLeanAgentSimpleStream(
       throw e;
     }
 
-    let toolCalls: OpenAI.Chat.ChatCompletionMessage.ToolCall[] = [];
+    let toolCalls: OpenAI.Chat.ChatCompletionMessageToolCall[] = [];
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
@@ -720,6 +716,7 @@ export async function runLeanAgentSimpleStream(
     content: fullContent || "Max iterations reached",
     iterations,
     completed: false,
+    messages,
     usage: {
       promptTokens: totalPromptTokens,
       completionTokens: totalCompletionTokens,
@@ -738,14 +735,31 @@ if (import.meta.main) {
 
   const args = process.argv.slice(2);
   const dangerous = args.includes("--dangerous");
-  const promptArgs = args.filter((a) => !a.startsWith("--"));
-  const prompt = promptArgs.join(" ") || "Hello world";
+
+  // Parse --timeout=<ms> or --timeout <ms>
+  let timeoutMs = 600000;
+  const remainingArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? "";
+    if (arg === "--timeout" && i + 1 < args.length) {
+      const parsed = parseInt(args[i + 1] ?? "");
+      if (!isNaN(parsed)) timeoutMs = parsed;
+      i++;
+    } else if (arg.startsWith("--timeout=")) {
+      const parsed = parseInt(arg.slice("--timeout=".length));
+      if (!isNaN(parsed)) timeoutMs = parsed;
+    } else {
+      remainingArgs.push(arg);
+    }
+  }
+
+  const prompt = remainingArgs.filter((a) => !a.startsWith("--")).join(" ") || "Hello world";
 
   console.log(`🐱 Meow lean agent`);
   console.log(`Prompt: ${prompt}\n`);
 
   try {
-    const result = await runLeanAgent(prompt, { dangerous });
+    const result = await runLeanAgent(prompt, { dangerous, timeoutMs });
     console.log(`\n✅ Completed in ${result.iterations} iteration(s)`);
     if (result.usage) {
       console.log(`[${result.usage.totalTokens} tokens · ~$${result.usage.estimatedCost.toFixed(2)}]`);

@@ -26,3 +26,4 @@ services:
       - ./data:/app/data
       - ./.claude:/app/.claude
       - ../agent-kernel:/app/agent-kernel:rw
+      - ./JOB.md:/app/JOB.md:ro

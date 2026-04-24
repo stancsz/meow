@@ -58,6 +58,7 @@ COPY --chown=appuser:appgroup meow-run.ts ./
 COPY --chown=appuser:appgroup fallback-logger.ts ./
 COPY --chown=appuser:appgroup compare-and-fix.ts ./
 COPY --chown=appuser:appgroup auto-daemon.ts ./
+COPY --chown=appuser:appgroup bun-scheduler.ts ./
 COPY --chown=appuser:appgroup mcp-null.json ./
 COPY --chown=appuser:appgroup SYSTEM_PROMPT.md ./
 

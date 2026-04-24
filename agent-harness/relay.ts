@@ -847,6 +847,15 @@ async function main() {
   });
   console.log("[relay] Mission agent started in background");
 
+  // Start bun scheduler for JOB.md-based hourly jobs
+  spawn("bun", ["run", "--watch", "bun-scheduler.ts", "start"], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+    shell: false,
+  });
+  console.log("[relay] Bun scheduler started in background");
+
   const processing = new Set<string>();
 
   discord.on("messageCreate", async (message: Message) => {
