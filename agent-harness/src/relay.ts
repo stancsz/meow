@@ -848,11 +848,17 @@ async function main() {
   console.log("[relay] Mission agent started in background");
 
   // Start bun scheduler for JOB.md-based hourly jobs
-  spawn("bun", ["run", "--watch", "jobs/bun-orchestrator.ts", "start"], {
+  const orchestratorProc = spawn("bun", ["run", "jobs/bun-orchestrator.ts"], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
     shell: false,
+  });
+  orchestratorProc.stdout?.on("data", (chunk: Buffer) => {
+    console.log(`[orchestrator] ${chunk.toString().trim()}`);
+  });
+  orchestratorProc.stderr?.on("data", (chunk: Buffer) => {
+    console.error(`[orchestrator:err] ${chunk.toString().trim()}`);
   });
   console.log("[relay] Bun scheduler started in background");
 

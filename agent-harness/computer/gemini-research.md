@@ -1,7 +1,12 @@
 # Agentic AI Advancements — Research Summary
 
 **Search query:** "Agentic AI advancements"
-**Sources:** Google Search results, top hits visited April 2026
+**Sources:** Google Search results (top hits visited April 2026)
+- [MIT Sloan — *Agentic AI, explained*](https://mitsloan.mit.edu/ideas-made-to-matter/agentic-ai-explained)
+- [IBM — *What is Agentic AI?*](https://www.ibm.com/think/topics/agentic-ai)
+- [McKinsey — *Agentic AI advances*](https://www.mckinsey.com/featured-insights/week-in-charts/agentic-ai-advances)
+- [AIMultiple — *40+ Agentic AI Use Cases with Real-life Examples*](https://aimultiple.com/agentic-ai)
+- [Science/AAAS — *Agentic AI and the next intelligence explosion*](https://www.science.org/content/article/agentic-ai-next-intelligence-explosion) *(updated link — original returned 404)*
 
 ---
 
@@ -15,6 +20,13 @@ Agentic AI systems are semi- or fully autonomous, able to **perceive, reason, an
 A spring 2025 MIT Sloan / Boston Consulting Group survey found **35% of respondents had already adopted AI agents**, with another **44% planning deployment** shortly. Yet Aral notes that even cutting-edge companies don't fully grasp how to maximize agent productivity, and the societal implications remain *"nascent, if not nonexistent."* Key enterprise adopters include **JPMorgan Chase** (fraud detection, loan approvals, compliance), **Walmart** (personal shopping, customer service, merchandise planning), and all major platform vendors (**Microsoft, Salesforce, Google, IBM**) embedding agents directly into their software.
 
 **Nvidia CEO Jensen Huang** projected enterprise AI agents represent a **"multi-trillion-dollar opportunity"** across medicine, software engineering, and beyond.
+
+**Enterprise adoption landscape (McKinsey, Jan 2026):**
+- AI agent adoption is most advanced in the **technology industry** (software engineering and IT lead)
+- **Insurance** leads in AI agent use for marketing and sales
+- **Healthcare** shows strong uptake in knowledge management and IT
+- Only a minority of companies are scaling sophisticated agents in ways that truly transform the business
+- Widespread AI use is common, but enterprise-scale agent deployment remains the differentiating frontier
 
 **Concrete deployment examples (AIMultiple, 2026):**
 - Insurance: ~90% of claims processing automated

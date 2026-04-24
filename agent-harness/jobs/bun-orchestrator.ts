@@ -12,6 +12,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runLeanAgent } from "../agent-kernel/src/core/lean-agent.ts";
+import { getSkillContext } from "../src/sidecars/skill-manager.ts";
+import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const JOB_MD = join(__dirname, "JOB.md");
@@ -99,10 +101,22 @@ class Orchestrator {
     if (currentJob) mdJobs.push(currentJob);
 
     // Merge with existing state
+    // Reset "running" jobs to "pending" on restart (orphaned from crashed session)
     for (const md of mdJobs) {
       const existing = this.jobs.find(j => j.name === md.name);
       if (existing) {
         existing.prompt = md.prompt.trim();
+        // If job was running but worker is gone (orphaned), reset to pending
+        if (existing.status === "running" && !this.workers.has(existing.name)) {
+          console.log(`[orchestrator] Resetting orphaned job "${existing.name}" from running→pending`);
+          existing.status = "pending";
+          existing.history.push({
+            timestamp: new Date().toISOString(),
+            exitCode: -1,
+            duration: 0,
+            note: "Orphaned - worker not found on sync"
+          });
+        }
       } else {
         this.jobs.push({
           name: md.name,
@@ -143,11 +157,16 @@ class Orchestrator {
       return `## ${j.name}\nStatus: ${j.status}\nPrompt: ${j.prompt}\nPriority: ${j.priority}\nLast Run: ${j.lastRun || "Never"}`;
     }).join("\n\n---\n\n");
 
+    // Include available skills to avoid reinventing the wheel
+    const skillContext = getSkillContext(process.env.CLAUDE_CWD || "/app");
+
     const prompt = `You are the Mission Orchestrator. 
 Current Missions defined in JOB.md:
 ---
 ${jobsSummary}
 ---
+
+${skillContext}
 
 Your goal is to decide which jobs to START or ABORT.
 We have ${this.workers.size} workers currently running. Max is 2.
@@ -238,7 +257,7 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
       process.stderr.write(`[${job.name}:err] ${chunk.toString()}`);
     });
 
-    proc.on("close", (code) => {
+    proc.on("close", async (code) => {
       console.log(`[orchestrator] Worker ${job.name} exited with code ${code}`);
       this.workers.delete(job.name);
       job.status = code === 0 ? "completed" : "failed";
@@ -247,8 +266,27 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
         exitCode: code,
         duration: Date.now() - state.startedAt
       });
+      
+      // Autonomous Skill Distillation
+      if (code === 0) {
+        try {
+          const result = await distillJobToSkill(
+            job.name,
+            job.prompt,
+            state.buffer,
+            process.env.CLAUDE_CWD || "/app"
+          );
+          if (result.success) {
+            console.log(`[orchestrator] 💎 Skill Distilled: ${result.skillName}`);
+          }
+        } catch (e) {
+          console.error("[orchestrator] Distillation failed:", e);
+        }
+      }
+
       this.saveState();
-      this.writeJobsToMd(); // Update file immediately on finish
+      // writeJobsToMd disabled - JOB.md is mounted read-only in docker
+      // this.writeJobsToMd();
     });
   }
 

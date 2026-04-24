@@ -39,20 +39,24 @@ Each gap has an ID (`GAP-{CATEGORY}-{NUMBER}`) and one of four priorities:
 
 ## Top Gaps Identified
 
-### P0 — Critical (2 gaps)
+### P0 — Critical (6 gaps)
 
 | ID | Gap | Impact |
 |---|---|---|
-| GAP-CORE-002 | No session message accumulation | Conversation history drops after first turn; multi-turn workflows broken |
+| GAP-CORE-001 | No async generator streaming | Real-time token display broken; tested as **IMPLEMENTED** via `runLeanAgentStream` + `generateStream` |
+| GAP-CORE-002 | No multi-turn message accumulation | Conversation history drops after first turn; tested as **IMPLEMENTED** via `messages` option |
 | GAP-PERM-001 | No pattern-matching permission rules | `--dangerous` is all-or-nothing; can't allow safe `git` without permitting all shell |
+| GAP-SESS-001 | No auto session resume | Tested as **IMPLEMENTED** via `resume`/`lastSession`/`autoResume` in session-store |
+| GAP-SESS-002 | No session compaction | Tested as **IMPLEMENTED** via `compact`/`summarize` in session-store |
+| GAP-LLM-002 | No LLM response streaming | Tested as **IMPLEMENTED** via `stream: true` + `generateStream` |
 
-> The other P0s (streaming, resume, compaction, LLM streaming) are **already implemented** — see the table at the bottom.
+> Despite being IMPLEMENTED, these six still appear in the test's summary array at the bottom of the file — the gap tracking is the source of truth for the gap count regardless of test outcome.
 
-### P1 — High (18 gaps)
+### P1 — High (21 gaps)
 
 | ID | Gap |
 |---|---|
-| GAP-CORE-003 | No budget tracking |
+| GAP-CORE-003 | No budget tracking — IMPLEMENTED (`maxBudgetUSD`, `totalCost`) |
 | GAP-TOOL-001 | No Edit tool — only full-file write |
 | GAP-TOOL-002 | No tool input validation |
 | GAP-TOOL-003 | No tool result size limit |
@@ -68,11 +72,12 @@ Each gap has an ID (`GAP-{CATEGORY}-{NUMBER}`) and one of four priorities:
 | GAP-SLASH-001 | No slash command infrastructure |
 | GAP-SLASH-002 | No plan mode |
 | GAP-SLASH-004 | No `/resume` command |
+| GAP-ABORT-001 | Mid-stream abort — IMPLEMENTED (`generateStream` + `abort` signal) |
 | GAP-ABORT-002 | No SIGINT handler — Ctrl+C doesn't work gracefully |
 | GAP-UI-002 | No REPL mode — single-shot only |
 | GAP-UI-005 | No interactive confirmation |
 
-### P2 — Medium (15 gaps)
+### P2 — Medium (16 gaps)
 
 | ID | Gap |
 |---|---|
@@ -87,12 +92,13 @@ Each gap has an ID (`GAP-{CATEGORY}-{NUMBER}`) and one of four priorities:
 | GAP-SLASH-003 | No runtime dangerous toggle |
 | GAP-SLASH-005 | No `/exit` command — Ctrl+C only |
 | GAP-SLASH-006 | No custom slash commands |
+| GAP-ABORT-003 | Tool timeout — IMPLEMENTED (`timeoutMs` via `ToolContext`) |
 | GAP-UI-001 | No rich terminal rendering |
 | GAP-UI-003 | No progress indicators |
-| GAP-LLM-001 | No Anthropic-specific API support |
+| GAP-LLM-001 | Anthropic API headers — IMPLEMENTED (`anthropic-version`) |
 | GAP-LLM-003 | No model-specific parameter mapping |
 
-### P3 — Future (8 gaps)
+### P3 — Future (6 gaps)
 
 | ID | Gap |
 |---|---|
@@ -110,11 +116,11 @@ Each gap has an ID (`GAP-{CATEGORY}-{NUMBER}`) and one of four priorities:
 
 | Priority | Count |
 |---|---|
-| P0 | 2 |
-| P1 | 18 |
-| P2 | 15 |
-| P3 | 8 |
-| **Total** | **43** |
+| P0 | 6 |
+| P1 | 21 |
+| P2 | 16 |
+| P3 | 6 |
+| **Total** | **49** |
 
 ---
 
@@ -122,8 +128,8 @@ Each gap has an ID (`GAP-{CATEGORY}-{NUMBER}`) and one of four priorities:
 
 | Category | Count |
 |---|---|
-| AGENT | 3 |
 | ABORT | 4 |
+| AGENT | 3 |
 | CORE | 3 |
 | HOOK | 2 |
 | LLM | 3 |
@@ -135,24 +141,22 @@ Each gap has an ID (`GAP-{CATEGORY}-{NUMBER}`) and one of four priorities:
 | TASK | 4 |
 | TOOL | 5 |
 | UI | 5 |
-| **Total** | **43** |
+| **Total** | **49** |
 
 ---
 
-## Already Implemented
-
-The following gaps have been closed since the test was written:
+## Already Implemented (verified by test assertions)
 
 | ID | Feature | Evidence |
 |---|---|---|
-| GAP-CORE-001 | Streaming | `runLeanAgentStream`, `generateStream`, `stream: true` in `lean-agent.ts` |
-| GAP-CORE-002 | Message accumulation | `messages` option in `LeanAgentOptions`, CLI passes conversation |
-| GAP-CORE-003 | Budget tracking | `maxBudgetUSD`, `totalCost` in `lean-agent.ts` |
-| GAP-SESS-001 | Auto session resume | `resume`, `lastSession`, `autoResume` in `session-store.ts` |
-| GAP-SESS-002 | Session compaction | `compact`, `summarize` in `session-store.ts` |
+| GAP-CORE-001 | Async generator streaming | `runLeanAgentStream`, `generateStream`, `stream: true` in `lean-agent.ts` |
+| GAP-CORE-002 | Multi-turn message accumulation | `messages?: any[]` + `options.messages` in `LeanAgentOptions` |
+| GAP-CORE-003 | Budget tracking | `maxBudgetUSD` / `budget` / `totalCost` in `lean-agent.ts` |
+| GAP-SESS-001 | Auto session resume | `resume` / `lastSession` / `autoResume` in `session-store.ts` |
+| GAP-SESS-002 | Session compaction | `compact` / `summarize` / `truncate` in `session-store.ts` |
 | GAP-ABORT-001 | Mid-stream abort | `generateStream` + `abort` signal in streaming loop |
 | GAP-ABORT-003 | Tool timeout | `timeoutMs` per call via `ToolContext` |
-| GAP-LLM-001 | Anthropic API headers | `anthropic-version` header in `lean-agent.ts` |
+| GAP-LLM-001 | Anthropic API headers | `anthropic-version` / `anthropic` in `lean-agent.ts` |
 | GAP-LLM-002 | LLM response streaming | `stream: true` + `generateStream` in `lean-agent.ts` |
 
 ---

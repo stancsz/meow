@@ -9,7 +9,7 @@
 
 | Module | File | Status | Notes |
 |--------|------|--------|-------|
-| Controller | `computer_controller.ts` | 🟡 Partial | 12/12 primitives implemented; platform bugs on macOS key combos, Windows mouse/click/doubleClick/drag; no real A11y positions |
+| Controller | `computer_controller.ts` | 🟡 Partial | 12/12 primitives implemented; 5 platform bugs: macOS key combo malformed AppleScript, Windows click/doubleClick/drag all use non-existent `Mouse` class APIs; `focusWindow` silent no-op on win32; no real A11y positions |
 | Screen Recognition | `screen_recognition.ts` | ✅ Functional | Tesseract/macOS/Vision/mock engines, real bbox via hOCR |
 | Human-in-the-Loop | `human_in_the_loop.ts` | ✅ Functional | Risk scoring, approval gates, 3 trigger channels |
 | Agent Orchestrator | `computer_agent.ts` | ✅ Functional | Plan→Act→Verify loop, HITL integration, CLI |
@@ -98,17 +98,19 @@
 ## What's Working (2026-04-24)
 
 - All 12 tool primitives compile and execute: `click`, `doubleClick`, `type`, `pressKey`, `moveMouse`, `screenshot`, `drag`, `scroll`, `openApp`, `closeWindow`, `focusWindow`, `getA11yTree`
-- `focusWindow` works on macOS and Linux; **silently no-ops on Windows** (missing implementation)
-- Simulation mode (`SIMULATE_DESKTOP=1`) enables full logic testing in Docker without a display — all primitives log to `/tmp/computer_sim_log.txt`
-- `init()` auto-detects: tesseract → macOS screencapture → mock; also auto-enables simulated mode on headless Linux
-- Linux drag uses stepwise movement (avoids pointer teleportation across large distances)
-- macOS drag uses `cliclick` (anchor-based, reliable) with PyAutoGUI fallback
-- Error recovery retry loops fire correctly on transient failures (up to 2 retries per action)
+- `focusWindow` works on macOS (AppleScript `activate`) and Linux (xdotool `search --name/--class windowactivate`); **silently returns success without action on Windows**
+- Simulation mode (`SIMULATE_DESKTOP=1`) enables full logic testing in Docker without a display — all primitives log to `/tmp/computer_sim_log.txt`; `simulatedScreenshot()` generates a valid minimal PNG via pure Node.js
+- `init()` auto-detects: tesseract → macOS screencapture → mock; also auto-enables simulated mode on headless Linux (no `$DISPLAY`)
+- Linux `drag` uses stepwise mouse movement (avoids pointer teleportation across large distances)
+- macOS `drag` uses `cliclick` (anchor-based, reliable) with PyAutoGUI fallback
+- Linux `scroll` uses `xdotool click --repeat N` (reliable); macOS/Windows use `fn+up/down` key combos via `platformKeyCombo`
+- Error recovery retry loops fire correctly on transient failures (up to 2 retries per action, with `shouldRetry` and `describeFailure` helpers)
 - HITL gates (defined in `human_in_the_loop.ts`) can gate `click`/`type` actions based on risk scoring
-- `simulatedScreenshot()` generates a minimal valid PNG via pure Node.js (no external tool dependency), or falls back to a placeholder base64 string if the filesystem is unavailable
-- `getA11yTree()` on macOS correctly extracts a flat element list via AppleScript `entire contents of win` — bounding boxes remain stubs, but the extraction pipeline is functional
-- `getA11yTree()` on Linux returns window name only (no real element tree)
-- `getA11yTree()` on Windows returns an error immediately (falls through all platform branches)
+- `getA11yTree()` on macOS correctly extracts a flat element list via AppleScript `entire contents of win` — bounding boxes are all stubs (`{x:0,y:0,w:100,h:30}`) since `AXPosition`/`AXSize` are never called
+- `getA11yTree()` on Linux returns only the window name via `xdotool getactivewindow getwindowname` (no real element tree)
+- `getA11yTree()` on Windows returns `{ elements: [], error: "A11y not supported on this platform" }` immediately (falls through all platform branches)
+- `closeWindow` uses `Cmd+W` via `platformKeyCombo` on all platforms (universally correct)
+- `pressKey` on macOS generates AppleScript with comma-separated `{key1}, {key2}` multi-keydown syntax that AppleScript rejects for key combinations — **macOS key combos silently fail**
 
 ---
 
