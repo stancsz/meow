@@ -3,6 +3,10 @@
  *
  * Meow's lean agent loop using OpenAI SDK.
  * MiniMax-M2.7 via MiniMax's OpenAI-compatible API at https://api.minimax.io.
+ * 
+ * EPOCH 17: Rich Agent State Indicators
+ * - onStateChange callback for state updates
+ * - State tracking during tool execution
  */
 import OpenAI from "openai";
 import {
@@ -12,6 +16,7 @@ import {
 } from "../sidecars/tool-registry.ts";
 import { classifyError, ErrorCategory } from "../sidecars/error-classifier.ts";
 import { getAllSkills } from "../skills/loader.ts";
+import { AgentState } from "../types/agent-state.ts"; // EPOCH 17: Rich state indicators
 
 // ============================================================================
 // Types
@@ -33,6 +38,8 @@ export interface LeanAgentOptions {
   grace?: boolean;
   /** Optional list of tool names to allow. If not set, all tools are available. */
   allowedTools?: string[];
+  /** EPOCH 17: Callback for state changes (thinking, executing, etc.) */
+  onStateChange?: (state: AgentState, message?: string) => void;
 }
 
 export interface AgentResult {
@@ -316,9 +323,19 @@ export async function runLeanAgent(
   let totalCostUSD = 0;
   let lastContent = "";
   let isGraceIteration = false;
+  
+  // EPOCH 17: State tracking
+  const onStateChange = options.onStateChange;
+  const setState = (state: AgentState, message?: string) => {
+    onStateChange?.(state, message);
+  };
 
   while (iterations < maxIterations || (isGraceIteration && iterations <= maxIterations + 1)) {
+    // EPOCH 17: Emit thinking state at start of iteration
+    setState(AgentState.THINKING);
+    
     if (abortSignal?.aborted) {
+      setState(AgentState.ERROR, "Interrupted");
       return { content: "Interrupted", iterations, completed: false };
     }
 
@@ -502,6 +519,7 @@ export async function runLeanAgent(
 
 // ============================================================================
 // Streaming Agent Loop (event-based)
+// EPOCH 16: Emits proper stream termination events (content_block_stop, message_stop)
 // ============================================================================
 
 export async function* runLeanAgentStream(
@@ -515,6 +533,8 @@ export async function* runLeanAgentStream(
 
   if (abortSignal?.aborted) {
     yield { type: "error", error: "Interrupted" };
+    yield { type: "content_block_stop" };
+    yield { type: "message_stop" };
     return;
   }
 
@@ -527,10 +547,14 @@ export async function* runLeanAgentStream(
   ];
 
   let iterations = 0;
+  let needsContinuation = false;
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
+      // EPOCH 16: Emit proper termination on abort
       yield { type: "error", error: "Interrupted" };
+      yield { type: "content_block_stop" };
+      yield { type: "message_stop" };
       return;
     }
 
@@ -554,7 +578,9 @@ export async function* runLeanAgentStream(
       clearTimeout(timer);
       abortSignal?.removeEventListener("abort", () => ac.abort());
       if (ac.signal.aborted) {
-        yield { type: "error", error: "Interrupted" };
+        // EPOCH 16: Emit proper termination on abort
+        yield { type: "content_block_stop" };
+        yield { type: "message_stop" };
         return;
       }
       throw e;
@@ -595,11 +621,13 @@ export async function* runLeanAgentStream(
     clearTimeout(timer);
     abortSignal?.removeEventListener("abort", () => ac.abort());
 
+    // EPOCH 16: Emit content_block_stop after each iteration
+    yield { type: "content_block_stop" };
+
     // No tool calls - done
     if (toolCalls.length === 0) {
-      clearTimeout(timer);
-      abortSignal?.removeEventListener("abort", () => ac.abort());
-      yield { type: "done" };
+      // EPOCH 16: Emit message_stop on completion
+      yield { type: "message_stop" };
       return;
     }
 
@@ -623,17 +651,24 @@ export async function* runLeanAgentStream(
     }
   }
 
-  yield { type: "error", error: "Max iterations reached" };
+  // EPOCH 16: Max iterations reached - signal continuation may be needed
+  needsContinuation = true;
+  yield { type: "needsContinuation", needsContinuation: true };
+  // Emit proper termination
+  yield { type: "content_block_stop" };
+  yield { type: "message_stop" };
 }
 
 // ============================================================================
 // Simple Streaming (returns combined content)
+// EPOCH 16: Emits proper stream termination events (content_block_stop, message_stop)
 // ============================================================================
 
 export async function runLeanAgentSimpleStream(
   prompt: string,
   options: LeanAgentOptions = {},
-  onToken?: TokenHandler
+  onToken?: TokenHandler,
+  onEvent?: (event: { type: string; needsContinuation?: boolean }) => void
 ): Promise<AgentResult> {
   const maxIterations = options.maxIterations || 50;
   const dangerous = options.dangerous || false;
@@ -641,6 +676,7 @@ export async function runLeanAgentSimpleStream(
   const timeoutMs = options.timeoutMs ?? 600000;
 
   if (abortSignal?.aborted) {
+    onEvent?.({ type: "error", error: "Interrupted" });
     return { content: "Interrupted", iterations: 0, completed: false };
   }
 
@@ -656,9 +692,13 @@ export async function runLeanAgentSimpleStream(
   let iterations = 0;
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
+  let needsContinuation = false;
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
+      // EPOCH 16: Emit proper termination on abort
+      onEvent?.({ type: "content_block_stop" });
+      onEvent?.({ type: "message_stop" });
       return { content: "Interrupted", iterations, completed: false };
     }
 
@@ -682,6 +722,9 @@ export async function runLeanAgentSimpleStream(
       clearTimeout(timer);
       abortSignal?.removeEventListener("abort", () => ac.abort());
       if (ac.signal.aborted) {
+        // EPOCH 16: Emit proper termination on abort
+        onEvent?.({ type: "content_block_stop" });
+        onEvent?.({ type: "message_stop" });
         return { content: "Interrupted", iterations, completed: false };
       }
       throw e;
@@ -725,8 +768,13 @@ export async function runLeanAgentSimpleStream(
     clearTimeout(timer);
     abortSignal?.removeEventListener("abort", () => ac.abort());
 
-    // No tool calls - done
+    // EPOCH 16: Emit content_block_stop after each iteration
+    onEvent?.({ type: "content_block_stop" });
+
+    // No tool calls - done with message
     if (toolCalls.length === 0) {
+      // EPOCH 16: Emit message_stop on completion
+      onEvent?.({ type: "message_stop" });
       return {
         content: stripThinkingBlocks(fullContent),
         iterations,
@@ -759,6 +807,14 @@ export async function runLeanAgentSimpleStream(
       });
     }
   }
+
+  // EPOCH 16: Max iterations reached - signal continuation may be needed
+  // (response was truncated, agent should continue if possible)
+  needsContinuation = true;
+  onEvent?.({ type: "needsContinuation", needsContinuation: true });
+  // Emit proper termination
+  onEvent?.({ type: "content_block_stop" });
+  onEvent?.({ type: "message_stop" });
 
   return {
     content: fullContent || "Max iterations reached",

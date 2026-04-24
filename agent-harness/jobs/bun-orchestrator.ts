@@ -14,7 +14,7 @@ import { spawn, ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runLeanAgent } from "/app/agent-kernel/src/core/lean-agent.ts";
+import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
 import { getSkillContext } from "../src/sidecars/skill-manager.ts";
 import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
 
@@ -62,9 +62,11 @@ interface Job {
     exitCode: number | null;
     duration: number;
     learnings?: string;
+    error?: string; // Failure diagnostics
   }>;
   briefing?: string; // Strategic directions from the Commander
   iteration: number;
+  lastError: string | null; // Captured from failure log
 }
 
 interface WorkerState {
@@ -123,7 +125,7 @@ class Orchestrator {
         let validationStatus = "NOT_VALIDATED";
         if (existsSync(validationDir)) {
           const validations = (readdirSync(validationDir) as string[])
-            .filter(f => f.startsWith(`epoch-${latestEpochNum}`));
+            .filter(f => f.startsWith(`epoch-${latestEpochNum}-`) || f === `epoch-${latestEpochNum}.json`);
 
           if (validations.length > 0) {
             const latestValidation = validations.sort().reverse()[0];
@@ -223,10 +225,11 @@ class Orchestrator {
     const epochStatus = this.checkEpochGates();
     const jobsSummary = this.jobs.map(j => {
       const recentLearnings = j.history.slice(-2).map(h => h.learnings).filter(Boolean).join("; ") || "None yet";
+      const errorContext = j.lastError ? `\nLAST ERROR: ${j.lastError}` : "";
       return `## ${j.name}
 Status: ${j.status} (iteration ${j.iteration})
 Last Run: ${j.lastRun || "Never"}
-Recent Learnings: ${recentLearnings}`;
+Recent Learnings: ${recentLearnings}${errorContext}`;
     }).join("\n\n---\n\n");
 
     const skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
@@ -255,14 +258,26 @@ ${skillContext}
 ## Decision Rules
 
 ### THE QUALITY GATE (STRICT)
-- **NO SLOPS**: If an implementation is "sloppy" (untested, partially broken), DOGFOOD must fix it before EVOLVE can proceed.
-- **EPOCH SEQUENCING**: Every EVOLVE run MUST be followed by a DOGFOOD validation.
-- **MEOWJU IDENTITY**: All autonomous commits must use the identity 'meowju'.
+- **NO SLOPS**:Max 2 concurrent jobs.
+ 
+## SELF-HEALING (NEW AUTHORITY)
+If a job has a 'Last Error', you must decide:
+1. **FIX**: If the error is specific and actionable (e.g. ReferenceError, ENOENT), issue a RUN decision with a briefing focused on FIXING that exact error.
+2. **IGNORE**: If the error is transient or expected, mark it as IDLE and explain why.
+3. **UNBLOCK**: If you believe the root cause is resolved, move the job back to IDLE state.
 
-Max 2 concurrent jobs.`;
+## Decison Format
+Respond with JSON:
+{
+  "reasoning": "...",
+  "decisions": [
+    { "type": "RUN", "job": "...", "briefing": "FIX: [description of fix]" },
+    { "type": "IDLE", "job": "...", "reason": "Ignoring transient error [x]" }
+  ]
+}`;
 
     try {
-      const result = await runLeanAgent(prompt, {
+      const result = await runLeanAgent("Analyze current status and decide next orchestration actions.", {
         maxIterations: 5,
         systemPrompt: commanderSystemPrompt,
         dangerous: true
@@ -355,7 +370,13 @@ Max 2 concurrent jobs.`;
               j.name.toLowerCase().includes(action.job.toLowerCase())
             );
             if (job && job.status !== "running") {
-              console.log(`[orchestrator] Starting ${job.name}`);
+              console.log(`[orchestrator] Starting ${job.name}${action.type === "RUN" && action.briefing?.includes("FIX") ? " (FIX MODE)" : ""}`);
+              
+              if (action.type === "RUN" && action.briefing?.includes("FIX")) {
+                job.status = "idle"; // Reset blocked status for fix attempts
+                job.lastError = null; // Clear error to allow fix attempt
+              }
+              
               job.briefing = action.briefing;
               await this.startWorker(job);
             } else if (!job) {
@@ -512,15 +533,19 @@ Max 2 concurrent jobs.`;
       console.log(`[orchestrator] ${job.name} exited with code ${code} (${duration}ms)`);
       this.workers.delete(job.name);
 
-      // Extract learnings from the run
+      // Extract learnings and errors
       const learnings = this.extractLearnings(state.buffer, code);
+      const errorMsg = code !== 0 ? this.extractError(state.buffer) : null;
 
       job.history.push({
         timestamp: new Date().toISOString(),
         exitCode: code,
         duration,
-        learnings
+        learnings,
+        error: errorMsg || undefined
       });
+
+      job.lastError = errorMsg;
 
       if (code === 0) {
         job.status = "improved";
@@ -582,11 +607,27 @@ Max 2 concurrent jobs.`;
       return learnings.slice(0, 3).join("; ");
     }
 
-    if (exitCode === 0) {
-      return "Completed successfully - no specific learnings extracted";
+    return "Run failed - check logs for details";
+  }
+
+  private extractError(buffer: string): string {
+    // Look for common error patterns
+    const patterns = [
+      /(?:Error|Exception|Fatal|Failure)[:\s]+([^\n]+(?:\n\s+at [^\n]+)*)/gi,
+      /([A-Z][a-zA-Z]+Error: [^\n]+)/g,
+      /TS\d+: [^\n]+/g, // TypeScript errors
+      /Module not found: [^\n]+/gi,
+      /ENOENT: [^\n]+/gi
+    ];
+
+    for (const pattern of patterns) {
+      const match = buffer.match(pattern);
+      if (match) return match[0].trim().slice(0, 500); // Capture first significant error chunk
     }
 
-    return "Run failed - check logs for details";
+    // Fallback: last 3 lines
+    const lines = buffer.trim().split("\n");
+    return lines.slice(-3).join("\n").trim() || "Unknown runtime error";
   }
 
   private handleInteractivePrompts(state: WorkerState) {

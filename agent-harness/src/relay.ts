@@ -1176,7 +1176,16 @@ async function main() {
       };
 
       try {
-        reply = await meow.prompt(fullPrompt);
+        if (RELAY_STREAMING) {
+          try {
+            reply = await sendStreamingMessage(meow, message, fullPrompt, () => {});
+          } catch (streamingErr) {
+            console.warn(`[relay] Streaming failed, falling back: ${streamingErr.message}`);
+            reply = await meow.prompt(fullPrompt);
+          }
+        } else {
+          reply = await meow.prompt(fullPrompt);
+        }
       } catch (meowErr: any) {
         attemptPath = "meow→claude-code";
         logEntry.attemptPath = attemptPath;

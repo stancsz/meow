@@ -27,5 +27,9 @@ services:
       - ./JOB.md:/app/JOB.md:ro
       - ./src:/app/src:rw
       - ./jobs:/app/jobs:rw
+      - ./evolve:/app/evolve:rw
+      - ./dogfood:/app/dogfood:rw
+      - ./design:/app/design:rw
       - /c/Users/stanc/github/meow-1/.git:/app/.git:ro
       - ./computer:/app/agent-harness/computer:rw
+      - ./workspace:/app/workspace:rw

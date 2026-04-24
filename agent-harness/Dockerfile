@@ -35,6 +35,9 @@ RUN addgroup -g 1001 -S appgroup && \
 # Create .claude/skills directory for skill management
 RUN mkdir -p /app/.claude/skills && chown -R appuser:appgroup /app/.claude
 
+# Create workspace directory (used by Meow agent as CWD)
+RUN mkdir -p /app/workspace && chown -R appuser:appgroup /app/workspace
+
 # Configure git
 RUN git config --global user.email "meowju@meow.bot" && \
     git config --global user.name "meowju"

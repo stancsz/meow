@@ -11,13 +11,61 @@
  *
  * See: cursor.com/changelog Apr 15, 2026
  * "Fixed bug where agent conversations with diffs or code blocks would flash and freeze"
+ *
+ * EPOCH 16 - STREAMING CONTINUATION SIGNALS:
+ * - needsContinuation: boolean field for truncated/incomplete responses
+ * - content_block_stop: emitted at end of content block
+ * - message_stop: emitted at end of complete message
+ * - Backpressure handling for slow consumers
+ *
+ * EPOCH 17 - RICH AGENT STATE INDICATORS:
+ * - state_change: emitted when agent changes execution state
+ * - AgentState enum with 9 distinct states
+ * - State tracking during tool execution
  */
+
+// ============================================================================
+// Stream Event Types (Claude Code SSE pattern)
+// ============================================================================
+
+export type StreamEventType =
+  | "content_block_start"
+  | "content_block_delta"
+  | "content_block_stop"
+  | "message_stop"
+  | "needsContinuation"
+  | "error"
+  | "tool_start"
+  | "tool_end"
+  | "state_change"; // EPOCH 17: Rich agent state indicators
+
+export interface StreamEvent {
+  type: StreamEventType;
+  /** Set when response is truncated/incomplete (e.g., max tokens reached) */
+  needsContinuation?: boolean;
+  /** Text content for delta events */
+  content?: string;
+  /** Error message for error events */
+  error?: string;
+  /** Tool name for tool_start/tool_end events */
+  toolName?: string;
+  /** Tool result for tool_end events */
+  toolResult?: string;
+  /** Block index for content_block_start */
+  index?: number;
+  /** Agent state for state_change events (EPOCH 17) */
+  state?: string;
+  /** Optional message for state_change events */
+  stateMessage?: string;
+}
 
 export interface StreamBufferOptions {
   bufferSize?: number;    // Flush after this many chars (default: 20)
   flushIntervalMs?: number; // Force flush after ms (default: 50)
   /** Treat code fences as flush boundaries (default: true) */
   codeFenceAware?: boolean;
+  /** High water mark for backpressure (default: 100) */
+  highWaterMark?: number;
 }
 
 // Buffer for accumulating tokens
@@ -26,6 +74,10 @@ export class TokenBuffer {
   private lastFlush: number = Date.now();
   private options: Required<StreamBufferOptions>;
   private flushCallback: (text: string) => void;
+  // Backpressure: queue for slow consumers
+  private writeQueue: string[] = [];
+  private drainPromise: Promise<void> | null = null;
+  private resolveDrain: (() => void) | null = null;
 
   constructor(
     flushCallback: (text: string) => void,
@@ -36,14 +88,23 @@ export class TokenBuffer {
       bufferSize: options.bufferSize ?? 20,
       flushIntervalMs: options.flushIntervalMs ?? 50,
       codeFenceAware: options.codeFenceAware ?? true,
+      highWaterMark: options.highWaterMark ?? 100,
     };
   }
 
   /**
    * Add a token to the buffer, checking for code fence boundaries.
    * If code fence aware, flush when we see ``` to prevent partial fences.
+   * 
+   * EPOCH 16: Now includes backpressure handling.
+   * If write queue exceeds highWaterMark, waits for consumer to drain.
    */
-  add(token: string): void {
+  async add(token: string): Promise<void> {
+    // Backpressure: wait if queue is full
+    if (this.writeQueue.length >= this.options.highWaterMark) {
+      await this.drain();
+    }
+
     if (this.options.codeFenceAware) {
       // Check for code fence boundaries - flush buffer BEFORE the fence
       // This prevents partial fences like "```co" from being rendered
@@ -82,6 +143,48 @@ export class TokenBuffer {
     ) {
       this.flush();
     }
+  }
+
+  /**
+   * Drain the write queue - called by consumer when ready for more tokens.
+   * EPOCH 16: Enables backpressure handling for slow consumers.
+   */
+  async drain(): Promise<void> {
+    // Process queued items
+    while (this.writeQueue.length > 0 && this.writeQueue.length < this.options.highWaterMark) {
+      const item = this.writeQueue.shift();
+      if (item !== undefined) {
+        this.flushCallback(item);
+      }
+    }
+
+    // If queue is still full, wait for resolution
+    if (this.writeQueue.length >= this.options.highWaterMark) {
+      return new Promise<void>((resolve) => {
+        this.resolveDrain = resolve;
+      });
+    }
+
+    // Resolve any pending drain
+    if (this.resolveDrain) {
+      this.resolveDrain();
+      this.resolveDrain = null;
+    }
+  }
+
+  /**
+   * Get current queue depth for monitoring.
+   * EPOCH 16: Enables backpressure monitoring.
+   */
+  getQueueDepth(): number {
+    return this.writeQueue.length;
+  }
+
+  /**
+   * Check if backpressure is being applied (queue above high water mark).
+   */
+  isBackpressure(): boolean {
+    return this.writeQueue.length >= this.options.highWaterMark;
   }
 
   flush(): void {
