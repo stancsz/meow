@@ -68,6 +68,7 @@ agent-kernel/tests/output/
 
 # Harvest temporary clones
 tmp/
+scratch/
 
 # Trash (removed items)
 .trash/
