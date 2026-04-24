@@ -8,15 +8,17 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const LOGS_DIR = "/app/logs";
-const COMPARE_AND_FIX = "/app/compare-and-fix.ts";
-const MEOW_RUN = "/app/meow-run.ts";
-const STATUS_FILE = "/app/logs/.auto-daemon.status";
-const MISSION_FILE = "/app/logs/.auto-daemon.mission";
-const PROGRESS_FILE = "/app/logs/.auto-daemon.progress";
-const OUTPUT_FILE = "/app/logs/.auto-daemon.output";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const LOGS_DIR = join(__dirname, "..", "..", "logs");
+const COMPARE_AND_FIX = join(__dirname, "..", "sidecars", "compare-and-fix.ts");
+const MEOW_RUN = join(__dirname, "..", "meow-run.ts");
+const STATUS_FILE = join(LOGS_DIR, ".auto-daemon.status");
+const MISSION_FILE = join(LOGS_DIR, ".auto-daemon.mission");
+const PROGRESS_FILE = join(LOGS_DIR, ".auto-daemon.progress");
+const OUTPUT_FILE = join(LOGS_DIR, ".auto-daemon.output");
 
 // Work every 60 seconds by default (configurable via MEOW_WORK_INTERVAL_MS)
 const WORK_INTERVAL_MS = parseInt(process.env.MEOW_WORK_INTERVAL_MS || "60000");

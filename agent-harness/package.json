@@ -3,16 +3,17 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "bun run index.ts",
-    "meow-chan": "bun run relay.ts",
-    "meow-chan:mention": "bun run relay.ts --mention-only",
-    "relay": "bun run relay.ts",
-    "relay:mention": "bun run relay.ts --mention-only",
-    "build": "bun build index.ts --outdir=dist --format=esm --target=node",
+    "start": "bun run src/index.ts",
+    "meow-chan": "bun run src/relay.ts",
+    "meow-chan:mention": "bun run src/relay.ts --mention-only",
+    "relay": "bun run src/relay.ts",
+    "relay:mention": "bun run src/relay.ts --mention-only",
+    "build": "bun build src/index.ts --outdir=dist --format=esm --target=node",
     "docker:build": "docker build -t meow-bridge .",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "docker:logs": "docker-compose logs -f",
+    "orchestrate": "bun run jobs/bun-orchestrator.ts start"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

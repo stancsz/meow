@@ -11,10 +11,12 @@
  */
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const LOGS_DIR = "/app/logs";
-const AGENT_KERNEL = "/app/agent-kernel";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const LOGS_DIR = join(__dirname, "..", "..", "logs");
+const AGENT_KERNEL = join(__dirname, "..", "..", "..", "agent-kernel");
 
 console.error("[compare-fix] Starting...");
 
@@ -44,7 +46,7 @@ function spawnClaudeFix(prompt: string): Promise<string> {
     const args = [
       "--output-format", "text",
       "--dangerously-skip-permissions",
-      "--mcp-config", "/app/mcp-null.json",
+      "--mcp-config", join(__dirname, "..", "..", "config", "mcp-null.json"),
       "-p", prompt
     ];
 
@@ -140,11 +142,11 @@ Relevant Meow kernel files to examine (they're in ${AGENT_KERNEL}):
 - src/sidecars/tool-registry.ts (tool execution)
 - src/core/auto-agent.ts (autonomous loop)
 
-Also check the meow-run.ts in /app/ for any issues.
+Also check the meow-run.ts in src/ (agent-harness/src/meow-run.ts) for any issues.
 
 After analyzing, make the necessary EDITS to fix the issue.
 Use the write or edit tool to make changes.
-If the issue is in meow-run.ts (/app/meow-run.ts), also fix that.
+If the issue is in meow-run.ts (agent-harness/src/meow-run.ts), also fix that.
 
 If you cannot determine the root cause, explain what you found and what else needs investigation.
 

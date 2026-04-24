@@ -48,19 +48,11 @@ USER appuser
 # Set up gh auth at runtime using token from GH_PAT
 ENV GH_HOST=github.com
 
-# Copy relay source
-COPY --chown=appuser:appgroup relay.ts ./
-COPY --chown=appuser:appgroup memory.ts ./
-COPY --chown=appuser:appgroup skill-manager.ts ./
-COPY --chown=appuser:appgroup mission-agent.ts ./
-COPY --chown=appuser:appgroup meow-agent.ts ./
-COPY --chown=appuser:appgroup meow-run.ts ./
-COPY --chown=appuser:appgroup fallback-logger.ts ./
-COPY --chown=appuser:appgroup compare-and-fix.ts ./
-COPY --chown=appuser:appgroup auto-daemon.ts ./
-COPY --chown=appuser:appgroup bun-scheduler.ts ./
-COPY --chown=appuser:appgroup mcp-null.json ./
-COPY --chown=appuser:appgroup SYSTEM_PROMPT.md ./
+# Copy source and config
+COPY --chown=appuser:appgroup src/ ./src/
+COPY --chown=appuser:appgroup config/ ./config/
+COPY --chown=appuser:appgroup jobs/ ./jobs/
+COPY --chown=appuser:appgroup docs/ ./docs/
 
 # Copy default skills to skel (hidden by volume mount at /app/.claude)
 COPY --chown=appuser:appgroup .claude/skills/ /app/.claude/skills.skel/
@@ -76,11 +68,11 @@ RUN echo ".env" > .gitignore && \
 RUN mkdir -p /app/logs && chown -R appuser:appgroup /app/logs
 
 # Build relay for production
-RUN bun build relay.ts --outdir=dist --format=esm --target=node
+RUN bun build src/relay.ts --outdir=dist --format=esm --target=node
 
 # Expose for any future HTTP services
 EXPOSE 3000
 
 # Entrypoint handles gh auth, then runs relay
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["bun", "run", "relay.ts"]
+CMD ["bun", "run", "src/relay.ts"]

@@ -17,8 +17,9 @@ Claude Code starts fresh every session. Meow remembers:
 
 ### 🎯 Missions That Work While You Sleep
 Background task agents for Claude Code:
-- Define a goal, walk away
-- Agent evaluates progress every 30 seconds
+- Define a goal in **JOB.md**, walk away
+- **Bun Orchestrator** evaluates progress using an LLM Manager Agent
+- Detects and handles interactive prompts autonomously
 - Posts updates to Discord (edits existing message, no spam)
 - **100% completion? Keeps going. Pushes for excellence.**
 
@@ -131,6 +132,7 @@ list missions                       # See all
 agent-harness/
 ├── relay.ts              # Discord ↔ Claude Code bridge
 ├── mission-agent.ts      # Background mission evaluator
+├── bun-orchestrator.ts   # Agent-driven job manager (replaces scheduler)
 ├── memory.ts             # Hierarchical memory system
 ├── skill-manager.ts      # GitHub skill installation
 ├── SYSTEM_PROMPT.md     # Meow's personality

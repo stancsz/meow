@@ -16,10 +16,10 @@ import { Client, GatewayIntentBits, ChannelType, type TextChannel, type Message 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { MemoryStore } from "./memory";
-import { getSkillContext } from "./skill-manager";
-import { MeowAgentClient } from "./meow-agent";
-import { logFallback, type FallbackLogEntry } from "./fallback-logger";
+import { MemoryStore } from "./core/memory";
+import { getSkillContext } from "./sidecars/skill-manager";
+import { MeowAgentClient } from "./core/meow-agent";
+import { logFallback, type FallbackLogEntry } from "./sidecars/fallback-logger";
 
 // ============================================================================
 // Config
@@ -207,7 +207,7 @@ function addToHistory(channelId: string, role: "user" | "assistant", content: st
 // Load system prompt
 let SYSTEM_PROMPT = "";
 try {
-  SYSTEM_PROMPT = readFileSync(join(process.cwd(), "SYSTEM_PROMPT.md"), "utf-8");
+  SYSTEM_PROMPT = readFileSync(join(process.cwd(), "docs", "prompt", "SYSTEM_PROMPT.md"), "utf-8");
 } catch {
   SYSTEM_PROMPT = "You are Meow, a helpful Discord relay bot.";
 }

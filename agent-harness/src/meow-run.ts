@@ -6,8 +6,11 @@
  * lean-agent.ts handles the full OODA loop including tool execution.
  */
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const LEAN_AGENT = "/app/agent-kernel/src/core/lean-agent.ts";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const LEAN_AGENT = join(__dirname, "..", "..", "agent-kernel", "src", "core", "lean-agent.ts");
 
 /**
  * Strip lean-agent's debug output prefix to get only the actual content.
