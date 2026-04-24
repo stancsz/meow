@@ -11,7 +11,7 @@ import { spawn, ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
+import { runLeanAgent } from "../agent-kernel/src/core/lean-agent.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const JOB_MD = join(__dirname, "JOB.md");
@@ -88,7 +88,7 @@ class Orchestrator {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const h1Match = line.match(/^# (.+)$/);
+      const h1Match = line.match(/^# (.+?)(?:\s+\[.+\])?$/);
       if (h1Match) {
         if (currentJob) mdJobs.push(currentJob);
         currentJob = { name: h1Match[1].trim(), prompt: "" };
@@ -115,6 +115,21 @@ class Orchestrator {
       }
     }
     this.saveState();
+    // Note: writeJobsToMd disabled - JOB.md is read-only
+  }
+
+  private writeJobsToMd() {
+    let content = "";
+    for (const job of this.jobs) {
+      const badge = 
+        job.status === "running" ? " [RUNNING 🛰️]" :
+        job.status === "completed" ? " [DONE ✅]" :
+        job.status === "failed" ? " [FAILED ❌]" :
+        job.status === "blocked" ? " [BLOCKED 🛑]" : "";
+      
+      content += `# ${job.name}${badge}\n${job.prompt}\n\n`;
+    }
+    writeFileSync(JOB_MD, content.trim() + "\n");
   }
 
   /**
@@ -123,13 +138,22 @@ class Orchestrator {
   private async plan(): Promise<void> {
     console.log("[orchestrator] Agent planning session starting...");
 
-    const jobsSummary = this.jobs.map(j => `- ${j.name} (Status: ${j.status}, Priority: ${j.priority})`).join("\n");
+    // Send FULL JOB DESCRIPTIONS to the agent so it knows WHAT each job is.
+    const jobsSummary = this.jobs.map(j => {
+      return `## ${j.name}\nStatus: ${j.status}\nPrompt: ${j.prompt}\nPriority: ${j.priority}\nLast Run: ${j.lastRun || "Never"}`;
+    }).join("\n\n---\n\n");
+
     const prompt = `You are the Mission Orchestrator. 
-Current Jobs:
+Current Missions defined in JOB.md:
+---
 ${jobsSummary}
+---
 
 Your goal is to decide which jobs to START or ABORT.
 We have ${this.workers.size} workers currently running. Max is 2.
+
+Consider dependencies: If one job needs to happen before another, prioritize it.
+If a job has failed multiple times, mark it as "BLOCKED" in your reason.
 
 Respond with a JSON block:
 {
@@ -180,8 +204,8 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
 
     const proc = spawn("bun", [
       "run", "--bun", CLAUDE_CLI,
-      "--print",
       "--dangerously-skip-permissions",
+      "--mcp-config", "/app/mcp-bridge.json",
       "--",
       job.prompt
     ], {
@@ -224,6 +248,7 @@ Only recommend starting jobs that are 'pending' or 'failed'.`;
         duration: Date.now() - state.startedAt
       });
       this.saveState();
+      this.writeJobsToMd(); // Update file immediately on finish
     });
   }
 

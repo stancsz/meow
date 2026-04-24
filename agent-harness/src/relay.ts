@@ -839,7 +839,7 @@ async function main() {
   });
 
   // Start mission agent in background
-  spawn("bun", ["run", "--watch", "mission-agent.ts"], {
+  spawn("bun", ["run", "--watch", "src/agents/mission-agent.ts"], {
     cwd: process.cwd(),
     stdio: ["ignore", "inherit", "inherit"],
     detached: true,
@@ -848,7 +848,7 @@ async function main() {
   console.log("[relay] Mission agent started in background");
 
   // Start bun scheduler for JOB.md-based hourly jobs
-  spawn("bun", ["run", "--watch", "bun-scheduler.ts", "start"], {
+  spawn("bun", ["run", "--watch", "jobs/bun-orchestrator.ts", "start"], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
@@ -890,7 +890,7 @@ async function main() {
       const args = promptText.slice(5).trim();
       const [action, ...missionParts] = args.split(/\s+/);
       const subcmd = action?.toLowerCase();
-      const { startAutoDaemon, stopAutoDaemon, getAutoDaemonStatus, setMission, getMission, clearMission } = await import("./auto-daemon");
+      const { startAutoDaemon, stopAutoDaemon, getAutoDaemonStatus, setMission, getMission, clearMission } = await import("./agents/auto-daemon");
 
       if (!subcmd || subcmd === "status") {
         const status = getAutoDaemonStatus();

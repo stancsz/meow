@@ -16,6 +16,15 @@ A spring 2025 MIT Sloan / Boston Consulting Group survey found **35% of responde
 
 **Nvidia CEO Jensen Huang** projected enterprise AI agents represent a **"multi-trillion-dollar opportunity"** across medicine, software engineering, and beyond.
 
+**Concrete deployment examples (AIMultiple, 2026):**
+- Insurance: ~90% of claims processing automated
+- HR: Resume screening and payroll streamlined via agents
+- DevOps: AI coding agents handle code generation, refactoring, and CI/CD pipeline management
+- OpenAI's Operator + Replit: Two AI agents built a complete application in 90 minutes autonomously
+- Stanford AI Village: 25 autonomous agents coordinating activities in a virtual town
+- 10-agent novel writing pipeline: Specialized agents (spec, production, management) produced a 100,000-word novel with zero human writing
+- Google DeepMind's SIMA: AI navigating and interacting in 3D gaming environments
+
 ---
 
 ### 2. Agentic AI Enables Autonomous, Multi-Step Workflows — Acting in Both Digital and Physical Worlds
@@ -30,6 +39,12 @@ Unlike LLMs limited to static training data, agentic AI systems can:
 - **Learn and adapt** over time via reinforcement learning and self-supervised learning
 
 The core technical pipeline is: **Perception → Reasoning → Goal Setting → Decision Making → Execution → Learning → Orchestration**. AI orchestration platforms coordinate hundreds or thousands of agents, handling failure events and tracking progress toward task completion.
+
+**Key technical advancements (AIMultiple, 2026):**
+- Recursive coding: agents iteratively improve and extend code across multiple layers autonomously
+- Multi-step planning: agents with memory execute long-horizon tasks across varied tools
+- Real-time adaptation: agents adjust workflows based on new evidence and changing contexts
+- Cross-platform GUI agents: seamlessly switch between applications like a human operator
 
 **Practical examples:** AI-powered trading bots executing real-time trades; autonomous vehicles navigating with live sensor data; healthcare agents monitoring patient data and adjusting treatment recommendations; cybersecurity agents detecting and responding to threats.
 
