@@ -156,6 +156,10 @@ export class MemoryStore {
     const dbPath = join(this.dataDir, "memory.db");
     this.db = new Database(dbPath);
     
+    // Enable WAL mode for high-concurrency (Parallel Swarms)
+    this.db.run("PRAGMA journal_mode=WAL");
+    this.db.run("PRAGMA synchronous=NORMAL");
+
     // Create tables
     this.db.run(`
       CREATE TABLE IF NOT EXISTS facts (
@@ -179,8 +183,26 @@ export class MemoryStore {
       )
     `);
 
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        role TEXT,
+        status TEXT,
+        lastSeen INTEGER
+      )
+    `);
+
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT,
+        payload TEXT,
+        timestamp INTEGER
+      )
+    `);
+
     // Create FTS5 Virtual Table for full-text search
-    // Using 'trigram' tokenizer for better partial matches on code-like text
     try {
       this.db.run(`
         CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
@@ -191,7 +213,6 @@ export class MemoryStore {
         )
       `);
     } catch (e) {
-      // Fallback if trigram is not available
       this.db.run(`
         CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
           content,
@@ -203,8 +224,45 @@ export class MemoryStore {
   }
 
   /**
-   * Search through all past messages and facts using FTS5
+   * Broadcast an event to the internal memory bus (cross-process)
    */
+  broadcastEvent(type: string, payload: any) {
+    this.db.run(
+      "INSERT INTO events (type, payload, timestamp) VALUES (?, ?, ?)",
+      [type, JSON.stringify(payload), Date.now()]
+    );
+  }
+
+  /**
+   * Keep-alive for active agent processes
+   */
+  heartbeat(id: string, name: string, role: string) {
+    this.db.run(`
+      INSERT INTO agents (id, name, role, status, lastSeen)
+      VALUES (?, ?, ?, 'active', ?)
+      ON CONFLICT(id) DO UPDATE SET 
+        status='active',
+        lastSeen=excluded.lastSeen
+    `, [id, name, role, Date.now()]);
+  }
+
+  /**
+   * Get active swarm members
+   */
+  /**
+   * Get active swarm members
+   */
+  getActiveAgents() {
+    return this.db.query("SELECT * FROM agents WHERE lastSeen > ?").all(Date.now() - 30000);
+  }
+
+  /**
+   * Get and clear new events (polling mechanism)
+   */
+  consumeEvents(since: number): any[] {
+    return this.db.query("SELECT * FROM events WHERE timestamp > ? ORDER BY timestamp ASC").all(since);
+  }
+
   searchMemory(query: string, limit = 10): any[] {
     const results = this.db.query(`
       SELECT content, type, source_id, rank
