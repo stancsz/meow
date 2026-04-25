@@ -492,6 +492,44 @@ const builtInTools: Tool[] = [
       }
     },
   },
+  {
+    name: "pounce",
+    description: "Spawn a 'Sub-Kitten' (background agent) to perform a task in parallel. Useful for research, testing, or heavy lifting while you continue working.",
+    parameters: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "The specific task for the sub-kitten (e.g. 'Research the latest Bun.js features', 'Run all tests in current dir')" },
+        role: { type: "string", description: "Specialized role for this worker (e.g. 'Researcher', 'Tester', 'Coder')" },
+      },
+      required: ["task"],
+    },
+    execute: async (args: unknown) => {
+      const { task, role = "worker" } = args as { task: string; role?: string };
+      try {
+        const { spawn } = await import("node:child_process");
+        const { join } = await import("node:path");
+        const runnerPath = join(process.cwd(), "packages", "harness", "src", "meow-run.ts");
+        
+        // Spawn background bun process
+        const child = spawn("bun", ["run", runnerPath, task], {
+          detached: true,
+          stdio: "ignore",
+          env: { 
+            ...process.env, 
+            MEOW_ROLE: role, 
+            MEOW_PARENT_PID: process.pid.toString(),
+            MEOW_DATA_DIR: process.env.MEOW_DATA_DIR || join(process.cwd(), "data")
+          }
+        });
+        
+        child.unref(); // Allow main process to exit while child runs
+        
+        return { content: `[Swarm] Sub-Kitten sparked! 🐱✨\nRole: ${role}\nTask: ${task}\nI've sent a specialized kitten to handle this in the background. I'll let you know when they report back to the memory bus.` };
+      } catch (e: any) {
+        return { content: "", error: `Failed to spawn sub-kitten: ${e.message}` };
+      }
+    },
+  },
 ];
 
 // ============================================================================

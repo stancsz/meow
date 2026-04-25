@@ -10,9 +10,36 @@
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const LEAN_AGENT = join(__dirname, "..", "..", "packages", "kernel", "src", "core", "lean-agent.ts");
+
+// Simple .env loader
+const envPath = join(process.cwd(), ".env");
+if (existsSync(envPath)) {
+  const content = readFileSync(envPath, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith("#")) {
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim();
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  }
+
+  // Map Anthropic keys to LLM keys for lean-agent
+  if (process.env.ANTHROPIC_API_KEY && !process.env.LLM_API_KEY) {
+    process.env.LLM_API_KEY = process.env.ANTHROPIC_API_KEY;
+  }
+  if (process.env.ANTHROPIC_BASE_URL && !process.env.LLM_BASE_URL) {
+    process.env.LLM_BASE_URL = process.env.ANTHROPIC_BASE_URL;
+  }
+}
+
+const LEAN_AGENT = join(__dirname, "..", "..", "kernel", "src", "core", "lean-agent.ts");
 
 /**
  * Strip lean-agent's debug output prefix to get only the actual content.

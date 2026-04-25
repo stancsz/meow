@@ -883,6 +883,26 @@ if (import.meta.main) {
   try {
     const result = await runLeanAgent(prompt, { dangerous, timeoutMs });
 
+    // XL-08: Swarm Reporting
+    if (process.env.MEOW_ROLE) {
+      try {
+        const { MemoryStore } = await import("./memory.ts");
+        const { join } = await import("node:path");
+        const dataDir = process.env.MEOW_DATA_DIR || join(process.cwd(), "data");
+        const memory = new MemoryStore(dataDir);
+        memory.broadcastEvent("SWARM_REPORT", {
+          role: process.env.MEOW_ROLE,
+          task: prompt,
+          result: result.content,
+          completed: result.completed,
+          pid: process.pid
+        });
+        console.error(`[swarm] Reported result to memory bus.`);
+      } catch (meo) {
+        console.error(`[swarm] Failed to report result: ${meo.message}`);
+      }
+    }
+
     if (jsonMode) {
       // EPOCH 24: JSON output mode for Harness integration (skill crystallization)
       // Outputs full AgentResult including messages[] with tool_calls for HookContext
