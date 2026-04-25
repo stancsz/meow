@@ -11,7 +11,7 @@
  * the TypeScript imports from within the /app context.
  */
 import { spawn } from "node:child_process";
-import { AgentState } from "@meow/kernel";
+import { AgentState } from "./agent-types";
 
 const MEOW_TIMEOUT_MS = parseInt(process.env.MEOW_TIMEOUT_MS || "300000");
 

@@ -6,13 +6,13 @@
  * Tokens are streamed to stdout via onToken callback for real-time display.
  * EPOCH 17: Also emits state change events to stderr for relay integration.
  */
-import { AgentState, runLeanAgentSimpleStream } from "@meow/kernel";
+import { AgentState } from "./core/agent-types";
 
 async function main() {
   const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   const prompt = args.join(" ") || "Hello world";
 
-  console.error(`[meow-stream] Starting lean-agent streaming with prompt: ${prompt.slice(0, 80)}...`);
+  console.error(`[meow-stream] meow-stream runner starting...`);
   console.error(`[meow-stream] cwd: ${process.cwd()}`);
 
   const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "300000");

@@ -17,7 +17,6 @@
     "cowork": "bun run src/server.ts"
   },
   "dependencies": {
-    "@meow/kernel": "workspace:*",
     "@anthropic-ai/sdk": "^0.90.0",
     "discord.js": "^14.15.3",
     "glob": "^11.0.0",

@@ -1,10 +1,9 @@
 services:
   agent-harness:
     build:
-      context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
+      context: /c/Users/stanc/github/meow-1
+      dockerfile: packages/harness/Dockerfile
+    # env_file: loaded from .env at runtime by entrypoint
     environment:
       - NODE_ENV=production
       - HOME=/home/appuser
@@ -23,7 +22,7 @@ services:
       - ./mcp-bridge.json:/app/mcp-bridge.json:ro
       - ./data:/app/data
       - ./.claude:/app/.claude
-      - ../agent-kernel:/app/agent-kernel:rw
+      - ../kernel:/app/agent-kernel:rw
       - ./JOB.md:/app/JOB.md:ro
       - ./src:/app/src:rw
       - ./jobs:/app/jobs:rw

@@ -21,13 +21,11 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.98
 WORKDIR /app
 
 # Copy package files
-COPY package.json ./
-COPY bun.lock* ./
+COPY package.json bun.lock* ./
 
 # Install dependencies (as root)
 RUN bun install
 
-# Create non-root user with proper home directory
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -D -h /home/appuser -G appgroup && \
     chown -R appuser:appgroup /app
@@ -43,7 +41,7 @@ RUN git config --global user.email "meowju@meow.bot" && \
     git config --global user.name "meowju"
 
 # Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
+COPY packages/harness/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 USER appuser
@@ -52,10 +50,10 @@ USER appuser
 ENV GH_HOST=github.com
 
 # Copy source and config
-COPY --chown=appuser:appgroup src/ ./src/
-COPY --chown=appuser:appgroup config/ ./config/
-COPY --chown=appuser:appgroup jobs/ ./jobs/
-COPY --chown=appuser:appgroup docs/ ./docs/
+COPY --chown=appuser:appgroup packages/harness/src/ ./src/
+COPY --chown=appuser:appgroup packages/harness/config/ ./config/
+COPY --chown=appuser:appgroup packages/harness/jobs/ ./jobs/
+COPY --chown=appuser:appgroup packages/harness/docs/ ./docs/
 
 # Create .claude directory structure
 RUN mkdir -p /app/.claude/skills /app/.claude/skills.skel && chown -R appuser:appgroup /app/.claude
