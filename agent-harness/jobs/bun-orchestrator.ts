@@ -11,7 +11,7 @@
  */
 
 import { spawn, ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, watch, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runLeanAgent } from "/app/agent-kernel/src/core/lean-agent.ts";
@@ -33,6 +33,7 @@ if (existsSync(envPath)) {
 }
 
 const JOB_MD = join(__dirname, "..", "JOB.md");
+const HUMAN_MD = join(__dirname, "..", "HUMAN.md");
 const JOBS_FILE = join(__dirname, "..", "data", "orchestrator.json");
 const EVOLVE_DIR = join(__dirname, "..", "evolve");
 const DOGFOOD_DIR = join(__dirname, "..", "dogfood");
@@ -94,6 +95,27 @@ class Orchestrator {
   constructor() {
     this.ensureDataDir();
     this.loadState();
+    this.watchForHumanSignal();
+  }
+
+  /**
+   * Watch for changes in HUMAN.md and JOB.md.
+   * This is our "Broadcasting" system to the agents.
+   */
+  private watchForHumanSignal() {
+    const filesToWatch = [JOB_MD, HUMAN_MD];
+    for (const file of filesToWatch) {
+      if (existsSync(file)) {
+        console.log(`[orchestrator] 👂 Listening for human pulse on ${file}`);
+        watch(file, (event) => {
+          if (event === "change") {
+            console.log(`[orchestrator] 💓 Signal detected in ${file}. Pulsing planning cycle...`);
+            this.syncJobsFromMd();
+            this.plan(); // Immediate trigger
+          }
+        });
+      }
+    }
   }
 
   private ensureDataDir() {
@@ -313,7 +335,16 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
       skillContext = getSkillContext(process.env.MEOW_CWD || "/app");
     } catch (e) {
       console.error("[orchestrator] Error getting skill context:", e);
-      skillContext = "";
+    }
+
+    // Load human feedback
+    let humanFeedback = "";
+    try {
+      if (existsSync(HUMAN_MD)) {
+        humanFeedback = "\n## HUMAN FEEDBACK\n" + readFileSync(HUMAN_MD, "utf-8");
+      }
+    } catch (e) {
+      console.error("[orchestrator] Error reading HUMAN.md:", e);
     }
 
     // Recall recent memories related to current goals (may fail if memory store not initialized)
@@ -328,9 +359,13 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
     const safeMemoryContext = memoryContext || "";
     const safeSystemSnapshot = systemSnapshot || "";
     const safeSkillContext = skillContext || "";
+    const safeHumanFeedback = humanFeedback || "";
 
     const commanderSystemPrompt = [
       "You are Embers, the Orchestrator. Maintain the 4-phase DISCOVER->PLAN->BUILD->DOGFOOD loop.",
+      "",
+      "## HUMAN FEEDBACK (MANDATORY)",
+      safeHumanFeedback,
       "",
       "## SYSTEM STATUS",
       safeEpochStatus,

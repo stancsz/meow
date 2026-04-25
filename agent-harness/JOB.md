@@ -86,3 +86,22 @@ You may NEVER modify a protected file during a standard BUILD phase unless the P
 2. **Atomic Edits**: Never rewrite the whole orchestrator. Make micro-edits.
 3. **No Breaking Changes**: You may add features, but you may NEVER rename existing variables, remove existing state checks, or change the JSON schema expected by the terminal outputs.
 4. **Self-Sabotage Check**: If your change could theoretically cause an infinite loop, lockup, or `ReferenceError` in the orchestrator, ABORT immediately.
+
+---
+
+# 🌌 QUANTUM EVOLUTION: AGI Path (Network-Threaded)
+[STATE: IDLE]
+
+**Goal:** Evolve Meow from a linear OODA agent into a multi-reasoning, network-threaded AGI using PennyLane and AutoResearch concepts.
+
+## Methodology
+1. **Resolution Scaling**: Always work in the current resolution tier (180p -> 360p -> 720p -> 1080p).
+2. **Network Mapping**: Consult `agent-harness/evolve/research/network_map_180p.md` before changing any "Moving Parts".
+3. **Quantum Simulation**: Run `bun run src/tools/quantum-evolve.ts` to simulate the optimum path for each transition.
+4. **Interference Check**: Identify if changing one component (e.g., Kernel) will break another (e.g., Tools) by looking at the Entanglement Matrix.
+5. **AutoResearch Loop**: Every change must be a hypothesis with a validation test. If the test fails, revert the change and log the "Energy State" (failure reason).
+
+## Active Research
+- `agent-kernel/quantum-evolution-plan.md`
+- `agent-harness/evolve/research/network_map_180p.md`
+- `agent-harness/evolve/research/quantum_simulation_v1.md`

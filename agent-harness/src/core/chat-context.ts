@@ -111,6 +111,13 @@ export async function triggerCompaction(
  */
 export function getContext(sessionId: string, maxRecent?: number): ContextResult {
   let messages: SessionMessage[] = [];
+  const sessionDir = getSessionDir();
+  const file = join(sessionDir, `${sessionId}.jsonl`);
+  
+  // Check if session file exists - if not, it's a non-existent session
+  if (!existsSync(file)) {
+    return { sessionId, messages: [], hasSummary: false, formattedContent: "" };
+  }
   
   try {
     messages = loadSession(sessionId);
