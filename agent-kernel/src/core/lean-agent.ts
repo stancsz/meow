@@ -40,6 +40,8 @@ export interface LeanAgentOptions {
   allowedTools?: string[];
   /** EPOCH 17: Callback for state changes (thinking, executing, etc.) */
   onStateChange?: (state: AgentState, message?: string) => void;
+  /** MISSION: Differentiable mission type for parameter tuning. */
+  missionType?: "DISCOVER" | "PLAN" | "BUILD" | "DOGFOOD" | "default";
 }
 
 export interface AgentResult {
