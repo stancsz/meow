@@ -36,6 +36,7 @@ export interface ContextResult {
   sessionId: string;
   messages: SessionMessage[];
   hasSummary: boolean;
+  summary?: string;  // Content of summary if session has been compacted
   formattedContent: string;
 }
 

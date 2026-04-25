@@ -383,6 +383,57 @@ const builtInTools: Tool[] = [
       return { content: `[Multi-Consult Results]\n\n${summary}` };
     },
   },
+  {
+    name: "human_sync",
+    description: "Synchronize with real-time human instructions from HUMAN.md. Use this to check for mid-task pivots or stop signals.",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+    execute: async (_, context: ToolContext) => {
+      try {
+        const humanMdPath = join(context.cwd, "agent-harness", "HUMAN.md");
+        if (!existsSync(humanMdPath)) return { content: "", error: "HUMAN.md not found" };
+        const content = readFileSync(humanMdPath, "utf-8");
+        return { content: `[HUMAN PULSE]:\n${content}` };
+      } catch (e: any) {
+        return { content: "", error: `Failed to sync human pulse: ${e.message}` };
+      }
+    },
+  },
+  {
+    name: "human_broadcast",
+    description: "Write a message to HUMAN.md to 'talk back' to the human. Use this to report progress, ask for clarification, or signal completion.",
+    parameters: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "The message to send to the human" },
+      },
+      required: ["message"],
+    },
+    execute: async (args: unknown, context: ToolContext) => {
+      const { message } = args as { message: string };
+      try {
+        const humanMdPath = join(context.cwd, "agent-harness", "HUMAN.md");
+        if (!existsSync(humanMdPath)) return { content: "", error: "HUMAN.md not found" };
+        
+        let content = readFileSync(humanMdPath, "utf-8");
+        const logHeader = "## FEEDBACK LOG\n";
+        const entry = `- [${new Date().toLocaleTimeString()}] AGENT: ${message}\n`;
+        
+        if (content.includes(logHeader)) {
+          content = content.replace(logHeader, logHeader + entry);
+        } else {
+          content += "\n" + logHeader + entry;
+        }
+        
+        writeFileSync(humanMdPath, content, "utf-8");
+        return { content: "Message broadcast to HUMAN.md" };
+      } catch (e: any) {
+        return { content: "", error: `Failed to broadcast message: ${e.message}` };
+      }
+    },
+  },
 ];
 
 // ============================================================================

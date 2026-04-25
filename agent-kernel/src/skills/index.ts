@@ -26,6 +26,7 @@ import { hunt } from "./hunt.ts";
 import { mine } from "./mine.ts";
 import { remember } from "./remember.ts";
 import { palace } from "./palace.ts";
+import { pulse } from "./pulse.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -51,6 +52,7 @@ const allSkills: Skill[] = [
   mine,
   remember,
   palace,
+  pulse,
 ];
 
 // Auto-register on import
