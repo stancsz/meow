@@ -116,3 +116,27 @@ You may NEVER modify a protected file during a standard BUILD phase unless the P
 2. **[Q2] Define Interface Gates**: Create `docs/architecture/qubit_gates.md` defining the API contracts for the Core vs Sidecars.
 3. **[Q3] Feedback Weighting**: Modify `bun-orchestrator.ts` to weight `HUMAN.md` feedback at 10x priority over DISCOVER logs.
 4. **[Q4] Auto-Rollback**: Implement a safety gate where if a change breaks the "Entanglement Matrix" (e.g. breaks more than 2 tools), it is automatically reverted without human input.
+
+---
+
+# 🚀 720p RESOLUTION: Parallel Swarms & Mirror Hearts
+[STATE: IDLE]
+
+**Goal:** Restore multi-wing concurrency and establish unbreakable bounds for the Core Orchestrator.
+
+## Tasks
+1. **[720-1] Dynamic Context Injection**: Refactor sidecars to stop hardcoding `/app/` paths and rely on a unified `MEOW_ROOT` to solve cross-platform execution.
+2. **[720-2] The Shadow Mirror**: Implement `tests/mirror_core.test.ts`. Before ANY edit to `bun-orchestrator.ts` or `relay.ts`, the system must mock the change in this mirror environment to ensure we do not infinitely crash the live Swarm.
+3. **[720-3] Q-Wing Restoration**: Restore the `MAX_PARALLEL_WINGS=4` logic inside the Orchestrator, allowing multiple hypotheses to execute actively.
+
+---
+
+# 🤖 1080p RESOLUTION: Physical Embodiment (Quad Robotics)
+[STATE: IDLE]
+
+**Goal:** Translate Meowju's text-reasoning environment into a low-latency physical robot brain architecture.
+
+## Tasks
+1. **[1080-1] SLM Cerebellum Bridge**: Meowju thinks too slowly for balance/walking. Architect the pipeline where Meowju passes strategic waypoints to a local Small Language Model (SLM) executing a sub-10ms OODA loop.
+2. **[1080-2] Vision Sidecar**: Create an MCP or sidecar service capable of streaming camera RGB-D frames into semantic context.
+3. **[1080-3] Proprioception Memory**: Extend Sovereign Palace to track hardware states (`hardware_status.json`) - Battery, IMU/Pitch, Motor Torques.
