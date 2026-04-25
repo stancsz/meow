@@ -425,7 +425,7 @@ export class MemoryStore {
       timestamp: Date.now()
     });
 
-    // Auto-compact if thread is getting too long
+    // Auto-compact if thread is getting too long - triggers compaction via compactThread
     if (thread.messages.length >= COMPACT_THRESHOLD) {
       this.compactThread(channelId, userId);
     }

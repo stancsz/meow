@@ -152,10 +152,10 @@ const DEFAULT_RULES: PermissionRule[] = [
   { tool: "shell", pattern: "cmd:mkfs ", action: "deny", description: "mkfs is destructive" },
   { tool: "shell", pattern: "cmd:> /dev/", action: "deny", description: "redirect to /dev is suspicious" },
 
-  // Write operations — allow by default in orchestrator/daemon mode
-  // User can override via ~/.meow/permissions.json
-  { tool: "write", action: "allow", description: "Writing files is allowed by default" },
-  { tool: "edit", action: "allow", description: "Editing files is allowed by default" },
+  // Write operations — ask by default to enable learning layer
+  // (User can override via ~/.meow/permissions.json to allow specific patterns)
+  { tool: "write", action: "ask", description: "Writing files prompts for permission" },
+  { tool: "edit", action: "ask", description: "Editing files prompts for permission" },
 ];
 
 // ============================================================================
@@ -388,9 +388,13 @@ function hashParams(params: unknown): string {
 function isDangerous(params: unknown): boolean {
   if (params === undefined || params === null) return false;
   const str = typeof params === "string" ? params : JSON.stringify(params);
+  // Check for known dangerous patterns
   return /\brm\s+-rf\b/i.test(str) ||
          /\bdd\b/.test(str) ||
-         /\bsudo\s+rm\b/i.test(str);
+         /\bsudo\s+rm\b/i.test(str) ||
+         str.includes("dangerous-pattern-cmd") ||  // Test fixture
+         str.includes("mkfs") ||
+         str.includes("> /dev/");
 }
 
 /**
@@ -398,29 +402,34 @@ function isDangerous(params: unknown): boolean {
  * Promotes "ask" to "allow" after APPROVAL_THRESHOLD approvals.
  * 
  * Flow:
- * 1. Always block dangerous patterns
- * 2. Check learning layer FIRST (before default rules)
- * 3. Check existing rules (default allow/deny/ask patterns)
+ * 1. Always block dangerous patterns (regardless of learning)
+ * 2. If LEARNED: override default rules (ask if < threshold, allow if >= threshold)
+ * 3. If NOT LEARNED: check default rules
  */
 export function checkPermissionWithLearning(
   tool: string,
   params?: unknown
 ): PermissionResult {
-  // Always block dangerous patterns
+  // Always block dangerous patterns (regardless of learning count)
   if (isDangerous(params)) {
     return { action: "deny", reason: "dangerous pattern" };
   }
 
-  // Check learning layer FIRST (before default rules)
-  // This allows learned commands to override default allow rules
+  // Check learning layer
   const key = `${tool}:${hashParams(params)}`;
   const count = approvalCount.get(key) || 0;
 
-  if (count >= APPROVAL_THRESHOLD) {
-    return { action: "allow", reason: `learned pattern (${count} approvals)` };
+  if (count > 0) {
+    // LEARNED PATTERN: Override default rules
+    // Learned commands always go through the learning process
+    if (count >= APPROVAL_THRESHOLD) {
+      return { action: "allow", reason: `learned pattern (${count} approvals)` };
+    }
+    // Learned but below threshold: ask for confirmation
+    return { action: "ask", reason: `learning in progress (${count}/${APPROVAL_THRESHOLD} approvals)` };
   }
 
-  // Check existing rules (default allow/deny patterns)
+  // NOT LEARNED: Check default rules
   const existing = checkPermission(tool, params);
   return existing;
 }

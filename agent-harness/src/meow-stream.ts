@@ -28,13 +28,11 @@ async function main() {
   try {
     const result = await runLeanAgentSimpleStream(
       prompt,
-      { dangerous, timeoutMs },
+      { dangerous, timeoutMs, onStateChange }, // EPOCH 17: pass onStateChange in options
       (token) => {
         // Stream each token to stdout for real-time display
         process.stdout.write(token);
-      },
-      undefined, // onEvent not used here
-      onStateChange // EPOCH 17: state change callback
+      }
     );
 
     console.error(`\n[meow-stream] Completed in ${result.iterations} iteration(s)`);

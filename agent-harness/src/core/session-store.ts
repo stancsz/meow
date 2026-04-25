@@ -12,30 +12,17 @@
  * 
  * EPOCH 22: Token estimation fixed to use /3 (chars/3) for accuracy.
  * COMPACT_THRESHOLD exported for auto-trigger integration.
- * 
- * Test support: Uses global session dir override for testing via
- * globalThis.__MEOW_SESSION_DIR__ to ensure tests share the same state.
  */
 import { readFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-// Global override for testing - persists across module imports
-const GLOBAL_SESSION_DIR_KEY = "__MEOW_SESSION_DIR__";
-function getGlobalSessionDir(): string | null {
-  return (globalThis as any)[GLOBAL_SESSION_DIR_KEY] || null;
-}
-function setGlobalSessionDir(dir: string): void {
-  (globalThis as any)[GLOBAL_SESSION_DIR_KEY] = dir;
-}
-
 export const COMPACT_THRESHOLD = 20; // When to trigger auto-compaction (messages count)
 
 // Override session directory for testing (set SESSION_DIR before importing)
-let SESSION_DIR_OVERRIDE: string | null = null;
+export let SESSION_DIR_OVERRIDE: string | null = null;
 export function setSessionDir(dir: string): void {
   SESSION_DIR_OVERRIDE = dir;
-  setGlobalSessionDir(dir); // Also set global for cross-module sharing
 }
 
 export interface SessionMessage {
@@ -63,11 +50,7 @@ export interface CompactedSession {
 const DEFAULT_SESSION_DIR = join(homedir(), ".meow", "sessions");
 const DEFAULT_LAST_SESSION_FILE = join(homedir(), ".meow", "last_session");
 
-function getSessionDir(): string {
-  // Check global override first (for cross-module test sharing)
-  const globalDir = getGlobalSessionDir();
-  if (globalDir) return globalDir;
-  // Then check module-level override
+export function getSessionDir(sessionId?: string): string {
   return SESSION_DIR_OVERRIDE || DEFAULT_SESSION_DIR;
 }
 
@@ -144,10 +127,12 @@ export function createSession(forkedFrom?: string): string {
   return id;
 }
 
-export function appendToSession(sessionId: string, messages: SessionMessage[]): void {
+export function appendToSession(sessionId: string, messages: SessionMessage | SessionMessage[]): void {
   ensureDir();
   const file = join(getSessionDir(), `${sessionId}.jsonl`);
-  const lines = messages.map((m) => JSON.stringify(m)).join("\n") + "\n";
+  // Normalize single message to array
+  const messageArray = Array.isArray(messages) ? messages : [messages];
+  const lines = messageArray.map((m) => JSON.stringify(m)).join("\n") + "\n";
   appendFileSync(file, lines, "utf-8");
 }
 
@@ -189,8 +174,12 @@ export function estimateTokens(text: string): number {
  * This is the auto-trigger check that can be used by callers.
  */
 export function sessionNeedsCompaction(sessionId: string): boolean {
-  const messages = loadSession(sessionId);
-  return messages.length >= COMPACT_THRESHOLD;
+  try {
+    const messages = loadSession(sessionId);
+    return messages.length >= COMPACT_THRESHOLD;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -217,18 +206,26 @@ export async function autoCompactSession(
  * 
  * Uses message count as primary trigger (COMPACT_THRESHOLD) rather than
  * token-based calculation to ensure reliable compaction.
+ * 
+ * @param force - If true, compact even if under threshold (for manual triggers)
  */
 export async function compactSession(
   sessionId: string,
   options: {
     maxTokens?: number;
     summarizeFn: (messages: SessionMessage[]) => Promise<string>;
+    force?: boolean;  // Force compaction regardless of threshold
   }
 ): Promise<CompactedSession> {
   const messages = loadSession(sessionId);
+  
+  console.log("[compactSession] called with force=", options.force);
+  console.log("[compactSession] loaded", messages.length, "messages");
+  console.log("[compactSession] COMPACT_THRESHOLD=", COMPACT_THRESHOLD);
 
   // Use message count as primary trigger - if under threshold, return early
-  if (messages.length < COMPACT_THRESHOLD) {
+  // UNLESS force is true (for manual compaction triggers)
+  if (messages.length < COMPACT_THRESHOLD && !options.force) {
     return {
       messages,
       summary: "",
@@ -237,33 +234,92 @@ export async function compactSession(
     };
   }
 
-  // Keep system message(s) and recent messages (but preserve existing summary markers)
-  const systemMessages = messages.filter((m) => m.role === "system");
-  const conversationMessages = messages.filter((m) => m.role !== "system");
+  // Keep system message(s) and recent messages
+  const systemMessages = messages.filter((m) => m.role === "system" && !m.content.includes("[Previous conversation summarized]"));
+  const conversationMessages = messages.filter((m) => m.role !== "system" || !m.content.includes("[Previous conversation summarized]"));
 
-  // Keep last 4-6 exchanges (8-12 messages)
-  const keepRecent = 12;
+  // For manual compaction (force=true), keep fewer recent messages to ensure some compaction
+  // For auto compaction, keep more to reduce frequency
+  const keepRecent = options.force ? 6 : 12;
   const recentMessages = conversationMessages.slice(-keepRecent);
   const oldMessages = conversationMessages.slice(0, -keepRecent);
 
-  if (oldMessages.length === 0) {
+  // If no old messages to compact, return early
+  // UNLESS force is true (for manual compaction triggers)
+  if (oldMessages.length === 0 && !options.force) {
     return {
       messages,
       summary: "",
       originalCount: messages.length,
       compactedCount: messages.length,
     };
+  }
+
+  // For forced compaction with no old messages, we need to still perform some compaction
+  // Merge all conversation messages into the recent pool (keep fewer)
+  if (oldMessages.length === 0 && options.force) {
+    // For manual trigger with all messages in recent, just compact them all
+    // Reduce the recent pool to create old messages
+    const allConversation = conversationMessages;
+    if (allConversation.length > keepRecent) {
+      // Already handled above
+    } else {
+      // Need to compact - take only the last 2 messages
+      const remainingMessages = allConversation.slice(-2);
+      const toCompact = allConversation.slice(0, -2);
+      
+      if (toCompact.length === 0) {
+        // Nothing to compact, return unchanged
+        return {
+          messages,
+          summary: "",
+          originalCount: messages.length,
+          compactedCount: messages.length,
+        };
+      }
+      
+      // Generate summary using LLM
+      const summary = await options.summarizeFn(toCompact);
+
+      // Build compacted session - use SHORT format marker
+      // T3.2 requirement: "[Previous conversation summarized]" not extended format
+      const compactedMessages: SessionMessage[] = [
+        ...systemMessages,
+        {
+          role: "system",
+          content: `[Previous conversation summarized]`,
+          timestamp: new Date().toISOString(),
+        },
+        {
+          role: "system",
+          content: `## Conversation Summary\n${summary}`,
+          timestamp: new Date().toISOString(),
+        },
+        ...remainingMessages,
+      ];
+
+      // Save compacted session
+      saveSession(sessionId, compactedMessages);
+
+      return {
+        messages: compactedMessages,
+        summary,
+        originalCount: messages.length,
+        compactedCount: compactedMessages.length,
+      };
+    }
   }
 
   // Generate summary using LLM
   const summary = await options.summarizeFn(oldMessages);
 
-  // Build compacted session
+  // Build compacted session - use SHORT format marker (without extended details)
+  // T3.2 requirement: "[Previous conversation summarized]" not extended format
   const compactedMessages: SessionMessage[] = [
     ...systemMessages,
     {
       role: "system",
-      content: `[Previous conversation summarized - ${oldMessages.length} messages condensed into ${estimateTokens(summary)} tokens]`,
+      content: `[Previous conversation summarized]`,
       timestamp: new Date().toISOString(),
     },
     {

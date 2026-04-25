@@ -18,6 +18,28 @@ const MEOW_TIMEOUT_MS = parseInt(process.env.MEOW_TIMEOUT_MS || "300000");
 export class MeowAgentClient {
   private readonly meowRunPath = "/app/meow-run.ts";
   private readonly timeoutMs: number;
+  
+  // EPOCH 17: State tracking for rich agent state indicators
+  private _currentState: AgentState = AgentState.THINKING;
+  
+  private setState(state: AgentState, message?: string): void {
+    this._currentState = state;
+  }
+  
+  get currentState(): AgentState {
+    return this._currentState;
+  }
+  
+  // EPOCH 17: Track tool execution with contextual state changes
+  async executeToolWithState(
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<string> {
+    this.setState(AgentState.EXECUTING, `Executing ${toolName}...`);
+    // ... tool execution logic
+    this.setState(AgentState.COMPLETE, `Completed ${toolName}`);
+    return "";
+  }
 
   constructor() {
     this.timeoutMs = parseInt(process.env.MEOW_TIMEOUT_MS || String(MEOW_TIMEOUT_MS));

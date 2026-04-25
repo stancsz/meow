@@ -694,6 +694,11 @@ export async function runLeanAgentSimpleStream(
   let totalCompletionTokens = 0;
   let needsContinuation = false;
 
+  // EPOCH 17: State tracking
+  const setState = (state: AgentState, message?: string) => {
+    options.onStateChange?.(state, message);
+  };
+
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
       // EPOCH 16: Emit proper termination on abort
