@@ -18,9 +18,12 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { MemoryStore } from "./core/memory";
 import { getSkillContext } from "./sidecars/skill-manager";
-import { MeowAgentClient } from "./core/meow-agent";
+import { MeowAgentClient, type AgentResult } from "./core/meow-agent";
 import { logFallback, type FallbackLogEntry } from "./sidecars/fallback-logger";
 import { AgentState, AGENT_STATE_EMOJI, AGENT_STATE_DESCRIPTION, TokenBuffer } from "./core/agent-types";
+import { getDefaultHooks, type HookContext, type ToolCall, type Message as HookMessage } from "./core/done-hooks";
+import { crystallizeSkill } from "./core/skill-crystallizer";
+import { skillCrystallizerHook } from "./sidecars/crystallizer-hook";
 
 // ============================================================================
 // Config
@@ -92,6 +95,11 @@ const memory = new MemoryStore(MEMORY_DATA_DIR);
 setInterval(() => memory.save(), 30000);
 process.on("SIGINT", () => { memory.save(); process.exit(0); });
 process.on("SIGTERM", () => { memory.save(); process.exit(0); });
+
+// ============================================================================
+// Epoch 24: Skill Self-Crystallization Hook Registration
+// ============================================================================
+getDefaultHooks().register(skillCrystallizerHook);
 
 // ============================================================================
 // Background task detection
@@ -404,7 +412,7 @@ async function sendStreamingMessage(
   message: Message,
   prompt: string,
   onToken: (token: string) => void
-): Promise<string> {
+): Promise<{ content: string; agentResult: AgentResult }> {
   return new Promise(async (resolve, reject) => {
     // Create token buffer with code fence awareness
     const tokenBuffer = new TokenBuffer(
@@ -440,14 +448,15 @@ async function sendStreamingMessage(
 
     // Stream via meow's promptStreaming with state change callback
     try {
-      fullContent = await meow.promptStreaming(
+      const { content, result } = await meow.promptStreaming(
         prompt,
         (token) => {
           tokenBuffer.add(token);
-          fullContent += token;
         },
         onStateChange
       );
+      fullContent = content;
+      agentResult = result;
     } catch (e: any) {
       // Edit the thinking message to show error
       try {
@@ -478,7 +487,7 @@ async function sendStreamingMessage(
       await sendChunksWithRateLimit(message, chunks);
     }
 
-    resolve(fullContent);
+    resolve({ content: fullContent, agentResult });
   });
 }
 
@@ -1116,6 +1125,9 @@ async function main() {
       return;
     }
 
+    // EPOCH 24: Track start time for skill crystallization HookContext
+    const startTime = Date.now();
+
     // Check for /auto command (start/stop/status auto-improvement daemon)
     if (promptText.startsWith("/auto")) {
       const args = promptText.slice(5).trim();
@@ -1205,16 +1217,24 @@ async function main() {
         finalResponseLength: 0,
       };
 
+      let agentResult: AgentResult | null = null;
+
       try {
         if (RELAY_STREAMING) {
           try {
-            reply = await sendStreamingMessage(meow, message, fullPrompt, () => {});
+            const streamed = await sendStreamingMessage(meow, message, fullPrompt, () => {});
+            reply = streamed.content;
+            agentResult = streamed.agentResult;
           } catch (streamingErr) {
             console.warn(`[relay] Streaming failed, falling back: ${streamingErr.message}`);
-            reply = await meow.prompt(fullPrompt);
+            // EPOCH 24: Use promptJson for crystallization support (non-streaming fallback)
+            agentResult = await meow.promptJson(fullPrompt);
+            reply = agentResult.content;
           }
         } else {
-          reply = await meow.prompt(fullPrompt);
+          // EPOCH 24: Use promptJson to get full AgentResult for skill crystallization
+          agentResult = await meow.promptJson(fullPrompt);
+          reply = agentResult.content;
         }
       } catch (meowErr: any) {
         attemptPath = "meow→claude-code";
@@ -1284,6 +1304,61 @@ async function main() {
       // Add assistant reply to history and memory
       addToHistory(message.channelId, "assistant", reply);
       memory.addMessageToThread(message.channelId, userId, "meow", reply);
+      memory.processConversationForFacts(userId, message.author.username, promptText, reply);
+
+      // EPOCH 24: Trigger DoneHooks for skill crystallization on successful completion
+      if (agentResult?.completed) {
+        const endTime = Date.now();
+        try {
+          // Convert AgentResult.messages to HookContext format
+          const hookMessages: HookMessage[] = (agentResult.messages || []).map((m: any) => ({
+            role: m.role as "user" | "assistant" | "system",
+            content: typeof m.content === "string" ? m.content : "",
+            timestamp: undefined,
+          }));
+
+          // Extract tool calls from assistant messages
+          const hookToolCalls: ToolCall[] = [];
+          for (const msg of agentResult.messages || []) {
+            if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+              for (const tc of msg.tool_calls) {
+                hookToolCalls.push({
+                  id: tc.id || `tc-${hookToolCalls.length}`,
+                  name: tc.function?.name || "unknown",
+                  arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {},
+                });
+              }
+            }
+          }
+
+          const hookContext: HookContext = {
+            task: {
+              id: message.id,
+              description: promptText,
+              success: true,
+            },
+            toolCalls: hookToolCalls,
+            messages: hookMessages,
+            startTime,
+            endTime,
+            metadata: {
+              iterations: agentResult.iterations,
+              usage: agentResult.usage,
+            },
+          };
+
+          // Trigger all registered DoneHooks (including skill crystallization)
+          const hooks = getDefaultHooks();
+          const results = await hooks.trigger(hookContext);
+          for (const result of results) {
+            if (result.success && result.skillCrystallized) {
+              console.log(`[relay] 💎 Skill crystallized: ${result.skillName}`);
+            }
+          }
+        } catch (hookErr) {
+          console.error("[relay] DoneHooks trigger failed:", hookErr);
+        }
+      }
 
       console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
 
@@ -1300,6 +1375,38 @@ async function main() {
       processing.delete(message.id);
     }
   });
+
+  // EPOCH 24: Register default DoneHooks for skill crystallization
+  function registerCrystallizationHook(): void {
+    const hooks = getDefaultHooks();
+    if (!hooks.hasHook("skill-crystallization")) {
+      hooks.register({
+        name: "skill-crystallization",
+        priority: 100,
+        trigger: (context) => {
+          // Trigger on successful tasks with at least one tool call
+          return context.task.success && context.toolCalls.length > 0;
+        },
+        execute: async (context) => {
+          try {
+            const skill = await crystallizeSkill(context);
+            return {
+              success: true,
+              skillCrystallized: true,
+              skillName: skill.name,
+            };
+          } catch (e) {
+            return {
+              success: false,
+              error: e instanceof Error ? e.message : String(e),
+            };
+          }
+        },
+      });
+      console.log("[relay] 💎 Skill crystallization hook registered");
+    }
+  }
+  registerCrystallizationHook();
 
   await discord.login(DISCORD_TOKEN);
 

@@ -199,7 +199,7 @@ export class MeowAgentClient {
     text: string,
     onToken: (token: string) => void,
     onStateChange?: (state: AgentState, message?: string) => void
-  ): Promise<string> {
+  ): Promise<{ content: string; result: AgentResult }> {
     const words = text.split(" ");
     return new Promise((resolve, reject) => {
       // Use meow-stream.ts which calls runLeanAgentSimpleStream with onToken
@@ -224,8 +224,16 @@ export class MeowAgentClient {
 
       proc.stdout?.on("data", (chunk: Buffer) => {
         const text = chunk.toString();
-        // Stream tokens to callback for real-time display
-        onToken(text);
+        
+        // EPOCH 24: Detect [RESULT] marker and hide it from the UI stream
+        const resultIdx = text.indexOf("[RESULT]");
+        if (resultIdx !== -1) {
+          const visiblePart = text.slice(0, resultIdx);
+          if (visiblePart) onToken(visiblePart);
+        } else {
+          onToken(text);
+        }
+        
         stdout += text;
       });
 
@@ -273,13 +281,31 @@ export class MeowAgentClient {
         if (timedOut) return;
         clearTimeout(timer);
         if (code === 0) {
-          // Strip debug prefix to get actual content
-          const marker = "--- Output ---";
-          const idx = stdout.indexOf(marker);
-          const content = idx !== -1 ? stdout.slice(idx + marker.length).trim() : stdout.trim();
-          resolve(content);
+          // EPOCH 24: Parse the [RESULT] JSON from accumulated stdout
+          const resultMarker = "[RESULT]";
+          const markerIdx = stdout.indexOf(resultMarker);
+          
+          if (markerIdx !== -1) {
+            const jsonText = stdout.slice(markerIdx + resultMarker.length).trim();
+            const visibleContent = stdout.slice(0, markerIdx).trim();
+            try {
+              const result = JSON.parse(jsonText) as AgentResult;
+              resolve({ content: visibleContent, result });
+            } catch (e) {
+              reject(new Error(`Failed to parse AgentResult from stream: ${jsonText.slice(0, 100)}`));
+            }
+          } else {
+            // Fallback for non-JSON output
+            const marker = "--- Output ---";
+            const idx = stdout.indexOf(marker);
+            const content = idx !== -1 ? stdout.slice(idx + marker.length).trim() : stdout.trim();
+            resolve({ 
+              content, 
+              result: { content, iterations: 0, completed: true } 
+            });
+          }
         } else {
-          const errMsg = stderr.trim() || `Meow streaming exited with code ${code}`;
+          const errMsg = stderr.trim() || `Meow stream exited with code ${code}`;
           reject(new Error(errMsg));
         }
       });

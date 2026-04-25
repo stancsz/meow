@@ -10,6 +10,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 
 // ============================================================================
 // Types
@@ -133,6 +134,7 @@ export class MemoryStore {
   private userProfiles: Map<string, UserProfile> = new Map();
   private contextThreads: Map<string, ContextThread> = new Map();
   private soul: Soul;
+  private db: Database;
 
   constructor(dataDir: string) {
     this.dataDir = dataDir;
@@ -147,6 +149,72 @@ export class MemoryStore {
 
     this.load();
     this.initializeSoul();
+    this.initializeDatabase();
+  }
+
+  private initializeDatabase() {
+    const dbPath = join(this.dataDir, "memory.db");
+    this.db = new Database(dbPath);
+    
+    // Create tables
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS facts (
+        id TEXT PRIMARY KEY,
+        userId TEXT,
+        content TEXT,
+        category TEXT,
+        confidence REAL,
+        createdAt INTEGER
+      )
+    `);
+
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS thread_messages (
+        id TEXT PRIMARY KEY,
+        channelId TEXT,
+        userId TEXT,
+        role TEXT,
+        content TEXT,
+        timestamp INTEGER
+      )
+    `);
+
+    // Create FTS5 Virtual Table for full-text search
+    // Using 'trigram' tokenizer for better partial matches on code-like text
+    try {
+      this.db.run(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+          content,
+          type UNINDEXED, 
+          source_id UNINDEXED,
+          tokenize='trigram'
+        )
+      `);
+    } catch (e) {
+      // Fallback if trigram is not available
+      this.db.run(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+          content,
+          type UNINDEXED, 
+          source_id UNINDEXED
+        )
+      `);
+    }
+  }
+
+  /**
+   * Search through all past messages and facts using FTS5
+   */
+  searchMemory(query: string, limit = 10): any[] {
+    const results = this.db.query(`
+      SELECT content, type, source_id, rank
+      FROM memory_fts
+      WHERE memory_fts MATCH ?
+      ORDER BY rank
+      LIMIT ?
+    `).all(`${query}*`, limit);
+    
+    return results;
   }
 
   private load() {
@@ -324,6 +392,19 @@ export class MemoryStore {
     };
 
     profile.facts.push(fact);
+
+    // SQL Sync
+    this.db.run(
+      "INSERT INTO facts (id, userId, content, category, confidence, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
+      [fact.id, userId, fact.content, fact.category, fact.confidence, fact.createdAt]
+    );
+
+    // FTS Indexing
+    this.db.run(
+      "INSERT INTO memory_fts (content, type, source_id) VALUES (?, ?, ?)",
+      [fact.content, "fact", fact.id]
+    );
+
     return fact;
   }
 
@@ -431,6 +512,21 @@ export class MemoryStore {
     }
 
     thread.updatedAt = Date.now();
+
+    // SQL Sync
+    const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    this.db.run(
+      "INSERT INTO thread_messages (id, channelId, userId, role, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+      [msgId, channelId, userId, role, content, Date.now()]
+    );
+
+    // FTS Indexing (only index meaningful messages)
+    if (content.length > 5) {
+      this.db.run(
+        "INSERT INTO memory_fts (content, type, source_id) VALUES (?, ?, ?)",
+        [content, "message", channelId]
+      );
+    }
   }
 
   /**
@@ -812,53 +908,68 @@ export class MemoryStore {
    * Extract facts from conversation
    */
   processConversationForFacts(userId: string, username: string, userMessage: string, assistantMessage: string) {
-    // This is a simple heuristic-based extraction
-    // In a real implementation, this would use the LLM
-
     const lowerUser = userMessage.toLowerCase();
+    const profile = this.getOrCreateProfile(userId, username);
 
-    // Detect interests
+    // 1. Identity & Role Detection
+    const identityPatterns = [
+      { pattern: /i am a (.+)/i, category: "identity" },
+      { pattern: /i work (at|as) (.+)/i, category: "identity" },
+      { pattern: /my (role|job|specialty) is/i, category: "identity" },
+      { pattern: /i'm the (.+) at/i, category: "identity" }
+    ];
+
+    for (const { pattern, category } of identityPatterns) {
+      const match = userMessage.match(pattern);
+      if (match && match[1]) {
+        const identity = match[1].split(/[,.]/)[0].trim();
+        if (identity.length > 2) {
+          this.addFact(userId, `Identity: ${identity}`, category as any, 0.8, "social_discovery");
+        }
+      }
+    }
+
+    // 2. Value & Motivation Extraction
+    if (lowerUser.includes("important to me") || lowerUser.includes("i value") || lowerUser.includes("i care about")) {
+      const value = userMessage.slice(Math.max(0, userMessage.indexOf("i ") - 5)).split(/[,.]/)[0];
+      this.addFact(userId, `Value: ${value.trim()}`, "motivation", 0.7, "social_discovery");
+    }
+
+    // 3. Personality & Tone Mirroring
+    if (userMessage.length < 20 && (lowerUser.includes("lol") || lowerUser.includes("lmao"))) {
+      profile.preferences.tone = "playful";
+    }
+
+    // 4. Interest Detection
     const interestPatterns = [
-      /i (like|love|enjoy|am into|am passionate about)/i,
-      /my (hobby|interest|passion) is/i,
-      /i've been working on/i,
-      /i'm building/i,
-      /i'm learning/i
+      /i (like|love|enjoy|am into|am passionate about) (.+)/i,
+      /my (hobby|interest|passion) is (.+)/i,
+      /i'm building (.+)/i,
+      /i'm learning (.+)/i
     ];
 
     for (const pattern of interestPatterns) {
-      if (pattern.test(userMessage)) {
-        // Extract the relevant phrase
-        const match = userMessage.match(pattern);
-        if (match && match[0]) {
-          const interest = match[0] + " " + userMessage.slice(match.index! + match[0].length).split(/[,.]/)[0];
-          this.addFact(userId, interest.trim(), "interest", 0.6, "conversation_inference");
-        }
-      }
-    }
-
-    // Detect goals
-    const goalPatterns = [
-      /i want to (.+)/i,
-      /i'm trying to (.+)/i,
-      /my goal is (.+)/i,
-      /i need to (.+)/i,
-      /i'm working on (.+)/i
-    ];
-
-    for (const pattern of goalPatterns) {
       const match = userMessage.match(pattern);
-      if (match && match[1]) {
-        const goalText = match[1].trim();
-        if (goalText.length > 5 && goalText.length < 100) {
-          this.addGoal(userId, goalText, `User mentioned: ${goalText}`);
+      if (match && match[2]) {
+        const interest = match[2].split(/[,.]/)[0].trim();
+        if (interest.length > 2 && !profile.preferences.interests.includes(interest)) {
+          profile.preferences.interests.push(interest);
+          this.addFact(userId, `Interest: ${interest}`, "interest", 0.6, "social_discovery");
         }
       }
     }
 
-    // Detect motivations
-    if (lowerUser.includes("because i want") || lowerUser.includes("so that i can") || lowerUser.includes("in order to")) {
-      this.addFact(userId, userMessage.slice(Math.max(0, userMessage.toLowerCase().indexOf("because") - 10)), "motivation", 0.5, "conversation_inference");
+    // 5. Bond Strength Delta
+    const positiveWords = ["thanks", "thank", "awesome", "great", "amazing", "love", "helpful", "good job"];
+    const negativeWords = ["bad", "wrong", "annoying", "stop", "stupid", "idiot", "useless"];
+    
+    let valence = 0;
+    for (const word of positiveWords) if (lowerUser.includes(word)) valence += 0.05;
+    for (const word of negativeWords) if (lowerUser.includes(word)) valence -= 0.1;
+    
+    const rel = this.soul.relationships[userId];
+    if (rel) {
+      rel.bondStrength = Math.max(0, Math.min(1, rel.bondStrength + valence));
     }
   }
 }

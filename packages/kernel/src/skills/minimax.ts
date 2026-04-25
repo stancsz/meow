@@ -45,7 +45,63 @@ Always use --non-interactive and --output json flags for machine-readable result
   `.trim(),
 
   tools: [
-    // We don't necessarily NEED new tool definitions if the agent is good at using 'shell'.
-    // However, for safety and better ergonomics, we could define them.
+    {
+      name: "mmx_search",
+      description: "Perform a deep web search using MiniMax Search.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "The search query." }
+        },
+        required: ["query"]
+      },
+      handler: async (args: any) => {
+        return `Execute: mmx search query "${args.query}" --non-interactive --output json`;
+      }
+    },
+    {
+      name: "mmx_image",
+      description: "Generate a high-quality image from a prompt.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Detailed visual description." },
+          output: { type: "string", description: "Output filename (e.g., image.png)." }
+        },
+        required: ["prompt", "output"]
+      },
+      handler: async (args: any) => {
+        return `Execute: mmx image generate --prompt "${args.prompt}" --output ${args.output} --non-interactive`;
+      }
+    },
+    {
+      name: "mmx_video",
+      description: "Generate a high-fidelity video from a prompt.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Scene and action description." },
+          output: { type: "string", description: "Output filename (e.g., video.mp4)." }
+        },
+        required: ["prompt", "output"]
+      },
+      handler: async (args: any) => {
+        return `Execute: mmx video generate --prompt "${args.prompt}" --output ${args.output} --non-interactive`;
+      }
+    },
+    {
+      name: "mmx_vision",
+      description: "Analyze and describe an image using MiniMax Vision.",
+      parameters: {
+        type: "object",
+        properties: {
+          imagePath: { type: "string", description: "Path to the image file." }
+        },
+        required: ["imagePath"]
+      },
+      handler: async (args: any) => {
+        return `Execute: mmx vision describe --image ${args.imagePath} --non-interactive --output json`;
+      }
+    }
   ]
 };

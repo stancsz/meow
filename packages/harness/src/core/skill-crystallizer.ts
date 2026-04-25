@@ -276,33 +276,33 @@ export async function crystallizeSkill(
     task = taskOrContext.task;
     actualToolCalls = taskOrContext.toolCalls;
   }
-  
-  const { task, toolCalls } = context;
-  
+
+  // Use the extracted task and actualToolCalls
+
   // Extract keywords from task description
   const keywords = extractKeywords(task.description);
-  
+
   // Identify required tools
-  const requiredTools = [...new Set(toolCalls.map(t => t.name))];
-  
+  const requiredTools = [...new Set(actualToolCalls.map(t => t.name))];
+
   // Group tool calls into ordered steps
-  const steps: StepDefinition[] = toolCalls.map((tc, index) => ({
+  const steps: StepDefinition[] = actualToolCalls.map((tc, index) => ({
     order: index + 1,
     action: `${tc.name}(${JSON.stringify(tc.arguments)})`,
     tool: tc.name,
     parameters: tc.arguments,
     rationale: inferRationale(tc)
   }));
-  
+
   // Generate verification from tool calls
   const verification: VerificationDefinition = {
-    command: inferVerificationCommand(toolCalls),
-    expectedPattern: inferExpectedPattern(toolCalls)
+    command: inferVerificationCommand(actualToolCalls),
+    expectedPattern: inferExpectedPattern(actualToolCalls)
   };
-  
+
   // Generate skill name
   const name = generateSkillName(keywords);
-  
+
   return {
     name,
     version: 1,
@@ -312,7 +312,7 @@ export async function crystallizeSkill(
       description: task.description
     },
     context: {
-      requirements: inferRequirements(toolCalls),
+      requirements: inferRequirements(actualToolCalls),
       prerequisites: []
     },
     steps,

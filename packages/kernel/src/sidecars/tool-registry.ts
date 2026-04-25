@@ -434,6 +434,64 @@ const builtInTools: Tool[] = [
       }
     },
   },
+  {
+    name: "read_sandbox_ref",
+    description: "Read a large tool result that was sandboxed to prevent context bankruptcy.",
+    parameters: {
+      type: "object",
+      properties: {
+        refId: { type: "string", description: "The Reference ID provided in the summary." },
+      },
+      required: ["refId"],
+    },
+    execute: async (args: unknown) => {
+      const { refId } = args as { refId: string };
+      const { readSandboxRef } = await import("./context-sandbox.ts");
+      const content = readSandboxRef(refId);
+      if (content) {
+        return { content: `[Sandbox Ref ${refId}]\n${content}` };
+      }
+      return { content: "", error: `Reference ID ${refId} not found in sandbox` };
+    },
+  },
+  {
+    name: "search_memory",
+    description: "Search through all past conversations and facts using full-text search. Useful for finding details from previous sessions.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query (keywords)" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["query"],
+    },
+    execute: async (args: unknown) => {
+      const { query, limit = 10 } = args as { query: string; limit?: number };
+      try {
+        const { Database } = await import("bun:sqlite");
+        const { join } = await import("node:path");
+        const dbPath = join(process.cwd(), "data", "memory.db");
+        
+        const db = new Database(dbPath, { readonly: true });
+        const results = db.query(`
+          SELECT content, type, source_id, rank
+          FROM memory_fts
+          WHERE memory_fts MATCH ?
+          ORDER BY rank
+          LIMIT ?
+        `).all(`${query}*`, limit) as any[];
+        
+        if (results.length === 0) {
+          return { content: `No past memories found for "${query}"` };
+        }
+        
+        const summary = results.map(r => `[${r.type}] ${r.content}`).join("\n---\n");
+        return { content: `[Found ${results.length} memories for "${query}"]:\n\n${summary}` };
+      } catch (e: any) {
+        return { content: "", error: `Memory search failed: ${e.message}` };
+      }
+    },
+  },
 ];
 
 // ============================================================================

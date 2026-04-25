@@ -1,11 +1,4 @@
-#!/usr/bin/env bun
-/**
- * meow-stream.ts - Streaming Meow Agent Runner
- *
- * Thin launcher that runs lean-agent's runLeanAgentSimpleStream().
- * Tokens are streamed to stdout via onToken callback for real-time display.
- * EPOCH 17: Also emits state change events to stderr for relay integration.
- */
+import { runLeanAgentSimpleStream } from "../../kernel/src/core/lean-agent.ts";
 import { AgentState } from "./core/agent-types";
 
 async function main() {
@@ -27,9 +20,8 @@ async function main() {
   try {
     const result = await runLeanAgentSimpleStream(
       prompt,
-      { dangerous, timeoutMs, onStateChange }, // EPOCH 17: pass onStateChange in options
+      { dangerous, timeoutMs, onStateChange },
       (token) => {
-        // Stream each token to stdout for real-time display
         process.stdout.write(token);
       }
     );
@@ -38,6 +30,10 @@ async function main() {
     if (result.usage) {
       console.error(`[${result.usage.totalTokens} tokens]`);
     }
+
+    // EPOCH 24: Output the final result as JSON for harness-level hooks
+    // Prefixed with [RESULT] so the client can find it at the end of the stream
+    process.stdout.write(`\n[RESULT]${JSON.stringify(result)}\n`);
   } catch (e: any) {
     console.error(`[meow-stream] Error: ${e.message}`);
     process.exit(1);

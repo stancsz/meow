@@ -17,6 +17,7 @@ import {
 import { classifyError, ErrorCategory } from "../sidecars/error-classifier.ts";
 import { getAllSkills } from "../skills/loader.ts";
 import { AgentState } from "../types/agent-state.ts"; // EPOCH 17: Rich state indicators
+import { sandboxResult } from "../sidecars/context-sandbox.ts"; // HERMES-05: Context Sandboxing
 
 // ============================================================================
 // Types
@@ -643,12 +644,16 @@ export async function* runLeanAgentStream(
       }
 
       const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs, onStateChange: options.onStateChange });
-      yield { type: "tool_end", toolName: toolCall.function.name, toolResult: result.error || result.content };
+      
+      // HERMES-05: Sandbox large results for streaming too
+      const sandboxedContent = sandboxResult(result.error || result.content, toolCall.function.name);
+      
+      yield { type: "tool_end", toolName: toolCall.function.name, toolResult: sandboxedContent };
 
       messages.push({
         role: "tool",
         tool_call_id: toolCall.id,
-        content: result.error || result.content,
+        content: sandboxedContent,
       });
     }
   }
@@ -807,10 +812,13 @@ export async function runLeanAgentSimpleStream(
 
       const result = await executeTool(toolCall.function.name, args, { dangerous, abortSignal, cwd: process.cwd(), timeoutMs, onStateChange: options.onStateChange });
 
+      // HERMES-05: Sandbox large results to prevent context bankruptcy
+      const sandboxedContent = sandboxResult(result.error || result.content, toolCall.function.name);
+
       messages.push({
         role: "tool",
         tool_call_id: toolCall.id,
-        content: result.error || result.content,
+        content: sandboxedContent,
       });
     }
   }
