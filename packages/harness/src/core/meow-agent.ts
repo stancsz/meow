@@ -9,11 +9,39 @@
  *
  * We use meow-run.ts as a thin launcher that can properly resolve
  * the TypeScript imports from within the /app context.
+ *
+ * EPOCH 24: Supports JSON mode for full AgentResult return (including tool_calls)
+ * to enable skill crystallization at the harness level.
  */
 import { spawn } from "node:child_process";
 import { AgentState } from "./agent-types";
 
 const MEOW_TIMEOUT_MS = parseInt(process.env.MEOW_TIMEOUT_MS || "300000");
+
+// EPOCH 24: AgentResult type for JSON mode (mirrors @meow/kernel)
+export interface AgentResult {
+  content: string;
+  iterations: number;
+  completed: boolean;
+  messages?: Array<{
+    role: string;
+    content: string;
+    tool_calls?: Array<{
+      id: string;
+      type: string;
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }>;
+  }>;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    estimatedCost: number;
+  };
+}
 
 export class MeowAgentClient {
   private readonly meowRunPath = "/app/meow-run.ts";
@@ -97,6 +125,67 @@ export class MeowAgentClient {
         if (timedOut) return;
         clearTimeout(timer);
         reject(new Error(`Meow spawn error: ${err.message}`));
+      });
+    });
+  }
+
+  /**
+   * EPOCH 24: JSON prompt - returns full AgentResult including messages[] with tool_calls.
+   * This enables harness-level skill crystallization via DoneHooks.
+   */
+  async promptJson(text: string): Promise<AgentResult> {
+    const words = text.split(" ");
+    return new Promise((resolve, reject) => {
+      const proc = spawn(
+        "bun",
+        ["run", "--bun", "/app/meow-run.ts", "--json", "--", ...words],
+        {
+          cwd: process.env.CLAUDE_CWD || "/app",
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env },
+          shell: false,
+        }
+      );
+
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout?.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      let timedOut = false;
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        proc.kill("SIGTERM");
+        reject(new Error(`Meow JSON prompt timed out after ${this.timeoutMs}ms`));
+      }, this.timeoutMs);
+
+      proc.on("close", (code) => {
+        if (timedOut) return;
+        clearTimeout(timer);
+        if (code === 0) {
+          try {
+            const result = JSON.parse(stdout.trim()) as AgentResult;
+            resolve(result);
+          } catch (parseErr) {
+            reject(new Error(`Failed to parse AgentResult JSON: ${stdout.slice(0, 200)}`));
+          }
+        } else {
+          const errMsg = stderr.trim() || `Meow JSON prompt exited with code ${code}`;
+          reject(new Error(errMsg));
+        }
+      });
+
+      proc.on("error", (err) => {
+        if (timedOut) return;
+        clearTimeout(timer);
+        reject(new Error(`Meow JSON prompt spawn error: ${err.message}`));
       });
     });
   }

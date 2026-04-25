@@ -27,6 +27,7 @@ import { mine } from "./mine.ts";
 import { remember } from "./remember.ts";
 import { palace } from "./palace.ts";
 import { pulse } from "./pulse.ts";
+import { minimax } from "./minimax.ts";
 
 // Register all skills
 const allSkills: Skill[] = [
@@ -53,6 +54,7 @@ const allSkills: Skill[] = [
   remember,
   palace,
   pulse,
+  minimax,
 ];
 
 // Auto-register on import

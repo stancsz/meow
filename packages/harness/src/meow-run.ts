@@ -4,6 +4,8 @@
  *
  * Thin launcher that runs lean-agent.ts inside Docker.
  * lean-agent.ts handles the full OODA loop including tool execution.
+ *
+ * EPOCH 24: Supports --json mode for Harness integration (skill crystallization).
  */
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -27,13 +29,20 @@ function stripDebugPrefix(output: string): string {
 }
 
 async function main() {
-  const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const rawArgs = process.argv.slice(2);
+  const jsonMode = rawArgs.includes("--json");
+  const args = rawArgs.filter((a) => !a.startsWith("--"));
   const prompt = args.join(" ") || "Hello world";
 
-  // Pass --dangerous to lean-agent so it can execute shell commands
-  const spawnArgs = ["run", "--bun", LEAN_AGENT, "--dangerous", "--", prompt];
+  // Build spawn args for lean-agent
+  const spawnArgs = ["run", "--bun", LEAN_AGENT, "--dangerous"];
+  if (jsonMode) {
+    spawnArgs.push("--json");
+  }
+  spawnArgs.push("--", prompt);
 
   console.error(`[meow-run] Starting lean-agent with prompt: ${prompt.slice(0, 80)}...`);
+  console.error(`[meow-run] jsonMode: ${jsonMode}`);
   console.error(`[meow-run] cwd: ${process.cwd()}`);
   console.error(`[meow-run] LLM_API_KEY: ${process.env.LLM_API_KEY ? "(set)" : "(missing)"}`);
   console.error(`[meow-run] LLM_BASE_URL: ${process.env.LLM_BASE_URL}`);
@@ -73,9 +82,15 @@ async function main() {
       console.error(`[meow-run] lean-agent exited ${code} in ${elapsed}ms`);
 
       if (code === 0 && stdout.trim()) {
-        // Strip lean-agent's debug output prefix to get only the actual content
-        const output = stripDebugPrefix(stdout.trim());
-        console.log(output);
+        if (jsonMode) {
+          // EPOCH 24: In JSON mode, pass through the raw JSON from lean-agent
+          // This includes full AgentResult with messages[] containing tool_calls
+          console.log(stdout.trim());
+        } else {
+          // Strip lean-agent's debug output prefix to get only the actual content
+          const output = stripDebugPrefix(stdout.trim());
+          console.log(output);
+        }
         resolve();
       } else {
         const errMsg = stderr.trim().slice(0, 500) || `lean-agent exited with code ${code}`;

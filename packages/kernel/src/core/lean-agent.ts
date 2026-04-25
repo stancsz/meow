@@ -846,6 +846,7 @@ if (import.meta.main) {
 
   const args = process.argv.slice(2);
   const dangerous = args.includes("--dangerous");
+  const jsonMode = args.includes("--json");
 
   // Parse --timeout=<ms> or --timeout <ms>
   let timeoutMs = 600000;
@@ -866,16 +867,25 @@ if (import.meta.main) {
 
   const prompt = remainingArgs.filter((a) => !a.startsWith("--")).join(" ") || "Hello world";
 
-  console.log(`🐱 Meow lean agent`);
-  console.log(`Prompt: ${prompt}\n`);
+  if (!jsonMode) {
+    console.log(`🐱 Meow lean agent`);
+    console.log(`Prompt: ${prompt}\n`);
+  }
 
   try {
     const result = await runLeanAgent(prompt, { dangerous, timeoutMs });
-    console.log(`\n✅ Completed in ${result.iterations} iteration(s)`);
-    if (result.usage) {
-      console.log(`[${result.usage.totalTokens} tokens · ~$${result.usage.estimatedCost.toFixed(2)}]`);
+
+    if (jsonMode) {
+      // EPOCH 24: JSON output mode for Harness integration (skill crystallization)
+      // Outputs full AgentResult including messages[] with tool_calls for HookContext
+      process.stdout.write(JSON.stringify(result));
+    } else {
+      console.log(`\n✅ Completed in ${result.iterations} iteration(s)`);
+      if (result.usage) {
+        console.log(`[${result.usage.totalTokens} tokens · ~$${result.usage.estimatedCost.toFixed(2)}]`);
+      }
+      console.log(`\n--- Output ---\n${result.content}`);
     }
-    console.log(`\n--- Output ---\n${result.content}`);
   } catch (e: any) {
     console.error(`❌ Error: ${e.message}`);
     process.exit(1);

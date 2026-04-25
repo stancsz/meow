@@ -17,6 +17,7 @@
 3. **[HERMES-03] User Modeling (Honcho)**: Learned preference extraction and profile management.
 4. **[HERMES-04] Scheduled Automations**: Natural language cron jobs for background maintenance.
 5. **[HERMES-05] Context Sandboxing**: 5KB-ref summarization for 98% context reduction.
+6. **[MMX-01] MiniMax Multimodal**: ✅ Integrated (mmx-cli)
 
 # EVOLVE
 [Status: RESEARCHING - Pattern Serialization]
