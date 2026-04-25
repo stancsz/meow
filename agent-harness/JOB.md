@@ -1,142 +1,23 @@
-# HUMAN FEEDBACK (READ FIRST)
-[REQUIRED: Read `/app/HUMAN.md` on every startup]
+# JOB.md
+[Status: MISSION - COWORKER STABILITY GATE]
 
-All agents must incorporate human preferences from `human.md` into their decisions. The human operator provides direct feedback on what's broken and what works. Read this file BEFORE making any decisions.
+**Goal:** Transform the theoretical Coworker architecture into a 100% operational, validated workstation.
 
----
+## 🛠️ MISSION: THE STABILITY GATE (COMPLETE ✅)
+**Priority**: CRITICAL
+**Success Criteria**:
+- [x] **[BOOT-01] Orchestrator-Governance Hook**: Unified `GovernanceEngine` integration with `bun-orchestrator.ts`.
+- [x] **[BOOT-02] Live Stream Broadcast**: Orchestrator now uses `POST /broadcast` for real-time mission logs.
+- [x] **[BOOT-03] Validation Test (Shadow Mirror)**: `tests/coworker_handshake.test.ts` PASSES.
 
-# DISCOVER: External Research & Pain-Sourcing
-[STATE: IDLE]
+## 📋 BACKLOG: COWORKER MASTER (Post-Stability)
+1. **[COWORK-02] Real-time SSE Streaming**: High-fidelity reasoning token stream to `MissionLog`.
+2. **[COWORK-03] Routine Scheduler**: Background "Crontab" for agent dailies.
+3. **[COWORK-04] Skill Registry**: Standardized `.meow/skills/` manager.
+4. **[COWORK-05] Electron Packaging**: Static export and bundle.
+5. **[COWORK-06] Shared Templates**: Repeatable OODA prompt library.
 
-**Goal:** Use tools to observe the outside world and our own internal metrics to find the next most valuable capability to build.
-
-## Methodology
-1. **GitHub Weekly Trending (MANDATORY DAILY CHECK)**: You MUST navigate to `https://github.com/trending?since=weekly` at the start of DISCOVER.
-   - **Primary**: Use `browseros` MCP plugin.
-   - **Fallback**: If `browseros` fails, write a quick local script (e.g. Node `fetch` or `curl`) to pull the raw HTML of `https://github.com/trending?since=weekly`, parse out the `href` links for repositories, and analyze the top 10. You are a developer; do not let a broken MCP plugin stop your research.
-   - Scan for any repositories related to Agentic AI, Autonomous Coding, or LLM capabilities.
-   - **BURN TOKENS**: Do not just read the readmes. Dive deep into their implementation details, docs, and core design.
-   - Constantly learn what makes these other people's projects good, and specifically identify the capability gap between them and Meowju.
-2. **External Browsing**: Supplement with changelogs, blogs, and repos of explicitly leading AI agents (Cursor, Windsurf, Letta, Mem0, Builder.io). Look for the *newest features* and interaction patterns to meet their standards.
-3. **Local Pain-Sourcing**: Scan our own `dogfood/validation/` logs, fallback metrics, and recurrent errors.
-
-## Output Zone: `evolve/backlog/`
-- **Daily Trending Inventory**: Keep a running log of interesting trending projects at `evolve/backlog/github_trending_inventory.md`.
-- For each new finding/gap, create a proposal at `evolve/backlog/{topic}.md`.
-- Assign a priority score (1-5), prioritizing closing gaps with top-tier competitor projects.
-- Include links to original external sources if discovered via browser.
-
----
-
-# PLAN: Architecture & Test-Driven Design (TDD)
-[STATE: IDLE]
-
-**Goal:** Take ONE top-priority item from the DISCOVER backlog and architect it rigorously. Do NOT write implementation code yet.
-
-## Methodology
-1. **Lock Epoch**: Choose exactly ONE feature to work on. Do not multitask.
-2. **Architecture Spec**: Draft an `architecture.md` defining how this fits the Meow ecosystem (sidecars, MCP, registry, etc.). Check the Sovereign Palace memory to avoid past mistakes.
-3. **Test Generation**: Write an executable test file (e.g., `feature.test.ts`) that will verify this feature. It must strictly test the boundaries and failure cases.
-
-## Output Zone: `evolve/epoch/{n}/`
-- `plan_architecture.md`
-- `validation.test.ts`
-
----
-
-# BUILD: Strict Implementation
-[STATE: IDLE]
-
-**Goal:** Write the actual implementation code to satisfy the `validation.test.ts` generated in the PLAN step.
-
-## Methodology
-1. Read `plan_architecture.md` and `validation.test.ts`.
-2. Modify or create TypeScript codebase files.
-3. Do not modify the test file to artificially pass. Adapt the code to the test. If the plan was fundamentally flawed, abort back to PLAN.
-
----
-
-# DOGFOOD: Automated Quality Gate
-[STATE: IDLE]
-
-**Goal:** Provide an automated, undeniable verdict on whether the BUILD was successful.
-
-## Methodology
-1. Run `bun test path/to/validation.test.ts` for the current epoch.
-2. **If FAIL**: Extract exact stack trace/error. Send it to the Orchestrator to spawn a `FIX` mission automatically. The epoch is BLOCKED.
-3. **If PASS**: 
-   - Record success in `dogfood/validation/epoch-{n}-history.json`.
-   - Unlock the orchestrator to pick the next DISCOVER item.
-
----
-
-# 🛡️ THE SACRED CORE: Self-Preservation Rules
-**CRITICAL**: You are an agent that edits its own codebase. If you break your own orchestration scripts, you will "die" (crash the loop endlessly).
-
-## Protected Files
-The following files are **SACRED** and constitute your own brain stem and evolution loop:
-- `agent-harness/JOB.md`
-- `agent-harness/jobs/bun-orchestrator.ts`
-- `agent-harness/src/relay.ts`
-- `agent-harness/Dockerfile` & `docker-compose.yml`
-
-## Core Evolution Protocol
-You may NEVER modify a protected file during a standard BUILD phase unless the PLAN explicitly follows this rigorous protocol:
-1. **Simulation First**: You must write a standalone test script that mocks the orchestrator loop to prove your change works.
-2. **Atomic Edits**: Never rewrite the whole orchestrator. Make micro-edits.
-3. **No Breaking Changes**: You may add features, but you may NEVER rename existing variables, remove existing state checks, or change the JSON schema expected by the terminal outputs.
-4. **Self-Sabotage Check**: If your change could theoretically cause an infinite loop, lockup, or `ReferenceError` in the orchestrator, ABORT immediately.
-
----
-
-# 🌌 QUANTUM EVOLUTION: AGI Path (Network-Threaded)
-[STATE: IDLE]
-
-**Goal:** Evolve Meow from a linear OODA agent into a multi-reasoning, network-threaded AGI using PennyLane and AutoResearch concepts.
-
-## Methodology
-1. **Resolution Scaling**: Always work in the current resolution tier (180p -> 360p -> 720p -> 1080p).
-2. **Network Mapping**: Consult `agent-harness/evolve/research/network_map_180p.md` before changing any "Moving Parts".
-3. **Quantum Simulation**: Run `bun run src/tools/quantum-evolve.ts` to simulate the optimum path for each transition.
-4. **Interference Check**: Identify if changing one component (e.g., Kernel) will break another (e.g., Tools) by looking at the Entanglement Matrix.
-5. **AutoResearch Loop**: Every change must be a hypothesis with a validation test. If the test fails, revert the change and log the "Energy State" (failure reason).
-
-- `agent-harness/evolve/research/network_map_180p.md`
-- `agent-harness/evolve/research/quantum_simulation_v1.md`
-
----
-
-# 🎯 360p RESOLUTION: Interaction Gates & Simulation Reality
-[STATE: IDLE]
-
-**Goal:** Bridge the gap between evolution "theater" and actual multi-path reasoning.
-
-## Tasks
-1. **[Q1] Implement multi-path hypo testing**: Update `quantum-evolve.ts` to spawn 3 internal LLM simulations for any kernel change.
-2. **[Q2] Define Interface Gates**: Create `docs/architecture/qubit_gates.md` defining the API contracts for the Core vs Sidecars.
-3. **[Q3] Feedback Weighting**: Modify `bun-orchestrator.ts` to weight `HUMAN.md` feedback at 10x priority over DISCOVER logs.
-4. **[Q4] Auto-Rollback**: Implement a safety gate where if a change breaks the "Entanglement Matrix" (e.g. breaks more than 2 tools), it is automatically reverted without human input.
-
----
-
-# 🚀 720p RESOLUTION: Parallel Swarms & Mirror Hearts
-[STATE: IDLE]
-
-**Goal:** Restore multi-wing concurrency and establish unbreakable bounds for the Core Orchestrator.
-
-## Tasks
-1. **[720-1] Dynamic Context Injection**: Refactor sidecars to stop hardcoding `/app/` paths and rely on a unified `MEOW_ROOT` to solve cross-platform execution.
-2. **[720-2] The Shadow Mirror**: Implement `tests/mirror_core.test.ts`. Before ANY edit to `bun-orchestrator.ts` or `relay.ts`, the system must mock the change in this mirror environment to ensure we do not infinitely crash the live Swarm.
-3. **[720-3] Q-Wing Restoration**: Restore the `MAX_PARALLEL_WINGS=4` logic inside the Orchestrator, allowing multiple hypotheses to execute actively.
-
----
-
-# 🤖 1080p RESOLUTION: Physical Embodiment (Quad Robotics)
-[STATE: IDLE]
-
-**Goal:** Translate Meowju's text-reasoning environment into a low-latency physical robot brain architecture.
-
-## Tasks
-1. **[1080-1] SLM Cerebellum Bridge**: Meowju thinks too slowly for balance/walking. Architect the pipeline where Meowju passes strategic waypoints to a local Small Language Model (SLM) executing a sub-10ms OODA loop.
-2. **[1080-2] Vision Sidecar**: Create an MCP or sidecar service capable of streaming camera RGB-D frames into semantic context.
-3. **[1080-3] Proprioception Memory**: Extend Sovereign Palace to track hardware states (`hardware_status.json`) - Battery, IMU/Pitch, Motor Torques.
+## ⚖️ GOVERNANCE SCHEMA (v1.0)
+- Tools requiring `ask`: `run_command`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`.
+- Tools requiring `allow`: `list_dir`, `view_file`, `grep_search`.
+- Global Policy: `denied` by default for any filesystem action outside of the workspace root.

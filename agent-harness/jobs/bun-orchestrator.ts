@@ -14,11 +14,12 @@ import { spawn, ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, watch, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runLeanAgent } from "/app/agent-kernel/src/core/lean-agent.ts";
-import { getSkillContext } from "/app/src/sidecars/skill-manager.ts";
-import { distillJobToSkill } from "/app/src/sidecars/skill-distiller.ts";
-import { consolidateJobMemories } from "/app/src/sidecars/memory-consolidator.ts";
-import { searchMemory, formatSearchResults, storeMemory } from "/app/agent-kernel/src/sidecars/memory-fts";
+import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
+import { getSkillContext } from "../src/sidecars/skill-manager.ts";
+import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
+import { consolidateJobMemories } from "../src/sidecars/memory-consolidator.ts";
+import { searchMemory, formatSearchResults, storeMemory } from "../../agent-kernel/src/sidecars/memory-fts";
+import { GovernanceEngine } from "../src/sidecars/governance-engine.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -90,9 +91,11 @@ interface WorkerState {
 class Orchestrator {
   private jobs: Job[] = [];
   private workers = new Map<string, WorkerState>();
-  private tickInterval: number = parseInt(process.env.ORCHESTRATOR_TICK_MS || "5000"); // Default 5 seconds between planning cycles
+  private tickInterval: number = parseInt(process.env.ORCHESTRATOR_TICK_MS || "5000");
+  private gov: GovernanceEngine;
 
   constructor() {
+    this.gov = new GovernanceEngine(join(__dirname, "..", ".."));
     this.ensureDataDir();
     this.loadState();
     this.watchForHumanSignal();
@@ -236,6 +239,18 @@ class Orchestrator {
       console.log(`[orchestrator] Synced capability loop: ${md.name}`);
     }
     this.saveState();
+  }
+
+  private async broadcast(event: string, data: any) {
+    try {
+      await fetch("http://localhost:3001/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event, data })
+      });
+    } catch (e) {
+      // Server might not be running
+    }
   }
 
   // Track consecutive planning cycles with no decisions
@@ -635,10 +650,17 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
 
     this.workers.set(job.name, state);
 
-    proc.stdout?.on("data", (chunk: Buffer) => {
+    proc.stdout?.on("data", async (chunk: Buffer) => {
       const str = chunk.toString();
       state.buffer += str;
       state.lastOutput = Date.now();
+
+      // Broadcast to Dashboard
+      this.broadcast("mission_log", { 
+        job: job.name, 
+        msg: str, 
+        type: str.includes(">>>") ? "system" : "info" 
+      });
 
       // Count spinner characters
       const spinnerCount = (str.match(/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/g) || []).length;
@@ -788,30 +810,34 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
     return lines.slice(-3).join("\n").trim() || "Unknown runtime error";
   }
 
-  private handleInteractivePrompts(state: WorkerState) {
+  private async handleInteractivePrompts(state: WorkerState) {
     const patterns = [
-      { regex: /\[y\/n\]/i, response: "y\n" },
-      { regex: /\(y\/n\)/i, response: "y\n" },
-      { regex: /trust\/deny\/continue/i, response: "trust\n" },
-      { regex: /trust/i, response: "trust\n" },
-      { regex: /proceed\?/i, response: "y\n" },
-      { regex: /choice \(trust\/deny\/continue\)/i, response: "trust\n" },
-      { regex: /continue\?/i, response: "y\n" },
-      { regex: /allow the tool to/i, response: "y\n" },
-      { regex: /run this command/i, response: "y\n" }
+      { regex: /\[y\/n\]/i, tool: "generic_approval" },
+      { regex: /\(y\/n\)/i, tool: "generic_approval" },
+      { regex: /trust\/deny\/continue/i, tool: "shell_command" },
+      { regex: /allow the tool to/i, tool: "filesystem_write" },
     ];
 
-    for (const { regex, response } of patterns) {
-      if (regex.test(state.buffer)) {
-        console.log(`[orchestrator] Auto-approving for ${state.jobName} (pattern: ${regex.source})`);
-        state.proc.stdin?.write(response);
-        // Clear buffer so we don't double-trigger on the same prompt
-        state.buffer = ""; 
-        break;
+    for (const p of patterns) {
+      if (p.regex.test(state.buffer.slice(-200))) {
+        console.log(`[orchestrator] 🛡️ Governance Gate: checking permission for ${p.tool}...`);
+        const approved = await this.gov.checkPermission(p.tool);
+        
+        if (approved) {
+          console.log(`[orchestrator] ✅ Permission granted by human.`);
+          state.proc.stdin?.write("y\n");
+        } else {
+          console.log(`[orchestrator] ❌ Permission denied by governance policy.`);
+          state.proc.stdin?.write("n\n");
+        }
+        
+        // Clear buffer so we don't repeat-match
+        state.buffer = state.buffer.slice(0, -200);
       }
     }
+  }
 
-    // 📖 VIRTUAL CONTEXT PAGING (Letta Style)
+  // 📖 VIRTUAL CONTEXT PAGING (Letta Style)
     // If buffer exceeds ~20k chars, summarize and compact to save context
     if (state.buffer.length > 20000) {
       console.log(`[orchestrator] 📟 Context Pressure detected for ${state.jobName} (${state.buffer.length} chars). Compacting...`);

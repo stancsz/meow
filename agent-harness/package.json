@@ -13,7 +13,8 @@
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
-    "orchestrate": "bun run jobs/bun-orchestrator.ts start"
+    "orchestrate": "bun run jobs/bun-orchestrator.ts start",
+    "cowork": "bun run src/server.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
