@@ -6,6 +6,7 @@ import { SwarmVitals } from "@/components/SwarmVitals";
 import { ExecutionTimeline } from "@/components/ExecutionTimeline";
 import { MissionLog } from "@/components/MissionLog";
 import { PermissionsGate } from "@/components/PermissionsGate";
+import { WindowControls } from "@/components/WindowControls";
 import { 
   Plus, 
   Search, 
@@ -14,44 +15,47 @@ import {
   ChevronRight,
   ShieldCheck,
   Globe,
-  Wind
+  Wind,
+  FolderOpen
 } from "lucide-react";
 
 export default function Dashboard() {
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background select-none">
       <Sidebar />
       
-      <main className="flex-1 flex flex-col p-8 overflow-hidden">
-        {/* Top Header */}
-        <header className="flex items-center justify-between mb-8">
-          <div>
-            <div className="flex items-center gap-2 text-primary font-medium text-sm mb-1">
-              <Globe className="w-4 h-4" />
-              <span>Local Workspace: Meow-1</span>
+      <main className="flex-1 flex flex-col p-8 pt-0 overflow-hidden">
+        {/* Native Title Bar / Header */}
+        <header className="flex items-center justify-between mb-8 h-14 drag -mx-8 px-8 bg-white/[0.01] border-b border-white/5">
+          <div className="flex items-center gap-6 no-drag">
+            <div className="flex items-center gap-2 text-primary font-medium text-xs tracking-wide">
+              <Globe className="w-3.5 h-3.5" />
+              <span>MEOW-1 CLOUD CONNECTED</span>
             </div>
-            <h2 className="text-3xl font-bold text-white tracking-tight">Mission Control</h2>
+            
+            <div className="flex items-center gap-4 text-muted-foreground text-xs font-bold uppercase tracking-widest border-l border-white/10 pl-6">
+              <button className="hover:text-white transition-colors flex items-center gap-1.5">
+                <FolderOpen className="w-3.5 h-3.5" />
+                Select Workspace
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 no-drag">
             <div className="relative group">
               <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                <Search className="h-3 w-3 text-muted-foreground group-focus-within:text-primary transition-colors" />
               </div>
               <input 
                 type="text" 
-                placeholder="Search memories or skills..." 
-                className="bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all w-64"
+                placeholder="Search memories..." 
+                className="bg-white/5 border border-white/10 rounded-lg py-1.5 pl-9 pr-4 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all w-48"
               />
             </div>
-            <button className="p-2 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all">
-              <Bell className="w-5 h-5" />
+            <button className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all">
+              <Bell className="w-3.5 h-3.5" />
             </button>
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-purple-600 border border-white/20 p-px">
-              <div className="w-full h-full rounded-[10px] bg-background flex items-center justify-center">
-                <User className="text-white w-5 h-5" />
-              </div>
-            </div>
+            <WindowControls />
           </div>
         </header>
 

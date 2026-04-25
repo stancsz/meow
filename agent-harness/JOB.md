@@ -14,8 +14,9 @@
 1. **[COWORK-02] Real-time SSE Streaming**: High-fidelity reasoning token stream to `MissionLog`.
 2. **[COWORK-03] Routine Scheduler**: Background "Crontab" for agent dailies.
 3. **[COWORK-04] Skill Registry**: Standardized `.meow/skills/` manager.
-4. **[COWORK-05] Electron Packaging**: Static export and bundle.
+4. **[COWORK-05] Electron Distribution**: Finalize the Electron build scripts for Windows/Linux installers. (✅ Shell implemented).
 5. **[COWORK-06] Shared Templates**: Repeatable OODA prompt library.
+6. **[COWORK-07] HeyGen Hyperframes Video Editing**: Integrate the `VideoHyperframesSkill` enabling "Video as Code" workflows. Implement the `/hyperframes` command in the orchestrator and the Video Studio view in the Dashboard.
 
 ## ⚖️ GOVERNANCE SCHEMA (v1.0)
 - Tools requiring `ask`: `run_command`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`.
