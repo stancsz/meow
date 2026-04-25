@@ -1,3 +1,10 @@
+# HUMAN FEEDBACK (READ FIRST)
+[REQUIRED: Read `/app/HUMAN.md` on every startup]
+
+All agents must incorporate human preferences from `human.md` into their decisions. The human operator provides direct feedback on what's broken and what works. Read this file BEFORE making any decisions.
+
+---
+
 # DISCOVER: External Research & Pain-Sourcing
 [STATE: IDLE]
 

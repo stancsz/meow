@@ -29,6 +29,7 @@ export interface SessionMessage {
   role: "system" | "user" | "assistant";
   content: string;
   timestamp: string;
+  metadata?: Record<string, any>;
 }
 
 export interface SessionInfo {
@@ -120,7 +121,12 @@ export function createSession(forkedFrom?: string): string {
   const id = `session_${Date.now()}`;
   const file = join(getSessionDir(), `${id}.jsonl`);
   // Mark the session with fork info in first line
-  const forkInfo = forkedFrom ? JSON.stringify({ role: "system", content: `[Forked from session: ${forkedFrom}]`, timestamp: new Date().toISOString() }) + "\n" : "";
+  const forkInfo = forkedFrom ? JSON.stringify({ 
+    role: "system", 
+    content: `[Forked from session: ${forkedFrom}]`, 
+    timestamp: new Date().toISOString(),
+    metadata: { type: "fork_marker", forkedFrom }
+  }) + "\n" : "";
   appendFileSync(file, forkInfo, "utf-8");
   // Track last session
   setLastSessionId(id);
@@ -235,8 +241,8 @@ export async function compactSession(
   }
 
   // Keep system message(s) and recent messages
-  const systemMessages = messages.filter((m) => m.role === "system" && !m.content.includes("[Previous conversation summarized]"));
-  const conversationMessages = messages.filter((m) => m.role !== "system" || !m.content.includes("[Previous conversation summarized]"));
+  const systemMessages = messages.filter((m) => m.role === "system" && m.metadata?.type !== "summary_marker" && m.metadata?.type !== "summary_content");
+  const conversationMessages = messages.filter((m) => m.metadata?.type !== "summary_marker" && m.metadata?.type !== "summary_content");
 
   // For manual compaction (force=true), keep fewer recent messages to ensure some compaction
   // For auto compaction, keep more to reduce frequency
@@ -289,11 +295,13 @@ export async function compactSession(
           role: "system",
           content: `[Previous conversation summarized]`,
           timestamp: new Date().toISOString(),
+          metadata: { type: "summary_marker" }
         },
         {
           role: "system",
           content: `## Conversation Summary\n${summary}`,
           timestamp: new Date().toISOString(),
+          metadata: { type: "summary_content" }
         },
         ...remainingMessages,
       ];
@@ -321,11 +329,13 @@ export async function compactSession(
       role: "system",
       content: `[Previous conversation summarized]`,
       timestamp: new Date().toISOString(),
+      metadata: { type: "summary_marker" }
     },
     {
       role: "system",
       content: `## Conversation Summary\n${summary}`,
       timestamp: new Date().toISOString(),
+      metadata: { type: "summary_content" }
     },
     ...recentMessages,
   ];

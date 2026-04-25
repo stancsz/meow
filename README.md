@@ -1,111 +1,91 @@
-# Meowju 🐱 — The Sovereign Agentic Kernel
+# Meowju 🐱 — The Sovereign Evolution Machine
 
-[![Dogfooding: ACTIVE](https://img.shields.io/badge/Dogfooding-ACTIVE-green.svg)](#the-quality-gate)
-[![Memory: MemPalace](https://img.shields.io/badge/Memory-MemPalace-blue.svg)](#-the-palace-mempalace)
-[![Identity: Meowju](https://img.shields.io/badge/Identity-Meowju-purple.svg)](#autonomous-sovereignty)
+[![Persistence: MEMPALACE](https://img.shields.io/badge/Persistence-MEMPALACE-royal.svg)](#🏰-the-sovereign-palace)
+[![Loop: 4--PHASE--TDD](https://img.shields.io/badge/Loop-4--PHASE--TDD-success.svg)](#-the-4-phase-evolution-loop)
+[![Safety: SACRED--CORE](https://img.shields.io/badge/Safety-SACRED--CORE-red.svg)](#🛡️-the-sacred-core)
 
-> **"Autonomy is not just execution. It is evolution."**
+> **"Most agents execute. Meowju evolves."**
 
-Meowju is a high-performance, autonomous agentic kernel designed to surpass the limitations of stateless AI assistants. It combines a rigorous **OODA loop** (Observe, Orient, Decide, Act) with a bio-inspired **Structured Memory Palace** and an antifragile **Quality Gate** to create a system that doesn't just solve tasks—it learns and improves itself.
-
----
-
-## 🎨 The Philosophy
-
-Meowju is built on three immutable pillars:
-
-### 1. 🏰 The Palace (MemPalace)
-Forget vector-dumping. Meowju uses a structured biological hierarchy to organize "The Soul":
-- **Wings**: High-level context (Projects, Workspaces, Identity).
-- **Rooms**: Domain-specific knowledge (Code, Docs, Research).
-- **Drawers**: Verbatim snapshots of files and sessions.
-*Searchable via SQLite FTS5 with sub-millisecond recall.*
-
-### 2. 🛡️ The Quality Gate
-**No Slops.** Meowju enforces an "Antifragile Selection" process:
-- **Evolution Epochs**: Every change must survive a validation cycle.
-- **Mandatory Dogfooding**: Code isn't committed until the kernel proves it works by using it.
-- **Sloppy Block**: Unverified implementations freeze the evolution loop until fixed.
-
-### 3. 🌀 Sovereign Autonomy
-Meowju isn't a "tool." It's an **Orchestrator**:
-- **Multi-Agent Consultation**: Real-time consensus between Claude 3.5, GPT-4o, and Gemini 1.5.
-- **Autonomous Mining**: Verbatim ingestion of entire codebases to build internal mental models.
-- **Background Missions**: Orchestrated Job cycles that run until excellence is achieved.
+Meowju is not an AI "assistant." It is a self-improving **Autonomous Intelligence Loop**. It is designed to bridge the gap between static code and living systems by combining **Predatory External Research**, **Long-Term Memory Consolidation**, and a **Strict Test-Driven Evolution Engine**.
 
 ---
 
-## 🛠️ The Stack
+## 🔥 Why Meowju?
+
+### 🌀 1. Predatory Self-Evolution
+Meowju is the first agent that actively **hunts for its own upgrades**. 
+- **Automated R&D**: Every cycle, the kernel browses GitHub Trending and competitor repos (Letta, Mem0, Eliza).
+- **Gap Analysis**: It identifies exactly what top-tier agents do that it can't—and then it writes the implementation plan to close that gap.
+- **Burn Tokens, Gain Power**: It dives deep into source code, not just Readmes, to steal the best architectural patterns on the planet.
+
+### 🛡️ 2. The Sacred Core (Survival Instinct)
+Most agents are one bad `rm -rf` away from lobotomizing themselves. Meowju is different.
+- **Brain-Stem Protection**: The kernel identifies its own vital organs (`bun-orchestrator.ts`, `relay.ts`, `JOB.md`) as **Sacred**.
+- **Immutable Safety**: It is physically forbidden from modifying its own orchestration logic unless it has first proven the change in an isolated simulation sandbox.
+
+### 🏰 3. The Sovereign Palace (Persistent Soul)
+Forget stateless chats. Meowju lives in a **Sovereign Memory Palace** powered by SQLite FTS5.
+- **Fact Consolidation**: Every mission is analyzed by a "Consolidator" sidecar (Enzo) to extract facts, user preferences, and "Lessons Learned."
+- **Context Paging**: Using Letta-style virtual context management, Meowju pages old data into long-term memory to keep its "active brain" lean and hyper-focused.
+
+---
+
+## 🏗️ The 4-Phase Evolution Loop
+
+Meowju operates on a strict **Test-Driven Architecture (TDA)** cycle. We do not "try" to code; we iterate until the truth is PASS.
+
+1. **DISCOVER**: Scans GitHub Trending and internal error logs to source the next most valuable upgrade.
+2. **PLAN**: Drafts the `architecture.md` and writes a **failing** `validation.test.ts`. 
+3. **BUILD**: Implements the capability. Hardcode rules. Zero slop. 
+4. **DOGFOOD**: Executed via Bun Test. If it fails, the agent self-heals. If it passes, the epoch is locked into the Palace.
+
+---
+
+## 🛠️ Performance Stack
 
 ```mermaid
-graph TD
-    A[User / Mission] --> B[Orchestrator]
-    B --> C{OODA Loop}
-    C -->|Observe| D[MemPalace / FTS5]
-    C -->|Orient| E[Quality Gate]
-    C -->|Decide| F[LLM Mesh]
-    C -->|Act| G[MCP / Shell / Git]
-    G --> H[Dogfood Results]
-    H -->|Validate| E
+graph LR
+    subgraph External_World
+        G[GitHub Trending] --> D[DISCOVER]
+        L[Competitor Repos] --> D
+    end
+    
+    subgraph The_Kernel
+        D --> P[PLAN]
+        P --> B[BUILD]
+        B --> DF[DOGFOOD]
+        DF -- FAIL --> B
+        DF -- PASS --> SM[Sovereign Palace]
+    end
+    
+    SM -->|Historical Context| P
 ```
 
 - **Runtime**: [Bun](https://bun.sh) (Native high-speed execution)
-- **Engine**: OpenAI-compatible (Optimized for MiniMax M2.7 & Claude 3.5)
-- **Memory**: SQLite FTS5 + Verbatim Storage
-- **Identity**: Sovereign Git Identity (`meowju`)
+- **Persistence**: SQLite FTS5 Local Memory Store
+- **Orchestration**: Self-Healing 4-Phase Loop
+- **Isolation**: Dockerized Harness with Host-Git Mounting
 
 ---
 
-## 🚀 Quickstart: Deploy the Kernel
+## 🚀 Get Started
 
-Meowju runs in a dedicated harness to ensure cross-platform consistency and isolation.
-
-```bash
-git clone https://github.com/stancsz/meow
-cd meow/agent-harness
-
-# Provision the environment
-cp .env.example .env
-# Set LLM_API_KEY (Anthropic or OpenAI-compatible)
-
-# Launch the sovereign loop
-docker-compose up --build
-```
-
-### Starting a Mission
-Edit `JOB.md` to define your goals, then run:
-```bash
-bun run orchestrate
-```
+1. **Deploy the Harness**:
+   ```bash
+   cd agent-harness
+   docker-compose up --build
+   ```
+2. **Define the Mission**:
+   Edit `JOB.md` to point Meowju at a target capability or repo.
+3. **Ignite the Loop**:
+   Meowju will begin its autonomous cycle of Research, Implementation, and Self-Validation.
 
 ---
 
-## 🎮 The Command Interface
+## ⚖️ The Manifesto
 
-Meowju provides a set of sovereign slash commands for direct kernel interaction:
-
-- `/mine <path>` — Verbatim ingestion of a project into the Palace.
-- `/palace <query>` — Multi-dimensional search across Wings and Rooms.
-- `/auto status` — Monitor the self-improvement daemon.
-- `/tasks` — View current mission orchestration status.
+**"Your agent, fully realized. Your soul, never lost."**
+Meowju is for those who believe AI should be a high-agency partner, not a tool. We build for durability, performance, and the relentless pursuit of the State of the Art.
 
 ---
-
-## 🔬 Workspace Organization
-
-Meowju maintains a strict "Zone" hygiene to prevent project clutter:
-
-| Zone | Path | Purpose |
-| :--- | :--- | :--- |
-| **Research** | `evolve/research/` | Deep-dives & competitor harvesting |
-| **Dogfood** | `dogfood/results/` | Validation & capability audits |
-| **Design** | `design/proposals/` | Interface & interaction prototypes |
-| **Scratch** | `scratch/` | Temporary artifacts & one-offs |
-
----
-
-## ⚖️ License & Ethical Autonomy
-
-Meowju is open-source. Use it to build, learn, and evolve.
-
-*"Your agent, fully realized. Your soul, never lost."*
+© 2026 Meowju Labs. Autonomy. Evolution. Sovereignty.

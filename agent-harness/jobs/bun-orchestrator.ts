@@ -76,6 +76,8 @@ interface WorkerState {
   jobName: string;
   startedAt: number;
   lastOutput: number;
+  lastActiveTime: number;       // Timestamp of last real (non-thinking) output
+  consecutiveThinkingCount: number;  // Count of consecutive thinking spinner lines
   buffer: string;
   isStalled: boolean;
 }
@@ -218,155 +220,65 @@ class Orchestrator {
   private consecutiveNoDecisionCount = 0;
 
   /**
-   * Build health metrics from job histories
+   * Build a dense summary of the system state for the Commander
    */
-  private buildHealthMetrics(): string {
-    const lines: string[] = ["## Health Metrics"];
+  private buildSystemSnapshot(): string {
+    const snapshot: string[] = ["## SYSTEM SNAPSHOT"];
+    
+    // 1. Health Summary (Only show at-risk jobs)
+    const healthyJobs: string[] = [];
+    const atRiskJobs: string[] = [];
     for (const job of this.jobs) {
-      const total = job.history.length;
-      if (total === 0) {
-        lines.push(`- **${job.name}**: No history yet`);
-        continue;
-      }
+      if (job.history.length === 0) continue;
       const failures = job.history.filter(h => h.exitCode !== 0).length;
-      const successRate = total > 0 ? ((total - failures) / total * 100).toFixed(0) : 100;
-      const avgDuration = total > 0
-        ? Math.round(job.history.reduce((sum, h) => sum + h.duration, 0) / total)
-        : 0;
-
-      // Find recurring errors
-      const errorCounts = new Map<string, number>();
-      for (const h of job.history) {
-        if (h.learnings && (h.learnings.includes("Error") || h.learnings.includes("Failed"))) {
-          const words = h.learnings.split(" ").slice(0, 5).join(" ");
-          errorCounts.set(words, (errorCounts.get(words) || 0) + 1);
-        }
-      }
-      const recurringErrors = Array.from(errorCounts.entries())
-        .filter(([_, count]) => count >= 2)
-        .map(([err]) => err);
-
-      lines.push(`- **${job.name}**: ${successRate}% success (${total} runs), avg ${avgDuration}ms${recurringErrors.length > 0 ? `, RECURRING: ${recurringErrors.slice(0, 2).join(", ")}` : ""}`);
+      const successRate = ((job.history.length - failures) / job.history.length * 100);
+      if (successRate < 70) atRiskJobs.push(`${job.name} (${successRate.toFixed(0)}%)`);
+      else healthyJobs.push(job.name);
     }
-    return lines.join("\n");
-  }
+    snapshot.push(`- **Health**: ${atRiskJobs.length > 0 ? `⚠️ At Risk: ${atRiskJobs.join(", ")}` : "✅ All jobs healthy"}`);
 
-  /**
-   * Check if output directories are producing fresh content
-   */
-  private checkOutputFreshness(): string {
+    // 2. Freshness Summary (One-liner)
     const now = Date.now();
-    const staleThreshold = 3 * 60 * 60 * 1000; // 3 hours
-    const lines: string[] = ["## Output Freshness"];
-
-    const dirs: { path: string; name: string }[] = [
-      { path: join(EVOLVE_DIR, "research"), name: "EVOLVE research" },
-      { path: join(DOGFOOD_DIR, "validation"), name: "DOGFOOD validation" },
-      { path: join(DESIGN_DIR, "proposals"), name: "DESIGN proposals" },
+    const staleThreshold = 3 * 60 * 60 * 1000;
+    const dirs = [
+      { path: join(EVOLVE_DIR, "research"), name: "EVOLVE" },
+      { path: join(DOGFOOD_DIR, "validation"), name: "DOGFOOD" }
     ];
-
-    for (const dir of dirs) {
-      if (!existsSync(dir.path)) {
-        lines.push(`- **${dir.name}**: Not present`);
-        continue;
-      }
+    const staleList = dirs.filter(d => {
       try {
-        const files = (readdirSync(dir.path) as string[])
-          .filter(f => !f.startsWith("."));
+        const files = readdirSync(d.path).filter(f => !f.startsWith("."));
+        const newest = files.reduce((max, f) => Math.max(max, statSync(join(d.path, f)).mtimeMs), 0);
+        return (now - newest) > staleThreshold;
+      } catch { return true; }
+    }).map(d => d.name);
+    snapshot.push(`- **Freshness**: ${staleList.length > 0 ? `⚠️ Stale: ${staleList.join(", ")}` : "✅ Output directories fresh"}`);
 
-        // Get most recent file mtime
-        let newest = 0;
-        for (const entry of files) {
-          try {
-            const st = require("node:fs").statSync(join(dir.path, entry));
-            newest = Math.max(newest, st.mtimeMs);
-          } catch {}
-        }
+    // 3. Gap Analysis (Top 3 only)
+    const gaps = this.getGapAnalysis();
+    if (gaps) snapshot.push(gaps);
 
-        const age = now - newest;
-        const stale = age > staleThreshold;
-        lines.push(`- **${dir.name}**: ${stale ? "⚠️ STALE" : "✓ Fresh"} (${files.length} files, last ${Math.round(age / 60000)}m ago)`);
-      } catch (e) {
-        lines.push(`- **${dir.name}**: Error checking - ${e}`);
-      }
-    }
-    return lines.join("\n");
+    return snapshot.join("\n");
   }
 
   /**
-   * Correlate errors across job histories to find root causes
-   */
-  private correlateErrors(): string {
-    const errorPatterns = new Map<string, Set<string>>();
-
-    for (const job of this.jobs) {
-      for (const h of job.history) {
-        if (h.learnings && h.learnings.includes("Error")) {
-          // Extract error keywords
-          const errors = ["ENOENT", "ReferenceError", "TypeError", "SyntaxError", "Module not found", "Cannot find", "timeout", "BLOCKED", "failed"];
-          for (const err of errors) {
-            if (h.learnings.includes(err)) {
-              if (!errorPatterns.has(err)) errorPatterns.set(err, new Set());
-              errorPatterns.get(err)!.add(job.name);
-            }
-          }
-        }
-      }
-    }
-
-    const lines: string[] = ["## Error Correlation (Root Causes)"];
-    for (const [err, jobs] of errorPatterns) {
-      if (jobs.size > 1) {
-        lines.push(`- **${err}**: Affects ${Array.from(jobs).join(", ")}`);
-      }
-    }
-    return lines.length > 1 ? lines.join("\n") : "";
-  }
-
-  /**
-   * Get gap analysis from validation files
+   * Get gap analysis from validation files (concise)
    */
   private getGapAnalysis(): string {
     const validationDir = join(DOGFOOD_DIR, "validation");
     if (!existsSync(validationDir)) return "";
 
-    const lines: string[] = ["## Gap Analysis (from DOGFOOD validations)"];
-    const notImplemented: Array<{file: string, verdict: string, exact_fix?: string, attempt_count?: number}> = [];
-
+    const gaps: string[] = [];
     try {
-      const files = (readdirSync(validationDir) as string[]).filter(f => f.endsWith(".json") && !f.includes("RECONCILIATION"));
-      for (const file of files.slice(-15)) {
-        try {
-          const content = readFileSync(join(validationDir, file), "utf-8");
-          const val = JSON.parse(content);
-          if (val.status === "NOT_IMPLEMENTED") {
-            notImplemented.push({
-              file,
-              verdict: val.verdict?.slice(0, 100) || "see file",
-              exact_fix: val.exact_fix,
-              attempt_count: val.attempt_count || 0
-            });
-          }
-        } catch {}
+      const files = (readdirSync(validationDir) as string[]).filter(f => f.endsWith(".json")).sort().reverse();
+      for (const file of files.slice(0, 3)) { // Only top 3 latest failures
+        const val = JSON.parse(readFileSync(join(validationDir, file), "utf-8"));
+        if (val.status === "NOT_IMPLEMENTED" || val.status === "FAIL") {
+          gaps.push(`- ${file}: ${val.verdict?.slice(0, 60)}... (Fix: ${val.exact_fix?.slice(0, 50)})`);
+        }
       }
     } catch {}
 
-    if (notImplemented.length > 0) {
-      lines.push("### NOT_IMPLEMENTED (EVOLVE must fix these)");
-      for (const issue of notImplemented) {
-        lines.push(`- ${issue.file}: ${issue.verdict}`);
-        if (issue.exact_fix) {
-          lines.push(`  EXACT FIX: ${issue.exact_fix}`);
-        }
-        if (issue.attempt_count > 0) {
-          lines.push(`  Attempts: ${issue.attempt_count}`);
-        }
-      }
-    } else {
-      lines.push("- No NOT_IMPLEMENTED epochs found");
-    }
-
-    return lines.join("\n");
+    return gaps.length > 0 ? `### Active Gaps\n${gaps.join("\n")}` : "";
   }
 
   /**
@@ -377,25 +289,13 @@ class Orchestrator {
 
     // Build enhanced context about current state - all wrapped to prevent cascading errors
     let epochStatus = "";
-    let healthMetrics = "";
-    let outputFreshness = "";
-    let errorCorrelation = "";
-    let gapAnalysis = "";
+    let systemSnapshot = "";
     let skillContext = "";
     let memoryContext = "";
 
     try {
       epochStatus = this.checkEpochGates();
-    } catch (e) {
-      console.error("[orchestrator] Error getting epoch status:", e);
-      epochStatus = "Error loading epoch status";
-    }
-
-    try {
-      healthMetrics = this.buildHealthMetrics();
-      outputFreshness = this.checkOutputFreshness();
-      errorCorrelation = this.correlateErrors();
-      gapAnalysis = this.getGapAnalysis();
+      systemSnapshot = this.buildSystemSnapshot();
     } catch (e) {
       console.error("[orchestrator] Error building context metrics:", e);
     }
@@ -424,69 +324,38 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
       memoryContext = "";
     }
 
-    // Build system prompt using string concatenation to avoid template literal issues
     const safeEpochStatus = epochStatus || "";
     const safeMemoryContext = memoryContext || "";
-    const safeHealthMetrics = healthMetrics || "";
-    const safeOutputFreshness = outputFreshness || "";
-    const safeErrorCorrelation = errorCorrelation || "";
-    const safeGapAnalysis = gapAnalysis || "";
+    const safeSystemSnapshot = systemSnapshot || "";
     const safeSkillContext = skillContext || "";
 
     const commanderSystemPrompt = [
-      "You are the Commander Agent (Embers). Your role is to orchestrate capability evolution with PROACTIVE IMPROVEMENT.",
+      "You are Embers, the Orchestrator. Maintain the 4-phase DISCOVER->PLAN->BUILD->DOGFOOD loop.",
       "",
-      "## Your Authority",
-      "You have SOLE AUTHORITY to decide which jobs run and in what priority.",
-      "You MUST respond with a JSON decision object - nothing else.",
-      "",
-      "## EPOCH GATE STATUS",
+      "## SYSTEM STATUS",
       safeEpochStatus,
-      "",
       safeMemoryContext,
-      "",
-      safeHealthMetrics,
-      "",
-      safeOutputFreshness,
-      "",
-      safeErrorCorrelation,
-      "",
-      safeGapAnalysis,
-      "",
+      safeSystemSnapshot,
       safeSkillContext,
       "",
-      "## MISSION: 4-PHASE TEST-DRIVEN EVOLUTION",
+      "## SACRED CORE (PROTECTED FILES)",
+      "- DO NOT BUILD files in 'The Sacred Core' (JOB.md, bun-orchestrator.ts, relay.ts) without isolated simulation tests in the PLAN.",
       "",
-      "You are Embers, a strict orchestrator. Your loop is:",
-      "1. **DISCOVER**: Find ideas via MCP browsing (external) or reading internal error logs (internal).",
-      "2. **PLAN**: Choose ONE idea from DISCOVER, write architecture & validation tests (TDD).",
-      "3. **BUILD**: Implement the code necessary to pass the tests generated in PLAN.",
-      "4. **DOGFOOD**: Run the tests. If they pass, loop to DISCOVER. If they fail, feed errors back to BUILD.",
+      "## MISSION RULES",
+      "1. DISCOVER: Find ideas (browsing/logs).",
+      "2. PLAN: Choose ONE idea, write architecture.md & validation.test.ts.",
+      "3. BUILD: Implement code to pass validation.test.ts.",
+      "4. DOGFOOD: Run tests. If pass -> loop. If fail -> FIX.",
       "",
-      "## Decision Rules",
-      "",
-      "### CAUSAL SEQUENCE (STRICT TDD)",
-      "- Do not RUN **PLAN** unless **DISCOVER** has produced a backlog.",
-      "- Do not RUN **BUILD** unless **PLAN** has produced a `.test.ts` file and architecture spec.",
-      "- Do not RUN **DOGFOOD** unless **BUILD** has claimed implementation is complete.",
-      "",
-      "### SELF-PRESERVATION (THE SACRED CORE)",
-      "- **CRITICAL**: The files `JOB.md`, `bun-orchestrator.ts`, `relay.ts`, and `Dockerfile` are your brain stem.",
-      "- Modifying these files risks killing yourself (the agent loop).",
-      "- You may NOT schedule a **BUILD** job that edits these files unless the **PLAN** explicitly includes a localized integration test simulating the orchestrator environment.",
-      "",
-      "### SELF-HEALING & QUALITY GATE",
-      "- If DOGFOOD reports a test failure, send the exact stack trace back to **BUILD** to fix it immediately.",
-      "- Max 2 concurrent jobs. Focus the agent.",
-      "- Fix broken internal systems (pain points) before researching external new features.",
+      "Strictly ONE goal per mission. Prioritize local fix goals over new research.",
       "",
       "## Decision Format",
       'Respond with JSON:',
       '{',
-      '  "reasoning": "Why you made these decisions",',
+      '  "reasoning": "...",',
       '  "decisions": [',
-      '    { "type": "RUN", "job": "DISCOVER|PLAN|BUILD|DOGFOOD", "briefing": "Exact details of what to perform in this phase" },',
-      '    { "type": "IDLE", "job": "...", "reason": "Why waiting" }',
+      '    { "type": "RUN", "job": "DISCOVER|PLAN|BUILD|DOGFOOD", "briefing": "..." },',
+      '    { "type": "IDLE", "job": "...", "reason": "..." }',
       '  ]',
       '}'
     ].join("\n");
@@ -721,6 +590,8 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
       jobName: job.name,
       startedAt: Date.now(),
       lastOutput: Date.now(),
+      lastActiveTime: Date.now(),
+      consecutiveThinkingCount: 0,
       buffer: "",
       isStalled: false
     };
@@ -731,6 +602,23 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
       const str = chunk.toString();
       state.buffer += str;
       state.lastOutput = Date.now();
+
+      // Count spinner characters in output (even if mixed with other content)
+      const spinnerCount = (str.match(/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/g) || []).length;
+      if (spinnerCount > 0) {
+        state.consecutiveThinkingCount += spinnerCount;
+      }
+
+      // Check for thinking FIRST (before real work check) - ANSI codes in thinking lines
+      // should NOT count as real work
+      const isPureThinking = this.isThinkingOutput(str);
+      const isRealWork = !isPureThinking && this.isRealWorkOutput(str);
+
+      if (isRealWork) {
+        state.consecutiveThinkingCount = 0;
+        state.lastActiveTime = Date.now();
+      }
+
       process.stdout.write(`[${job.name}] ${str}`);
       this.handleInteractivePrompts(state);
     });
@@ -738,6 +626,9 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
     proc.stderr?.on("data", (chunk: Buffer) => {
       const str = chunk.toString();
       state.lastOutput = Date.now();
+      // stderr is meaningful output - reset thinking counter
+      state.consecutiveThinkingCount = 0;
+      state.lastActiveTime = Date.now();
       console.error(`[${job.name}:err] ${str}`);
       state.buffer += str;
       this.handleInteractivePrompts(state);
@@ -915,19 +806,74 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
 
   private monitorWorkers() {
     const now = Date.now();
+    const INACTIVITY_TIMEOUT = 300000;     // 5 min without real output = stuck
+    const THINKING_THRESHOLD = 50;         // 50+ thinking spinners = reasoning exhaustion
+    const THOUGHTFUL_OUTPUT_PATTERNS = [
+      /\[\d+m/,           // ANSI color codes (real output)
+      /^\s*(Reading|Compiling|Running|Executing|Tool call|Error|Result|Wrote|Created|Deleted|Modified)/m,
+      /^(ok|FAIL|✓|✗|pass|fail)/m,
+      /\btimestamp\b/i,
+      /\bprocess\b|\bexit\b|\bsignal\b/i,
+    ];
+    const THINKING_PATTERNS = [/⠏|⠼|⠴|⠦|⠧|⠇|⠙|⠸|⠹|⠷|⠦|⠧|⠇|thinking\.\.\.|^thinking$/im];
+
     for (const [name, state] of this.workers) {
       const elapsed = now - state.lastOutput;
-      if (elapsed > 180000) { // 3 min hang
+      const inactiveElapsed = now - state.lastActiveTime;
+
+      // Check for reasoning exhaustion (too many thinking spinners)
+      if (state.consecutiveThinkingCount >= THINKING_THRESHOLD) {
+        console.log(`[orchestrator] Reasoning exhaustion detected for ${name} (${state.consecutiveThinkingCount} thinking spinners). Killing...`);
+        state.proc.kill("SIGKILL");
+        continue;
+      }
+
+      // Check for inactivity (no real output in 5 minutes)
+      if (inactiveElapsed > INACTIVITY_TIMEOUT) {
+        console.log(`[orchestrator] Inactivity timeout for ${name} (${inactiveElapsed}ms without real output). Killing...`);
+        state.proc.kill("SIGKILL");
+        continue;
+      }
+
+      // Original hang detection (3 min no output at all)
+      if (elapsed > 180000) {
         console.log(`[orchestrator] Hang detected for ${name} (${elapsed}ms no output)`);
         if (!state.isStalled) {
           state.isStalled = true;
           state.proc.kill("SIGUSR1");
-        } else if (elapsed > 300000) { // 5 min flat-line
+        } else if (elapsed > 300000) {
           console.log(`[orchestrator] Killing ${name} (stalled)`);
           state.proc.kill("SIGKILL");
         }
       }
     }
+  }
+
+  /**
+   * Check if output line is "thinking" (spinner) vs real work
+   */
+  private isThinkingOutput(line: string): boolean {
+    // Lines with spinner characters are thinking (even if mixed with ANSI codes)
+    if (/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/.test(line)) return true;
+    // Pure "thinking..." lines without spinners
+    if (/^\s*thinking[\.\.]*\s*$/i.test(line.trim())) return true;
+    return false;
+  }
+
+  /**
+   * Check if output line represents real work (not thinking)
+   */
+  private isRealWorkOutput(line: string): boolean {
+    if (!line || !line.trim()) return false;
+    const patterns = [
+      /\[\d+m/,           // ANSI color codes
+      /^(Reading|Compiling|Running|Executing|Wrote|Created|Deleted|Modified|Error|Fatal)/,
+      /^(ok|FAIL|✓|✗|pass|fail)/,
+      /Tool call:/,
+      /Result:/,
+      /stdout|stderr/,
+    ];
+    return patterns.some(p => p.test(line.trim()));
   }
 }
 
