@@ -1,69 +1,66 @@
 # JOB.md
-[Status: MISSION - COWORKER EVOLUTION (V3)]
+[Status: MISSION - SWARM DOGFOODING (V3.1)]
 
-**Goal:** Transform Meow from a reactive agent into a proactive, multi-agent "Coworker" workstation, surpassing contemporary frameworks like OpenClaw and Vellum.
+**Goal:** Use the newly active Meowju Swarm to close the final architectural gaps with competitors like OpenClaw and Vellum, achieving "Sovereign Agent" status.
 
-## ✅ COMPLETED MISSIONS (HERMES PARITY)
-- [x] **[HERMES-01] Skill Self-Crystallization**: Autonomous SOP authorship active.
-- [x] **[HERMES-02] Cross-Session Recall**: SQLite FTS5 "Infinite Recall" active.
-- [x] **[HERMES-03] User Modeling (Honcho)**: Social discovery and bond tracking active.
-- [x] **[HERMES-05] Context Sandboxing**: 98% context reduction active.
-- [x] **[MMX-01] MiniMax Multimodal**: Vision, Image, and Video gen active.
+## ✅ COMPLETED MISSIONS (V3 FOUNDATION)
+- [x] **[XL-16] Shared Memory Bus**: SQLite WAL multi-process core.
+- [x] **[XL-17] Proactive Heartbeat**: Background daemon.
+- [x] **[XL-08] Swarm Spawning**: `pounce` tool with autonomous reporting.
 
-## 🛠️ MISSION: PROACTIVITY (Vellum Style)
+## 🛠️ MISSION: DOGFOODING - THE SOVEREIGN UPGRADE
 **Priority**: CRITICAL
-**Success Criteria**:
-- [ ] **[XL-05] Proactive Daemon**: Meow can "wake up" autonomously based on a schedule or repo events.
-- [ ] **[XL-06] The Check-In**: Implementation of spontaneous human-in-the-loop check-ins for long-running missions.
-- [ ] **[XL-07] Autonomous Scratchpad**: A persistent `/scratch` directory where Meow drafts plans before execution.
+**Dogfooding Strategy**: Meow must spawn a Researcher-Kitten to design the MeowGateway while a Coder-Kitten implements the Metacognition Audit.
 
-## 🛠️ MISSION: MULTI-AGENT SWARMS (Kimi/CrewAI Style)
-**Priority**: HIGH
-**Success Criteria**:
-- [ ] **[XL-08] Swarm Spawning**: Meow can spawn "Sub-Kittens" (background agents) for parallelized research/coding.
-- [ ] **[XL-09] Role Specialization**: Automated role-prompting (e.g., Researcher-Kitten, QC-Kitten, SRE-Kitten).
-- [ ] **[XL-10] Result Aggregator**: Kernel logic to merge swarm results into a single final action.
+### [XL-15] MeowGateway (Decoupling)
+- [ ] **Goal**: Move Discord logic into a standalone WebSocket gateway.
+- [ ] **Success**: Main loop runs independently of any chat platform.
 
-## 🛠️ MISSION: SKILL MARKETPLACE (OpenClaw Style)
-**Priority**: MEDIUM
-**Success Criteria**:
-- [ ] **[XL-11] Remote Skill Loading**: Ability to fetch skills from a remote manifest (ClawHub or MeowHub).
-- [ ] **[XL-12] Skill Versioning**: Logic to handle updates to crystallized skills.
+### [XL-18] Metacognition Audit (Self-Correction)
+- [ ] **Goal**: Add `reasoning_audit` table to SQLite. Record Every "Final Thought" vs "Tool Failure".
+- [ ] **Success**: Meow can query past failures to avoid repeating mistakes.
+
+### [XL-19] Dockerized Sandbox (Security)
+- [ ] **Goal**: Run the `pounce` runner inside a transient Docker container for untrusted tasks.
+- [ ] **Success**: No filesystem escape possible during background research.
+
+### [XL-11] MeowHub (Skill Marketplace)
+- [ ] **Goal**: Implement `fetch_skill` to pull from a git-based registry.
+- [ ] **Success**: Meow can learn new tools without a code change.
 
 # EVOLVE
-[Status: RESEARCHING - Proactive Triggers]
+[Status: RESEARCHING - Gateway Decoupling]
 **Priority**: HIGH
 
 ## MISSION
-Research the best triggers for a "Proactive Coworker."
-1. Watch `data/` for changes in status files.
-2. Monitor `git` events (new PRs, issues).
-3. System-level cron (e.g., "Review the logs every morning at 9am").
+Spawn a `Researcher-Kitten` to find the best WebSocket implementation for a Node/Bun gateway.
+- `pounce "Research best Bun WebSocket patterns for agent-to-gateway communication" --role "Researcher"`
 
 # PLAN
 [Status: IDLE]
 **Priority**: HIGH
 
 ## MISSION
-Design the `auto-daemon.ts` architecture for the Harness. It should be capable of running independently of Discord messages.
+Design the `reasoning_audit` schema. Every `AgentResult` should be persisted with its `messages[]` history to enable future "Experience Replay."
 
 # BUILD
 [Status: IDLE]
 **Priority**: CRITICAL
 
 ## MISSION
-Implement the `Sub-Kitten` spawn tool in the Kernel.
+Implement `fetch_skill` tool to allow Meow to pull `.md` skill files from a remote repository.
 
 # DOGFOOD
-[Status: IDLE]
+[Status: ACTIVE]
 **Priority**: CRITICAL
 
 ## MISSION
-Task Meow with "Watch this repo and fix any lint errors as they appear in new commits" and verify she acts without being prompted.
+Ask Meow: "Pounce on a task to audit our own security. Have a kitten check for sensitive keys in the repo using `grep` and report back."
+- **Verify**: The swarm reports findings to the bus, and the relay pings the user with the report.
 
 ---
 
-## ⚖️ GOVERNANCE SCHEMA (v1.2)
-- Swarm Spawning: `ask` (cost protection).
-- Proactive Actions: `ask` (human review of proactive plans).
-- Scratchpad Usage: `allow` (agent-internal thinking).
+## ⚖️ GOVERNANCE SCHEMA (v1.3)
+- Multi-Process IPC: `allow` (Memory Bus usage).
+- Remote Skill Fetching: `ask` (human verifies new skills).
+- Docker Pounce: `allow` (default for untrusted domains).
