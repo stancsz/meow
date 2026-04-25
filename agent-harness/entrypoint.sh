@@ -25,6 +25,11 @@ fi
 # Set SGID bit so new files/dirs inherit appgroup
 chmod 2775 /app/.claude/skills 2>/dev/null || true
 
+# Fix CRLF line endings in mounted agent-kernel volume that break Bun TypeScript parsing
+echo "[entrypoint] Fixing CRLF line endings in agent-kernel..."
+find /app/agent-kernel/src -type f -name "*.ts" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+echo "[entrypoint] Done fixing CRLF line endings"
+
 # Authenticate gh CLI if GH_PAT is provided
 if [ -n "$GH_PAT" ]; then
     echo "[entrypoint] Authenticating gh CLI with GitHub..."

@@ -14,11 +14,11 @@ import { spawn, ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, watch, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
+import { runLeanAgent } from "../agent-kernel/src/core/lean-agent.ts";
 import { getSkillContext } from "../src/sidecars/skill-manager.ts";
 import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
 import { consolidateJobMemories } from "../src/sidecars/memory-consolidator.ts";
-import { searchMemory, formatSearchResults, storeMemory } from "../../agent-kernel/src/sidecars/memory-fts";
+import { searchMemory, formatSearchResults, storeMemory } from "../agent-kernel/src/sidecars/memory-fts";
 import { GovernanceEngine } from "../src/sidecars/governance-engine.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,7 +42,7 @@ const DESIGN_DIR = join(__dirname, "..", "design");
 const SCRATCH_DIR = join(__dirname, "..", "scratch");
 
 // Meow CLI entry point
-const MEOW_CLI = join(__dirname, "..", "..", "agent-kernel", "cli", "index.ts");
+const MEOW_CLI = join(__dirname, "..", "agent-kernel", "cli", "index.ts");
 
 // Ensure API Key is set for the Planner Agent
 if (!process.env.LLM_API_KEY) {
@@ -414,7 +414,7 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
 
     try {
       const result = await runLeanAgent("Analyze current status and decide next orchestration actions.", {
-        maxIterations: 8,
+        maxIterations: 15,
         systemPrompt: commanderSystemPrompt,
         dangerous: true
       });
@@ -835,20 +835,16 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
         state.buffer = state.buffer.slice(0, -200);
       }
     }
-  }
 
-  // 📖 VIRTUAL CONTEXT PAGING (Letta Style)
+    // 📖 VIRTUAL CONTEXT PAGING (Letta Style)
     // If buffer exceeds ~20k chars, summarize and compact to save context
     if (state.buffer.length > 20000) {
       console.log(`[orchestrator] 📟 Context Pressure detected for ${state.jobName} (${state.buffer.length} chars). Compacting...`);
-      // We don't clear the whole buffer because the subprocess needs its history,
-      // but we can "page" the high-level summary into long-term memory mid-run.
       storeMemory(`${state.jobName}: Context Page`, state.buffer.slice(0, 10000), {
         source: "session",
         tags: ["context-paging"],
         importance: 2
       });
-      // Slide the window
       state.buffer = state.buffer.slice(10000);
     }
   }

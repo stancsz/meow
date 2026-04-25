@@ -57,8 +57,8 @@ COPY --chown=appuser:appgroup config/ ./config/
 COPY --chown=appuser:appgroup jobs/ ./jobs/
 COPY --chown=appuser:appgroup docs/ ./docs/
 
-# Copy default skills to skel (hidden by volume mount at /app/.claude)
-COPY --chown=appuser:appgroup .claude/skills/ /app/.claude/skills.skel/
+# Create .claude directory structure
+RUN mkdir -p /app/.claude/skills /app/.claude/skills.skel && chown -R appuser:appgroup /app/.claude
 
 # Create .gitignore for backup repo
 RUN echo ".env" > .gitignore && \

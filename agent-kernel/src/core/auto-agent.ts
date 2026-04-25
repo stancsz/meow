@@ -447,15 +447,7 @@ function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
     signal?.addEventListener("abort", () => { clearTimeout(timeout); resolve(); }, { once: true });
   });
 }
-
-// Progress callback type
-export type ProgressCallback = (msg: string) => void;
-
-/**
- * Run the autonomous loop with a progress callback.
- * Returns a cleanup function to stop the loop.
- */
-export async function runAutoAgentWithProgress(
+async function runAutoAgentWithProgress(
   initialPrompt: string,
   options: AutoAgentOptions = {},
   onProgress?: ProgressCallback
@@ -475,7 +467,6 @@ export async function runAutoAgentWithProgress(
 // Terminal Focus Awareness (delegated to auto-mode sidecar)
 // ============================================================================
 
-export { setTerminalFocus, shouldPauseAutonomous, onFocusChange } from "../sidecars/auto-mode.ts";
 
 // ============================================================================
 // CLI Integration
