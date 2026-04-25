@@ -1,0 +1,30 @@
+{
+  "name": "@meow/harness",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "meow-chan": "bun run src/relay.ts",
+    "meow-chan:mention": "bun run src/relay.ts --mention-only",
+    "relay": "bun run src/relay.ts",
+    "relay:mention": "bun run src/relay.ts --mention-only",
+    "build": "bun build src/index.ts --outdir=dist --format=esm --target=node",
+    "docker:build": "docker build -t meow-bridge .",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "orchestrate": "bun run jobs/bun-orchestrator.ts start",
+    "cowork": "bun run src/server.ts"
+  },
+  "dependencies": {
+    "@meow/kernel": "workspace:*",
+    "@anthropic-ai/sdk": "^0.90.0",
+    "discord.js": "^14.15.3",
+    "glob": "^11.0.0",
+    "openai": "^4.47.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "bun-types": "^1.1.0"
+  }
+}

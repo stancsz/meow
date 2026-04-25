@@ -36,46 +36,21 @@ Core Agent (~100 lines, fixed)
 ## PROJECT STRUCTURE
 
 ```
-agent-kernel/
-├── cli/index.ts              # CLI + REPL + slash commands
-├── tests/
-│   └── gap-impl.test.ts     # Gap implementation tests
-└── src/
-    ├── core/
-    │   ├── lean-agent.ts    # Core loop (~100 lines)
-    │   ├── auto-agent.ts    # OODA autonomous agent (tick/auto modes)
-    │   ├── task-store.ts    # Task persistence (.agent-kernel/tasks.json)
-    │   └── session-store.ts # Session logs + LLM compaction (~/.agent-kernel/sessions/)
-    ├── sidecars/
-    │   ├── tool-registry.ts # Tool registry with read/write/edit/shell/git
-    │   ├── mcp-client.ts    # MCP protocol client
-    │   ├── permissions.ts   # Pattern-matching permissions
-    │   ├── on-demand-learner.ts  # On-demand capability acquisition
-    │   ├── checkpointing.ts  # Git stash checkpoints before writes
-    │   └── slash-commands.ts # Slash command infrastructure
-    ├── skills/
-    │   ├── index.ts         # Skill exports
-    │   ├── loader.ts        # Skill loader
-    │   ├── simplify.ts      # Refactoring skill
-    │   ├── review.ts        # Code review skill
-    │   ├── commit.ts        # Conventional commit skill
-    │   └── learn.ts         # On-demand learning skill
-    └── tools/
-        ├── search.ts        # Search tools (glob, grep)
-        ├── harvest.ts       # Learn from competitor repos
-        └── evolve.ts        # Antifragile OODA gap-closing loop
+packages/
+├── kernel/                   # The "Soul" - Core agent logic
+│   ├── cli/index.ts          # CLI + REPL + slash commands
+│   └── src/
+│       ├── core/             # Lean agent OODA loop
+│       ├── sidecars/         # Logical sidecars (MCP, registration)
+│       └── skills/           # High-level skills (commit, review)
+└── harness/                  # The "Body" - Research & Dogfooding
+    ├── jobs/                 # Orchestrators & workers
+    ├── evolve/               # Evolution findings
+    └── src/                  # Harness-specific tools
 
-agent-harness/
-├── computer/                 # General automated outputs
-├── dogfood/                  # Test & dogfood results
-├── evolve/                   # Research & evolution findings
-│   └── research/
-├── design/                   # UI/UX proposals
-├── scratch/                  # Temporary/one-off files
-├── jobs/                     # Orchestrator & worker logic
-├── package.json
-└── src/
-    └── sidecars/             # Harness-specific sidecars
+apps/
+├── desktop/                  # Electron main process
+└── dashboard/                # Next.js UI (the "server")
 ```
 
 ## RECENT CHANGES
@@ -90,7 +65,7 @@ agent-harness/
 - **maxBudgetUSD** — budget limiting per agent run
 - **Fork sessions** — session-store supports forking for branching conversations
 - **GAP-ABORT-002** — SIGINT handler enables Ctrl+C to abort operations
-- **Orchestrator Switch** — Job orchestrator now uses Meow Agent Kernel for worker tasks (dogfooding)
+- **Orchestrator Switch** — Job orchestrator now uses @meow/kernel for worker tasks (dogfooding)
 - **--mcp-config** — CLI flag to load custom MCP server configurations
 - **On-demand learning** — /learn <capability> dynamically acquires skills from harvest list
 - **P0-PN capability system** — graduated lifecycle: harvest → trick → skill → sidecar → core
@@ -102,11 +77,11 @@ To prevent file clutter and keep the project organized, always use the dedicated
 
 | Zone | Path | Purpose |
 | :--- | :--- | :--- |
-| **Research** | `agent-harness/evolve/research/` | Research findings, market analysis |
-| **Dogfood** | `agent-harness/dogfood/results/` | Test results, capability audits |
-| **Design** | `agent-harness/design/proposals/` | UI/UX designs, interaction models |
-| **Computer** | `agent-harness/computer/` | General automated research & outputs |
-| **Scratch** | `agent-harness/scratch/` | Temporary files, one-offs, debug logs |
+| **Research** | `packages/harness/evolve/research/` | Research findings |
+| **Dogfood** | `packages/harness/dogfood/results/` | Test results |
+| **Design** | `packages/harness/design/proposals/` | UI/UX designs |
+| **Computer** | `packages/harness/computer/` | General automated outputs |
+| **Scratch** | `packages/harness/scratch/` | Temporary files |
 
 **Rules:**
 1. **Never** create one-off files in the root or `src/` directories.
@@ -116,7 +91,7 @@ To prevent file clutter and keep the project organized, always use the dedicated
 ## DOGFOOD NOTES
 
 - **train.sh** delegates to evolve.ts OODA loop: observe → orient → decide → act
-- Heavy logic lives in `agent-kernel/src/tools/evolve.ts`, train.sh is just a thin wrapper
+- Heavy logic lives in `@meow/kernel/src/tools/evolve.ts`, train.sh is just a thin wrapper
 - **timeoutMs** prevents hung shell/git commands; propagated via ToolContext
 - **LLM compaction** keeps sessions under token limit by summarizing old messages
 - **maxBudgetUSD** halts agent when estimated cost exceeds threshold
@@ -155,7 +130,7 @@ bun run start --resume
 # Load custom MCP config
 bun run start --mcp-config <path> "task"
 
-# Run job orchestrator (agent-harness)
+# Run job orchestrator (@meow/harness)
 bun run orchestrate
 
 # In-session commands:

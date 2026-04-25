@@ -2,14 +2,18 @@
   "name": "meow",
   "version": "0.1.0",
   "description": "High-performance, local-first autonomous agent workstation",
-  "main": "electron/main.cjs",
+  "main": "apps/desktop/main.cjs",
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "bin": {
-    "meow": "agent-kernel/cli/index.ts",
+    "meow": "packages/kernel/cli/index.ts",
     "claude": "claude.cmd",
-    "meow-chan": "agent-harness/relay.ts"
+    "meow-chan": "packages/harness/relay.ts"
   },
   "devDependencies": {
     "@google-cloud/functions-framework": "^5.0.2",
@@ -26,17 +30,17 @@
     "typescript": "^5"
   },
   "scripts": {
-    "start": "bun run agent-kernel/cli/index.ts",
-    "meow-chan": "bun run agent-kernel/cli/index.ts --meow-chan",
-    "meow-chan:mention": "bun run agent-kernel/cli/index.ts --meow-chan-mention",
-    "channels": "bun run agent-harness/relay.ts",
-    "channels:mention": "bun run agent-harness/relay.ts --mention-only",
+    "start": "bun run packages/kernel/cli/index.ts",
+    "meow-chan": "bun run packages/kernel/cli/index.ts --meow-chan",
+    "meow-chan:mention": "bun run packages/kernel/cli/index.ts --meow-chan-mention",
+    "channels": "bun run packages/harness/relay.ts",
+    "channels:mention": "bun run packages/harness/relay.ts --mention-only",
     "channels:stop": "bash run-relay.sh --stop",
     "channels:status": "bash run-relay.sh --status",
     "channels:watch": "bash run-relay.sh --watch --mention-only",
     "start:server": "bun run --allow-read=./workspace --allow-net=api.anthropic.com,mcp-gateway.internal --permission-deny-sys src/index.ts --mode=server",
     "start:hybrid": "bun run --allow-read=./workspace --allow-net=api.anthropic.com,mcp-gateway.internal --permission-deny-sys src/index.ts --mode=hybrid",
-    "test": "bun test && cd server && bun test --preload ./setupTests.ts",
+    "test": "bun test && cd apps/dashboard && bun test --preload ./setupTests.ts",
     "test:integration": "bun test src/core/integration.test.ts",
     "test:integration:workflow": "bun test src/core/orchestrator.integration.test.ts",
     "test:integration:all": "bun test src/tests/integration/",
@@ -44,8 +48,8 @@
     "test:heartbeat": "bun test src/core/heartbeat.test.ts",
     "heartbeat": "bun run scripts/heartbeat-simulator.ts",
     "electron:dev": "NODE_ENV=development electron .",
-    "electron:build": "npm run build:server && electron-builder",
-    "build:server": "cd server && npm run build",
+    "electron:build": "npm run build:dashboard && electron-builder",
+    "build:dashboard": "cd apps/dashboard && npm run build",
     "package:win": "electron-builder --win",
     "package:mac": "electron-builder --mac",
     "package:linux": "electron-builder --linux"
@@ -76,8 +80,8 @@
       "output": "dist"
     },
     "files": [
-      "electron/**/*",
-      "server/**/*",
+      "apps/desktop/**/*",
+      "apps/dashboard/**/*",
       "src/**/*",
       "cli/**/*",
       ".agents/**/*",

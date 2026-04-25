@@ -61,7 +61,8 @@ docs/research/competitors/*/
 
 # Meow user data (session logs, tasks, memory)
 .agent-kernel/
-agent-kernel/tests/output/
+.meow/
+packages/kernel/tests/output/
 
 # Claude Code data
 .claude/
@@ -72,6 +73,8 @@ scratch/
 
 # Trash (removed items)
 .trash/
+DELETED_*/
+$null
 
 # Test output
 test-*/
@@ -87,13 +90,13 @@ test-results/
 *.swo
 
 # Meow Agent Harness
-agent-harness/scratch/
-agent-harness/data/
-agent-harness/dogfood/results/
-agent-harness/evolve/
-agent-harness/computer/
-agent-harness/design/proposals/
-agent-harness/logs/
+packages/harness/scratch/
+packages/harness/data/
+packages/harness/dogfood/results/
+packages/harness/evolve/
+packages/harness/computer/
+packages/harness/design/proposals/
+packages/harness/logs/
 NUL
 *.log
 *.tmp

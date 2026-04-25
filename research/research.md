@@ -1,1 +1,0 @@
-"# Quantum Evolution Research\n\n## Target: 720p Resolution with Q-WING Parallelism\n\n## Research Areas:\n1. TypeScript Mission Orchestrator Patterns\n2. Parallel Execution Wing Architecture\n3. Sovereign Memory (Palace) Integration\n4. Intrinsic Motivation Loops\n5. Test-Driven Validation Frameworks\n" 
