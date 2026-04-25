@@ -364,7 +364,9 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
     const commanderSystemPrompt = [
       "You are Embers, the Orchestrator. Maintain the 4-phase DISCOVER->PLAN->BUILD->DOGFOOD loop.",
       "",
-      "## HUMAN FEEDBACK (MANDATORY)",
+      "## CRITICAL: HUMAN FEEDBACK (P0 OVERRIDE) - FOLLOW THIS FIRST",
+      "You MUST prioritize the instructions in HUMAN FEEDBACK over any autonomous goal.",
+      "If the human wants a pivot, ABORT current autonomous missions and execute the pivot.",
       safeHumanFeedback,
       "",
       "## SYSTEM STATUS",
@@ -397,7 +399,7 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
 
     try {
       const result = await runLeanAgent("Analyze current status and decide next orchestration actions.", {
-        maxIterations: 15,
+        maxIterations: 8,
         systemPrompt: commanderSystemPrompt,
         dangerous: true
       });
@@ -638,18 +640,18 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
       state.buffer += str;
       state.lastOutput = Date.now();
 
-      // Count spinner characters in output (even if mixed with other content)
+      // Count spinner characters
       const spinnerCount = (str.match(/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/g) || []).length;
-      if (spinnerCount > 0) {
+      const hasSpinner = spinnerCount > 0;
+
+      // Strip ANSI and spinners to check for real content
+      const stripped = str.replace(/\x1b\[[0-9;]*m/g, "").replace(/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/g, "").trim();
+      const hasRealContent = stripped.length > 0;
+
+      // Only count thinking if it's ONLY spinner characters (no real content)
+      if (hasSpinner && !hasRealContent) {
         state.consecutiveThinkingCount += spinnerCount;
-      }
-
-      // Check for thinking FIRST (before real work check) - ANSI codes in thinking lines
-      // should NOT count as real work
-      const isPureThinking = this.isThinkingOutput(str);
-      const isRealWork = !isPureThinking && this.isRealWorkOutput(str);
-
-      if (isRealWork) {
+      } else if (hasRealContent) {
         state.consecutiveThinkingCount = 0;
         state.lastActiveTime = Date.now();
       }
@@ -842,7 +844,7 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
   private monitorWorkers() {
     const now = Date.now();
     const INACTIVITY_TIMEOUT = 300000;     // 5 min without real output = stuck
-    const THINKING_THRESHOLD = 50;         // 50+ thinking spinners = reasoning exhaustion
+    const THINKING_THRESHOLD = 30;         // 30+ thinking spinners = reasoning exhaustion
     const THOUGHTFUL_OUTPUT_PATTERNS = [
       /\[\d+m/,           // ANSI color codes (real output)
       /^\s*(Reading|Compiling|Running|Executing|Tool call|Error|Result|Wrote|Created|Deleted|Modified)/m,
@@ -889,7 +891,16 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
    */
   private isThinkingOutput(line: string): boolean {
     // Lines with spinner characters are thinking (even if mixed with ANSI codes)
-    if (/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/.test(line)) return true;
+    if (/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/.test(line)) {
+      // If line has spinner BUT also has meaningful content (non-ANSI, non-spinner text), it's mixed output
+      // Strip ANSI codes and check if there's actual text beyond the spinner
+      const stripped = line.replace(/\x1b\[[0-9;]*m/g, "").replace(/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/g, "");
+      if (stripped.trim().length > 0) {
+        // Has meaningful text - this is NOT pure thinking, it's thinking + real output
+        return false;
+      }
+      return true; // Spinner only or spinner + ANSI codes = pure thinking
+    }
     // Pure "thinking..." lines without spinners
     if (/^\s*thinking[\.\.]*\s*$/i.test(line.trim())) return true;
     return false;
@@ -900,6 +911,9 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
    */
   private isRealWorkOutput(line: string): boolean {
     if (!line || !line.trim()) return false;
+    // Strip ANSI and spinner characters to get to the actual text content
+    const stripped = line.replace(/\x1b\[[0-9;]*m/g, "").replace(/[⠏⠼⠴⠦⠧⠇⠙⠸⠹⠷]/g, "").trim();
+    if (!stripped) return false;
     const patterns = [
       /\[\d+m/,           // ANSI color codes
       /^(Reading|Compiling|Running|Executing|Wrote|Created|Deleted|Modified|Error|Fatal)/,
@@ -907,8 +921,9 @@ Recent Learnings: ${recentLearnings}${errorContext}`;
       /Tool call:/,
       /Result:/,
       /stdout|stderr/,
+      /\$|<|>|\|/,        // Shell prompts/pipes that appear in real output
     ];
-    return patterns.some(p => p.test(line.trim()));
+    return patterns.some(p => p.test(stripped));
   }
 }
 

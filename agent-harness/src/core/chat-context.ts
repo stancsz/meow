@@ -1,27 +1,28 @@
 /**
- * chat-context.ts - Auto-Trigger Integration for Session Compaction
+ * chat-context.ts
+ *
+ * Wrapper around session-store.ts that provides auto-trigger compaction.
+ * 
+ * This module orchestrates the auto-compaction workflow:
+ * - appendWithAutoCompact() → appends messages and triggers compaction if needed
+ * - triggerCompaction() → manual compaction trigger
+ * - getContext() → retrieves current context for LLM
+ * - needsCompaction() → checks if session threshold is reached
+ * 
+ * EPOCH 23: GAP-1 resolution - wiring auto-trigger between session-store.ts and callers.
  */
 import { 
   compactSession, 
   sessionNeedsCompaction, 
-  appendToSession,
-  loadSession,
-  SessionMessage,
-  getSessionDir,
+  appendToSession, 
+  loadSession, 
+  COMPACT_THRESHOLD,
+  type SessionMessage,
+  type CompactedSession
 } from './session-store';
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 /**
- * Check if a session needs compaction.
- * Delegates to sessionNeedsCompaction from session-store.
- */
-export function needsCompaction(sessionId: string): boolean {
-  return sessionNeedsCompaction(sessionId);
-}
-
-/**
- * Options for chat context operations
+ * Configuration options for ChatContext operations.
  */
 export interface ChatContextOptions {
   sessionId: string;
@@ -30,156 +31,172 @@ export interface ChatContextOptions {
 }
 
 /**
- * Result of getContext operation
- */
-export interface ContextResult {
-  sessionId: string;
-  messages: SessionMessage[];
-  hasSummary: boolean;
-  summary?: string;  // Content of summary if session has been compacted
-  formattedContent: string;
-}
-
-/**
- * Result of appendWithAutoCompact
+ * Result from appendWithAutoCompact operation.
  */
 export interface AppendResult {
+  /** Whether message(s) were successfully appended */
   appended: boolean;
-  compactionResult?: any;
+  /** Compaction result if auto-compaction was triggered */
+  compactionResult?: CompactedSession;
 }
 
 /**
- * Add a message to chat context and auto-compact if threshold reached.
+ * Result from getContext operation.
  */
-export async function appendWithAutoCompact(
-  sessionId: string,
-  messages: SessionMessage | SessionMessage[],
-  options: ChatContextOptions
-): Promise<AppendResult> {
-  const messageArray = Array.isArray(messages) ? messages : [messages];
-
-  // Append messages
-  appendToSession(sessionId, messageArray);
-
-  // Check for compaction
-  if (sessionNeedsCompaction(sessionId)) {
-    const result = await compactSession(sessionId, {
-      maxTokens: options.maxTokens,
-      summarizeFn: options.summarizeFn,
-    });
-
-    return { appended: true, compactionResult: result };
-  }
-
-  return { appended: true };
+export interface ContextResult {
+  /** Recent messages from session */
+  messages: SessionMessage[];
+  /** Formatted content string for LLM */
+  formattedContent: string;
+  /** Whether session has been compacted with a summary */
+  hasSummary: boolean;
+  /** Original message count before any compaction */
+  originalCount: number;
 }
 
 /**
- * Manually trigger compaction for a session.
- */
-export async function triggerCompaction(
-  sessionId: string,
-  options: ChatContextOptions
-): Promise<any> {
-  try {
-    const dir = getSessionDir();
-    const file = join(dir, `${sessionId}.jsonl`);
-    
-    // Return null for non-existent session (no file created)
-    if (!existsSync(file)) return null;
-    
-    // Check if session has messages - if not, return null
-    const messages = loadSession(sessionId);
-    if (messages.length === 0) return null;
-    
-    // Pass force=true to bypass threshold check
-    const result = await compactSession(sessionId, {
-      maxTokens: options.maxTokens,
-      summarizeFn: options.summarizeFn,
-      force: true,
-    });
-    
-    return result;
-  } catch (e) {
-    console.error(`[chat-context] Failed to trigger compaction for ${sessionId}:`, e);
-    return null;
-  }
-}
-
-/**
- * Get formatted context for LLM consumption.
- * Returns structured result with messages and formatted string.
- */
-export function getContext(sessionId: string, maxRecent?: number): ContextResult {
-  let messages: SessionMessage[] = [];
-  const sessionDir = getSessionDir();
-  const file = join(sessionDir, `${sessionId}.jsonl`);
-  
-  // Check if session file exists - if not, it's a non-existent session
-  if (!existsSync(file)) {
-    return { sessionId, messages: [], hasSummary: false, formattedContent: "" };
-  }
-  
-  try {
-    messages = loadSession(sessionId);
-  } catch (e) {
-    console.error(`[chat-context] Error loading session ${sessionId}:`, e);
-    return { sessionId, messages: [], hasSummary: false, formattedContent: "" };
-  }
-
-  if (messages.length === 0) {
-    return { sessionId, messages: [], hasSummary: false, formattedContent: "" };
-  }
-
-  // Check for structured metadata or fallback to string matching for legacy sessions
-  const isSummary = (m: SessionMessage) => 
-    m.metadata?.type === "summary_marker" || 
-    (m.role === "system" && m.content.includes("[Previous conversation summarized"));
-
-  const hasSummary = messages.some(isSummary);
-
-  let contextMessages: SessionMessage[];
-  if (maxRecent !== undefined && maxRecent > 0) {
-    const recent = messages.slice(-maxRecent);
-    if (hasSummary) {
-      // Ensure summary markers are always included in context even if old
-      const summaries = messages.filter(m => isSummary(m) || m.metadata?.type === "summary_content");
-      contextMessages = [...summaries, ...recent];
-    } else {
-      contextMessages = recent;
-    }
-  } else {
-    contextMessages = messages;
-  }
-
-  return {
-    sessionId,
-    messages: contextMessages,
-    hasSummary,
-    formattedContent: renderContext(contextMessages)
-  };
-}
-
-/**
- * Private helper to render messages to a string.
- * This is now internal - callers should use getContext().formattedContent
- */
-function renderContext(messages: SessionMessage[]): string {
-  return messages
-    .map(m => {
-      const header = m.role === "system" ? "[System]" : `[${m.role}]`;
-      return `${header}\n${m.content}`;
-    })
-    .join("\n\n")
-    .trim();
-}
-
-/**
- * chatContext object exports - convenience wrapper for all chat context operations
+ * ChatContext API - auto-trigger wrapper for session-store.ts
  */
 export const chatContext = {
-  appendWithAutoCompact,
-  triggerCompaction,
-  getContext,
-  needsCompaction,
+  /**
+   * Add messages to chat context and auto-compact if threshold reached.
+   * 
+   * @param sessionId - The session to append to
+   * @param messages - Messages to append
+   * @param options - Include summarizeFn for compaction
+   * @returns Result with appended status and optional compaction result
+   */
+  async appendWithAutoCompact(
+    sessionId: string,
+    messages: SessionMessage | SessionMessage[],
+    options: ChatContextOptions
+  ): Promise<AppendResult> {
+    try {
+      // Normalize to array
+      const messageArray = Array.isArray(messages) ? messages : [messages];
+      
+      // Append messages to session
+      appendToSession(sessionId, messageArray);
+      
+      // Check if compaction is needed after appending
+      if (sessionNeedsCompaction(sessionId)) {
+        const compactionResult = await compactSession(sessionId, {
+          summarizeFn: options.summarizeFn,
+          maxTokens: options.maxTokens,
+        });
+        
+        return {
+          appended: true,
+          compactionResult,
+        };
+      }
+      
+      return { appended: true };
+    } catch (error) {
+      console.error("[chatContext.appendWithAutoCompact] Error:", error);
+      return { appended: false };
+    }
+  },
+
+  /**
+   * Manually trigger compaction regardless of threshold.
+   * Use this for explicit /compact commands.
+   * 
+   * @param sessionId - The session to compact
+   * @param options - Include summarizeFn for compaction
+   * @returns Compaction result, or null if session doesn't exist or is empty
+   */
+  async triggerCompaction(
+    sessionId: string,
+    options: ChatContextOptions
+  ): Promise<CompactedSession | null> {
+    try {
+      const messages = loadSession(sessionId);
+      
+      // If no messages, return null gracefully
+      if (messages.length === 0) {
+        return null;
+      }
+      
+      // Force compaction regardless of threshold
+      const result = await compactSession(sessionId, {
+        summarizeFn: options.summarizeFn,
+        maxTokens: options.maxTokens,
+        force: true,
+      });
+      
+      return result;
+    } catch (error) {
+      console.error("[chatContext.triggerCompaction] Error:", error);
+      return null;
+    }
+  },
+
+  /**
+   * Get current context for LLM consumption.
+   * Returns formatted context including summary markers after compaction.
+   * 
+   * @param sessionId - The session to retrieve context from
+   * @param maxRecent - Optional limit on recent messages to return
+   * @returns Context result with messages, formatted content, and summary status
+   */
+  getContext(sessionId: string, maxRecent?: number): ContextResult {
+    try {
+      let messages = loadSession(sessionId);
+      
+      // Apply maxRecent limit if specified
+      if (maxRecent !== undefined && maxRecent > 0) {
+        messages = messages.slice(-maxRecent);
+      }
+      
+      // Check for summary markers - metadata.type should be set by compactSession
+      let hasSummary = false;
+      for (const m of messages) {
+        const metaType = (m.metadata && typeof m.metadata === 'object') ? (m.metadata as any).type : undefined;
+        if (metaType === "summary_marker" || metaType === "summary_content") {
+          hasSummary = true;
+          break;
+        }
+      }
+      
+      // Format messages for LLM
+      const formattedContent = messages
+        .map((m) => {
+          const role = m.role === "system" ? "System" : m.role === "user" ? "User" : "Assistant";
+          return `[${role}] ${m.content}`;
+        })
+        .join("\n\n");
+      
+      const result: ContextResult = {
+        messages,
+        formattedContent,
+        hasSummary: hasSummary,
+        originalCount: messages.length,
+      };
+      return result;
+    } catch (error) {
+      console.error("[chatContext.getContext] Error:", error);
+      return {
+        messages: [],
+        formattedContent: "",
+        hasSummary: false,
+        originalCount: 0,
+      };
+    }
+  },
+
+  /**
+   * Check if a session needs compaction based on message count threshold.
+   * Delegates to sessionNeedsCompaction() from session-store.ts.
+   * 
+   * @param sessionId - The session to check
+   * @returns true if session has reached COMPACT_THRESHOLD (20 messages)
+   */
+  needsCompaction(sessionId: string): boolean {
+    try {
+      return sessionNeedsCompaction(sessionId);
+    } catch {
+      return false;
+    }
+  },
 };

@@ -25,6 +25,7 @@ import {
   isTerminalFocused,
 } from "../sidecars/auto-mode.ts";
 import { logHistory } from "../sidecars/history-logger.ts";
+import { CuriosityEngine } from "../sidecars/curiosity-engine.ts";
 
 export type { InterruptController };
 export { createInterruptController, getInterruptController };
@@ -307,6 +308,21 @@ export async function runAutoAgent(
         } catch {
           return "";
         }
+      },
+    });
+  // Register Curiosity Loop (Intrinsic Motivation)
+  if (!ghostTasks.has("curiosity-pulse")) {
+    registerGhostTask({
+      id: "curiosity-pulse",
+      description: "Scan for autonomous research opportunities",
+      interval: 600000, // Every 10 minutes
+      execute: async () => {
+        const { CuriosityEngine } = await import("../sidecars/curiosity-engine.ts");
+        const signals = await CuriosityEngine.scanForInterest(process.cwd());
+        for (const signal of signals) {
+          CuriosityEngine.proposeMission(signal, process.cwd());
+        }
+        return `Processed ${signals.length} curiosity signals.`;
       },
     });
   }

@@ -101,7 +101,18 @@ You may NEVER modify a protected file during a standard BUILD phase unless the P
 4. **Interference Check**: Identify if changing one component (e.g., Kernel) will break another (e.g., Tools) by looking at the Entanglement Matrix.
 5. **AutoResearch Loop**: Every change must be a hypothesis with a validation test. If the test fails, revert the change and log the "Energy State" (failure reason).
 
-## Active Research
-- `agent-kernel/quantum-evolution-plan.md`
 - `agent-harness/evolve/research/network_map_180p.md`
 - `agent-harness/evolve/research/quantum_simulation_v1.md`
+
+---
+
+# 🎯 360p RESOLUTION: Interaction Gates & Simulation Reality
+[STATE: IDLE]
+
+**Goal:** Bridge the gap between evolution "theater" and actual multi-path reasoning.
+
+## Tasks
+1. **[Q1] Implement multi-path hypo testing**: Update `quantum-evolve.ts` to spawn 3 internal LLM simulations for any kernel change.
+2. **[Q2] Define Interface Gates**: Create `docs/architecture/qubit_gates.md` defining the API contracts for the Core vs Sidecars.
+3. **[Q3] Feedback Weighting**: Modify `bun-orchestrator.ts` to weight `HUMAN.md` feedback at 10x priority over DISCOVER logs.
+4. **[Q4] Auto-Rollback**: Implement a safety gate where if a change breaks the "Entanglement Matrix" (e.g. breaks more than 2 tools), it is automatically reverted without human input.

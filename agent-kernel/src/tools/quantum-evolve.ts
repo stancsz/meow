@@ -9,7 +9,8 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { executeTool } from "../sidecars/tool-registry.ts";
+import { runLeanAgent } from "../core/lean-agent.ts";
+import { QuantumReasoner } from "../sidecars/quantum-reasoner.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../..");
@@ -63,30 +64,32 @@ async function runQuantumEvolution() {
   for (const task of res.tasks) {
     console.log(`🌀 Processing Qubit: ${task}...`);
     
-    // Quantum Simulation Prompt
+    // Path Superposition: Generate 3 hypotheses
+    console.log("  LLM is simulating parallel hypothese (Superposition)...");
+    
+    const context = { dangerous: true, cwd: REPO_ROOT };
+    const paths = await QuantumReasoner.simulatePaths(task, context as any);
+    
+    for (const path of paths) {
+      console.log(`    ↳ Hypothesis [${path.id}]: ${path.hypothesis} (Prob: ${path.probabilityOfSuccess})`);
+    }
+    
+    const optimum = QuantumReasoner.selectOptimumPath(paths);
+    console.log(`  ✨ Optimum Path Collapsed: ${optimum.id}`);
+
+    // Quantum Simulation Execution
     const prompt = `
-      You are the Quantum Evolution Agent.
       Current Resolution: ${res.level} (${res.goal})
-      Current Task: ${task}
+      Selected Path: ${optimum.hypothesis}
       
-      Codebase Context:
-      - moving parts identified in ${PLAN_FILE}
-      
-      GOAL: Perform a "Network-Threaded" analysis. 
-      Don't just fix a single component. Consider how changing this task affects the ENTANGLED parts of the system.
-      
-      Simulate the optimum path 180p -> 1080p.
-      Identify any potential INTERFERENCE (breaking changes) before they happen.
-      
-      EXECUTE:
-      1. Analyze relevant files.
-      2. Propose the change.
-      3. Validate against the network map.
+      GOAL: Implement the optimum path for task: ${task}.
+      Identify any potential INTERFERENCE with the network map.
     `;
     
-    console.log("  LLM is simulating optimum path...");
-    // In a real implementation, this would call callClaudeWithProvider from evolve.ts
-    // For now, we stub the execution.
+    await runLeanAgent(prompt, {
+      systemPrompt: "You are the Quantum Evolution Agent. Optimize the circuit.",
+      dangerous: true
+    });
   }
 
   console.log("\n✅ Quantum Simulation Complete. Path optimized.");
