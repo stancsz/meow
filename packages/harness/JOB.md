@@ -13,7 +13,8 @@
 **Problem**: The `orchestrator.ts` is blind to local progress because it only reads from `origin/development`. This breaks the autonomous OODA loop.
 
 ### [XL-20] Local-First Orchestration
-- [ ] **Goal**: Patch `.github/scripts/orchestrator.ts` to prioritize local `JOB.md` and `CLAUDE.md` over remote git fetches.
+- [x] **Updated**: Orchestrator path = `jobs/bun-orchestrator.ts` (not `.github/scripts/`).
+- [ ] **Goal**: Patch orchestrator to prioritize local `JOB.md` and `CLAUDE.md` over remote git fetches.
 - [ ] **Success**: Running `bun run packages/harness/jobs/orchestrate` successfully picks up the V3.2 mission.
 
 ### [XL-18] Metacognition Audit (Experience Replay)
@@ -29,8 +30,8 @@
 **Priority**: HIGH
 
 ## MISSION
-Spawn a `SRE-Kitten` to audit the `.github/scripts/orchestrator.ts` and propose a patch for "Local-First" execution.
-- `pounce "Read .github/scripts/orchestrator.ts and find how to make it load local CLAUDE.md and JOB.md instead of git show origin/development" --role "SRE"`
+Spawn a `SRE-Kitten` to audit `jobs/bun-orchestrator.ts` and propose a patch for "Local-First" execution.
+- `pounce "Read jobs/bun-orchestrator.ts and find how to make it load local CLAUDE.md and JOB.md instead of git show origin/development" --role "SRE"`
 
 # PLAN
 [Status: IDLE]
