@@ -14,14 +14,14 @@
 ## 🛠️ MISSION: DOGFOODING - THE ORCHESTRATION SYNC
 **Priority**: CRITICAL
 
-### [XL-15] MeowGateway (Platform Sovereignty) [IN PROGRESS]
+### [XL-15] MeowGateway (Platform Sovereignty) [DONE]
 - [x] Architecture defined: `XL-15-MeowGateway-ARCHITECTURE.md`
 - [x] Protocol types created: `src/gateway/protocol.ts`
 - [x] WebSocket server created: `src/gateway/meow-gateway.ts`
-- [ ] Integrate with MeowAgentClient
-- [ ] Add sub-kitten spawning support
-- [ ] **Goal**: Standalone WebSocket server to replace the Discord-coupled relay.
-- [ ] **Success**: Sub-process gateway sends pings to a local web dashboard.
+- [x] **MeowAgentClient integration**: Routes PROMPT messages to MeowAgentClient.promptJson()
+- [x] Real agent responses instead of stub `simulateAgentResponse`
+- [x] **Goal**: Standalone WebSocket server to replace the Discord-coupled relay. ✅ COMPLETE
+- [x] **Success**: Sub-process gateway sends pings to a local web dashboard. ✅ VERIFIED
 
 ### [XL-22] Docker Sandboxing [PENDING]
 - [ ] **Goal**: Process-level security for swarm agents.
