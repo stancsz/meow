@@ -24,6 +24,7 @@ import { AgentState, AGENT_STATE_EMOJI, AGENT_STATE_DESCRIPTION, TokenBuffer } f
 import { getDefaultHooks, type HookContext, type ToolCall, type Message as HookMessage } from "./core/done-hooks";
 import { crystallizeSkill } from "./core/skill-crystallizer";
 import { skillCrystallizerHook } from "./sidecars/crystallizer-hook";
+import { reasoningAuditHook } from "./sidecars/reasoning-audit-hook";
 
 // ============================================================================
 // Config
