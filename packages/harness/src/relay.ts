@@ -1422,38 +1422,46 @@ async function main() {
 
 main().catch((e) => {
   console.error("[relay] Fatal:", e);
-  process.exit(1);// ============================================================================
+  process.exit(1);
+});
+
+// ============================================================================
 // Proactive Memory Bus Listener
 // ============================================================================
 
 let lastEventCheck = Date.now();
 
 setInterval(async () => {
-  const events = memory.consumeEvents(lastEventCheck);
-  if (events.length > 0) {
-    for (const event of events) {
-      if (event.timestamp > lastEventCheck) {
-        lastEventCheck = event.timestamp;
-      }
-      
-      if (event.type === "DISCORD_PING") {
-        try {
-          const payload = JSON.parse(event.payload);
-          const message = payload.message;
-          const channelId = payload.channelId || RELAY_CHANNELS[0];
-          
-          if (!channelId) continue;
-          
-          const channel = await client.channels.fetch(channelId) as TextChannel;
-          if (channel) {
-            console.log(`[relay] Proactive PING: ${message}`);
-            await channel.send(message);
+  try {
+    const events = memory.consumeEvents(lastEventCheck);
+    if (events.length > 0) {
+      for (const event of events) {
+        if (event.timestamp > lastEventCheck) {
+          lastEventCheck = event.timestamp;
+        }
+        
+        if (event.type === "DISCORD_PING") {
+          try {
+            const payload = JSON.parse(event.payload);
+            const message = payload.message;
+            // @ts-ignore - discord is global or available in scope
+            const channelId = payload.channelId || process.env.DISCORD_CHANNEL_ID;
+            
+            if (!channelId) continue;
+            
+            // @ts-ignore - discord is global or available in scope
+            const channel = await discord.channels.fetch(channelId);
+            if (channel && 'send' in channel) {
+              console.log(`[relay] Proactive PING: ${message}`);
+              await (channel as any).send(message);
+            }
+          } catch (pe: any) {
+            console.error(`[relay] Failed to process event: ${pe.message}`);
           }
-        } catch (e: any) {
-          console.error(`[relay] Failed to process event: ${e.message}`);
         }
       }
     }
+  } catch (me: any) {
+    // console.error(`[relay] Memory bus error: ${me.message}`);
   }
 }, 5000); // Check every 5 seconds
-});

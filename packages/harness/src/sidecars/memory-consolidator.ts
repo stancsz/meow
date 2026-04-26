@@ -7,8 +7,8 @@
  * - Lessons: Solutions to errors or identified risks (Self-Healing).
  */
 
-import { storeMemory } from "/app/agent-kernel/src/sidecars/memory-fts";
-import { runLeanAgent } from "/app/agent-kernel/src/core/lean-agent.ts";
+import { storeMemory } from "../../agent-kernel/src/sidecars/memory-fts";
+import { runLeanAgent } from "../../agent-kernel/src/core/lean-agent.ts";
 
 export interface ConsolidationResult {
   success: boolean;

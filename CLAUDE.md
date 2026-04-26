@@ -37,13 +37,13 @@ Core Agent (~100 lines, fixed)
 
 ```
 packages/
-├── kernel/                   # The "Soul" - Core agent logic
+├── kernel/                   # The soul - Core agent logic
 │   ├── cli/index.ts          # CLI + REPL + slash commands
 │   └── src/
 │       ├── core/             # Lean agent OODA loop
 │       ├── sidecars/         # Logical sidecars (MCP, registration)
 │       └── skills/           # High-level skills (commit, review)
-└── harness/                  # The "Body" - Research & Dogfooding
+└── harness/                  # The body - Research & Dogfooding
     ├── jobs/                 # Orchestrators & workers
     ├── evolve/               # Evolution findings
     └── src/                  # Harness-specific tools
@@ -116,63 +116,28 @@ To prevent file clutter and keep the project organized, always use the dedicated
 ./train.sh --status      # Show gap status
 ./train.sh --report      # Full wisdom report
 
-# Interactive mode
-
 # Single task
 bun run start "your prompt"
 
 # Dangerous mode (shell auto-approve)
 bun run start --dangerous "ls -la"
 
-# Resume last session
-bun run start --resume
-
-# Load custom MCP config
-bun run start --mcp-config <path> "task"
-
 # Run job orchestrator (@meow/harness)
 bun run orchestrate
-
-# In-session commands:
-/help              # Show all commands
-/plan <task>       # Plan mode (show intent first)
-/dangerous         # Toggle dangerous mode
-/tasks             # List tasks
-/add <task>        # Add task
-/done <id>         # Complete task
-/sessions          # List saved sessions
-/resume <id>       # Resume a session
-/skills            # List available skills
-/simplify <file>   # Refactor code
-/review <file>     # Review code
-/commit            # Git commit helper
-/learn <capability>  # Learn a new capability on-demand
-/exit              # Exit (saves session)
 ```
 
-## MECHANICS
+## AGENT WORKSPACE
 
-**Tasks:** File-based in `.agent-kernel/tasks.json`
+### CURRENT MISSION: V3.2 ORCHESTRATION SYNC
+**Objective**: Fix the mission stall by patching the orchestrator to be "Local-First."
+**Progress**: 0%
+**Active Swarm**: IDLE
 
-**Sessions:** JSONL logs in `~/.agent-kernel/sessions/<id>.jsonl` with LLM-powered compaction
+## BACKLOG
 
-**Skills:** Modular capabilities loaded from `agent-kernel/src/skills/`
+1. **[XL-20] Orchestrator Local-First Sync**: Patch `orchestrator.ts` to read local files. [HIGH]
+2. **[XL-18] Metacognition Audit**: Implement reasoning logs in SQLite. [HIGH]
+3. **[XL-15] MeowGateway**: Standalone WebSocket server. [MEDIUM]
+4. **[XL-11] MeowHub**: Skill marketplace integration. [LOW]
 
-**Permissions:** Pattern-matching rules (allow/deny/ask) per tool
-
-**Memory:** `~/.agent-kernel/memory/user.json` (future)
-
-**Growth:** Interaction count, unlocks behaviors (future)
-
-**Interrupt:** Ctrl+C to abort in-progress operations
-
-## DESIGN PRINCIPLES
-
-1. **Cute default** - warm, playful, affectionate
-2. **Micro-tokens** - small efficient actions
-3. **Humanizing** - treats interactions as moments
-4. **Personality** - sassy when tired, playful when energetic
-5. **Memory** - continuity across sessions
-6. **Core never grows** - capabilities via sidecar skills
-7. **P0-PN lifecycle** - see `docs/capability-system.md`
-
+*Note: For the full detailed backlog and mission status, see packages/harness/JOB.md.*

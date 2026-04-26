@@ -1,66 +1,61 @@
 # JOB.md
-[Status: MISSION - SWARM DOGFOODING (V3.1)]
+[Status: MISSION - SWARM DOGFOODING (V3.2)]
 
-**Goal:** Use the newly active Meowju Swarm to close the final architectural gaps with competitors like OpenClaw and Vellum, achieving "Sovereign Agent" status.
+**Goal:** Close the "Orchestration Gap." Meow must autonomously manage her own mission state by aligning the Orchestrator with the new Sovereign V3 architecture.
 
-## ✅ COMPLETED MISSIONS (V3 FOUNDATION)
-- [x] **[XL-16] Shared Memory Bus**: SQLite WAL multi-process core.
-- [x] **[XL-17] Proactive Heartbeat**: Background daemon.
-- [x] **[XL-08] Swarm Spawning**: `pounce` tool with autonomous reporting.
+## ✅ COMPLETED MISSIONS
+- [x] **[XL-16] Shared Memory Bus**: Multi-process SQLite WAL core.
+- [x] **[XL-17] Proactive Heartbeat**: Background daemon active.
+- [x] **[XL-08] Swarm Spawning**: Sub-kitten delegation verified.
 
-## 🛠️ MISSION: DOGFOODING - THE SOVEREIGN UPGRADE
+## 🛠️ MISSION: DOGFOODING - THE ORCHESTRATION SYNC
 **Priority**: CRITICAL
-**Dogfooding Strategy**: Meow must spawn a Researcher-Kitten to design the MeowGateway while a Coder-Kitten implements the Metacognition Audit.
+**Problem**: The `orchestrator.ts` is blind to local progress because it only reads from `origin/development`. This breaks the autonomous OODA loop.
 
-### [XL-15] MeowGateway (Decoupling)
-- [ ] **Goal**: Move Discord logic into a standalone WebSocket gateway.
-- [ ] **Success**: Main loop runs independently of any chat platform.
+### [XL-20] Local-First Orchestration
+- [ ] **Goal**: Patch `.github/scripts/orchestrator.ts` to prioritize local `JOB.md` and `CLAUDE.md` over remote git fetches.
+- [ ] **Success**: Running `bun run packages/harness/jobs/orchestrate` successfully picks up the V3.2 mission.
 
-### [XL-18] Metacognition Audit (Self-Correction)
-- [ ] **Goal**: Add `reasoning_audit` table to SQLite. Record Every "Final Thought" vs "Tool Failure".
-- [ ] **Success**: Meow can query past failures to avoid repeating mistakes.
+### [XL-18] Metacognition Audit (Experience Replay)
+- [ ] **Goal**: Implement `reasoning_audit` in `memory.ts`. Capture full traces of swarm successes/failures.
+- [ ] **Success**: Meow can use `search_memory` to find "Lessons Learned" from previous tasks.
 
-### [XL-19] Dockerized Sandbox (Security)
-- [ ] **Goal**: Run the `pounce` runner inside a transient Docker container for untrusted tasks.
-- [ ] **Success**: No filesystem escape possible during background research.
-
-### [XL-11] MeowHub (Skill Marketplace)
-- [ ] **Goal**: Implement `fetch_skill` to pull from a git-based registry.
-- [ ] **Success**: Meow can learn new tools without a code change.
+### [XL-15] MeowGateway (Platform Sovereignty)
+- [ ] **Goal**: Standalone WebSocket server to replace the Discord-coupled relay.
+- [ ] **Success**: Sub-process gateway sends pings to a local web dashboard.
 
 # EVOLVE
-[Status: RESEARCHING - Gateway Decoupling]
+[Status: RESEARCHING - Orchestrator Refactor]
 **Priority**: HIGH
 
 ## MISSION
-Spawn a `Researcher-Kitten` to find the best WebSocket implementation for a Node/Bun gateway.
-- `pounce "Research best Bun WebSocket patterns for agent-to-gateway communication" --role "Researcher"`
+Spawn a `SRE-Kitten` to audit the `.github/scripts/orchestrator.ts` and propose a patch for "Local-First" execution.
+- `pounce "Read .github/scripts/orchestrator.ts and find how to make it load local CLAUDE.md and JOB.md instead of git show origin/development" --role "SRE"`
 
 # PLAN
 [Status: IDLE]
 **Priority**: HIGH
 
 ## MISSION
-Design the `reasoning_audit` schema. Every `AgentResult` should be persisted with its `messages[]` history to enable future "Experience Replay."
+Unify `JOB.md` and `CLAUDE.md`. Move the Backlog and Current Task sections into `CLAUDE.md` to satisfy the orchestrator's search heuristics.
 
 # BUILD
 [Status: IDLE]
 **Priority**: CRITICAL
 
 ## MISSION
-Implement `fetch_skill` tool to allow Meow to pull `.md` skill files from a remote repository.
+Implement the `reasoning_audit` table and wire it into the `DoneHooks` in `relay.ts`.
 
 # DOGFOOD
 [Status: ACTIVE]
 **Priority**: CRITICAL
 
 ## MISSION
-Ask Meow: "Pounce on a task to audit our own security. Have a kitten check for sensitive keys in the repo using `grep` and report back."
-- **Verify**: The swarm reports findings to the bus, and the relay pings the user with the report.
+Run the newly patched orchestrator and verify it delegates a task from the V3.2 backlog to "Jules."
 
 ---
 
-## ⚖️ GOVERNANCE SCHEMA (v1.3)
-- Multi-Process IPC: `allow` (Memory Bus usage).
-- Remote Skill Fetching: `ask` (human verifies new skills).
-- Docker Pounce: `allow` (default for untrusted domains).
+## ⚖️ GOVERNANCE SCHEMA (v1.4)
+- Local-First Overrides: `allow` (for faster dev cycles).
+- Metacognition Logs: `allow` (privacy-first local storage).
+- Multi-Agent Orchestration: `ask` (human review of swarm plans).

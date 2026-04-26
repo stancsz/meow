@@ -1,4 +1,4 @@
-import { runLeanAgentSimpleStream } from "../../kernel/src/core/lean-agent.ts";
+import { runLeanAgentSimpleStream } from "../agent-kernel/src/core/lean-agent.ts";
 import { AgentState } from "./core/agent-types";
 
 async function main() {

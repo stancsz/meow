@@ -18,7 +18,7 @@ import { runLeanAgent } from "../agent-kernel/src/core/lean-agent.ts";
 import { getSkillContext } from "../src/sidecars/skill-manager.ts";
 import { distillJobToSkill } from "../src/sidecars/skill-distiller.ts";
 import { consolidateJobMemories } from "../src/sidecars/memory-consolidator.ts";
-import { searchMemory, formatSearchResults, storeMemory } from "../agent-kernel/src/sidecars/memory-fts";
+import { searchMemory, formatSearchResults, storeMemory } from "../agent-kernel/src/sidecars/memory-fts.ts";
 import { GovernanceEngine } from "../src/sidecars/governance-engine.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,7 +42,7 @@ const DESIGN_DIR = join(__dirname, "..", "design");
 const SCRATCH_DIR = join(__dirname, "..", "scratch");
 
 // Meow CLI entry point
-const MEOW_CLI = join(__dirname, "..", "agent-kernel", "cli", "index.ts");
+const MEOW_CLI = join(__dirname, "..", "..", "kernel", "cli", "index.ts");
 
 // Ensure API Key is set for the Planner Agent
 if (!process.env.LLM_API_KEY) {

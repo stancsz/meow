@@ -14,7 +14,11 @@
  * to enable skill crystallization at the harness level.
  */
 import { spawn } from "node:child_process";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AgentState } from "./agent-types";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const MEOW_TIMEOUT_MS = parseInt(process.env.MEOW_TIMEOUT_MS || "300000");
 
@@ -44,7 +48,7 @@ export interface AgentResult {
 }
 
 export class MeowAgentClient {
-  private readonly meowRunPath = "/app/meow-run.ts";
+  private readonly meowRunPath = join(__dirname, "..", "..", "meow-run.ts");
   private readonly timeoutMs: number;
   
   // EPOCH 17: State tracking for rich agent state indicators
@@ -84,7 +88,7 @@ export class MeowAgentClient {
         "bun",
         ["run", "--bun", this.meowRunPath, "--", ...words],
         {
-          cwd: process.env.CLAUDE_CWD || "/app",
+          cwd: process.env.CLAUDE_CWD || join(__dirname, "..", ".."),
           stdio: ["ignore", "pipe", "pipe"],
           env: { ...process.env },
           shell: false,
@@ -138,9 +142,9 @@ export class MeowAgentClient {
     return new Promise((resolve, reject) => {
       const proc = spawn(
         "bun",
-        ["run", "--bun", "/app/meow-run.ts", "--json", "--", ...words],
+        ["run", "--bun", join(__dirname, "..", "..", "meow-run.ts"), "--json", "--", ...words],
         {
-          cwd: process.env.CLAUDE_CWD || "/app",
+          cwd: process.env.CLAUDE_CWD || join(__dirname, "..", ".."),
           stdio: ["ignore", "pipe", "pipe"],
           env: { ...process.env },
           shell: false,
@@ -203,7 +207,7 @@ export class MeowAgentClient {
     const words = text.split(" ");
     return new Promise((resolve, reject) => {
       // Use meow-stream.ts which calls runLeanAgentSimpleStream with onToken
-      const meowStreamPath = "/app/meow-stream.ts";
+      const meowStreamPath = join(__dirname, "..", "meow-stream.ts");
       const args = [
         "run",
         "--bun",
@@ -213,7 +217,7 @@ export class MeowAgentClient {
       ];
 
       const proc = spawn("bun", args, {
-        cwd: process.env.CLAUDE_CWD || "/app",
+        cwd: process.env.CLAUDE_CWD || join(__dirname, "..", ".."),
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },
         shell: false,

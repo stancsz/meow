@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "url";
-import { searchMemory, storeMemory, formatSearchResults, forgetMemory } from "../../../agent-kernel/src/sidecars/memory-fts";
+import { searchMemory, storeMemory, formatSearchResults, forgetMemory } from "../../agent-kernel/src/sidecars/memory-fts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..", "..");

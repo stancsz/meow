@@ -9,11 +9,25 @@ import chalk from "chalk";
 async function main() {
     console.log(chalk.blue.bold("Meow Smart Job Delegator: Initializing..."));
 
-    console.log(chalk.cyan("Fetching latest state from development..."));
-    execSync("git fetch origin development");
-    const claudeMd = execSync("git show origin/development:CLAUDE.md", { encoding: "utf-8" });
-    const specMd = execSync("git show origin/development:SPEC.md", { encoding: "utf-8" });
-    const swarmSpec = execSync("git show origin/development:SWARM_SPEC.md", { encoding: "utf-8" });
+    console.log(chalk.cyan("Fetching project state..."));
+    
+    const readLocalOrGit = (filename: string, branchFile = `origin/development:${filename}`) => {
+        if (fs.existsSync(filename)) {
+            console.log(chalk.gray(`  Using local ${filename}`));
+            return fs.readFileSync(filename, "utf-8");
+        }
+        console.log(chalk.gray(`  Falling back to git ${branchFile}`));
+        try {
+            return execSync(`git show ${branchFile}`, { encoding: "utf-8" });
+        } catch (e) {
+            console.warn(chalk.yellow(`  Failed to find ${filename} in git. Using empty string.`));
+            return "";
+        }
+    };
+
+    const claudeMd = readLocalOrGit("CLAUDE.md");
+    const specMd = readLocalOrGit("SPEC.md");
+    const swarmSpec = readLocalOrGit("SWARM_SPEC.md");
 
     const steeringPrompt = process.env.STEERING_PROMPT;
     if (steeringPrompt && steeringPrompt.trim() !== "") {
