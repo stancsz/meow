@@ -48,7 +48,7 @@ export interface AgentResult {
 }
 
 export class MeowAgentClient {
-  private readonly meowRunPath = join(__dirname, "..", "..", "meow-run.ts");
+  private readonly meowRunPath = join(__dirname, "..", "meow-run.ts");
   private readonly timeoutMs: number;
   
   // EPOCH 17: State tracking for rich agent state indicators
@@ -142,7 +142,7 @@ export class MeowAgentClient {
     return new Promise((resolve, reject) => {
       const proc = spawn(
         "bun",
-        ["run", "--bun", join(__dirname, "..", "..", "meow-run.ts"), "--json", "--", ...words],
+        ["run", "--bun", join(__dirname, "..", "meow-run.ts"), "--json", "--", ...words],
         {
           cwd: process.env.CLAUDE_CWD || join(__dirname, "..", ".."),
           stdio: ["ignore", "pipe", "pipe"],

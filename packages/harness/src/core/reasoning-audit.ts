@@ -617,5 +617,4 @@ if (cmd === "stats") {
   process.exit(0);
 }
 
-// Export for use in other modules
-export { storeReasoningTrace, searchReasoningTraces, formatSearchResults };
+// Export for use in other modules (duplicates removed - already exported inline)

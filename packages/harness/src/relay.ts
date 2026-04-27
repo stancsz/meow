@@ -314,24 +314,18 @@ function chunkMessageCodeFenceAware(text: string, maxLen = 1900): string[] {
   // Now chunk each part, keeping fences as atomic units
   for (const part of parts) {
     if (part.type === "fence") {
-      // Code fences stay intact even if > maxLen
-      // Discord will still render them, just might warn
+      // Extract language if any
+      const langMatch = part.content.match(/^```([a-zA-Z0-9]*)\n/);
+      const lang = langMatch ? langMatch[1] : "";
+      
       if (part.content.length > maxLen) {
-        // Split long code blocks at reasonable boundaries (but keep fences)
-        const innerContent = part.content.slice(CODE_FENCE.length, -CODE_FENCE.length);
-        const langEnd = innerContent.indexOf("\n");
-        const langLine = langEnd > 0 && langEnd < 50 ? innerContent.slice(0, langEnd + 1) : "";
+        // Split long code blocks and wrap EACH chunk with fences
+        const innerContent = part.content.slice(CODE_FENCE.length + (lang?.length || 0) + 1, -CODE_FENCE.length).trim();
+        const innerChunks = chunkTextPortion(innerContent, maxLen - (CODE_FENCE.length * 2) - (lang?.length || 0) - 10);
 
-        // Chunk the inner content
-        const innerRemaining = langLine ? innerContent.slice(langLine.length) : innerContent;
-        const innerChunks = chunkTextPortion(innerRemaining, maxLen - CODE_FENCE.length * 2 - (langLine?.length || 0));
-
-        // Rebuild with fences
-        chunks.push(CODE_FENCE + langLine);
-        for (let i = 0; i < innerChunks.length; i++) {
-          chunks.push(innerChunks[i]);
+        for (const chunk of innerChunks) {
+          chunks.push(`${CODE_FENCE}${lang}\n${chunk}\n${CODE_FENCE}`);
         }
-        chunks.push(CODE_FENCE);
       } else {
         chunks.push(part.content);
       }
@@ -1363,7 +1357,7 @@ async function main() {
 
       console.log(`[relay] ← ${reply.slice(0, 80)}${reply.length > 80 ? "..." : ""}`);
 
-      const chunks = chunkMessage(reply);
+      const chunks = chunkMessage(beautifyTables(reply));
       await sendChunksWithRateLimit(message, chunks);
     } catch (e: any) {
       console.error(`[relay] Error processing ${message.id}:`, e.message);
@@ -1466,3 +1460,24 @@ setInterval(async () => {
     // console.error(`[relay] Memory bus error: ${me.message}`);
   }
 }, 5000); // Check every 5 seconds
+
+/**
+ * Detects and beautifies markdown tables in text by wrapping them in
+ * code blocks if they are not already.
+ */
+function beautifyTables(text: string): string {
+  // Regex to detect markdown tables (at least 2 rows with | separators and a --|-- separator row)
+  const tableRegex = /((?:^|\n)\|.*\|.*\n\|(?:[-: ]+\|)+[-: ]*\|\n(?:\|.*\|.*\n?)+)/g;
+  
+  return text.replace(tableRegex, (match) => {
+    // Check if already in a code block by looking back
+    const lines = text.slice(0, text.indexOf(match)).split("\n");
+    let inFence = false;
+    for (const line of lines) {
+      if (line.trim().startsWith("```")) inFence = !inFence;
+    }
+    
+    if (inFence) return match;
+    return `\n\`\`\`text\n${match.trim()}\n\`\`\`\n`;
+  });
+}
