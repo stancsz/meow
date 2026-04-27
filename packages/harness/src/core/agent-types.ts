@@ -43,21 +43,68 @@ export const AGENT_STATE_DESCRIPTION: Record<AgentState, string> = {
 /**
  * Token buffer for streaming response handling
  */
+/**
+ * Token buffer for streaming response handling
+ */
 export class TokenBuffer {
   private buffer: string[] = [];
   private currentCodeFence: string | null = null;
+  private flushCallback: (text: string) => void;
+  private options: {
+    bufferSize: number;
+    flushIntervalMs: number;
+    codeFenceAware: boolean;
+  };
+  private timer: Timer | null = null;
+
+  constructor(
+    flushCallback: (text: string) => void,
+    options: { bufferSize?: number; flushIntervalMs?: number; codeFenceAware?: boolean } = {}
+  ) {
+    this.flushCallback = flushCallback;
+    this.options = {
+      bufferSize: options.bufferSize || 10,
+      flushIntervalMs: options.flushIntervalMs || 50,
+      codeFenceAware: options.codeFenceAware || false,
+    };
+  }
+
+  add(token: string) {
+    this.buffer.push(token);
+
+    if (this.options.codeFenceAware) {
+      if (token.includes("```")) {
+        this.flush();
+      }
+    }
+
+    if (this.buffer.length >= this.options.bufferSize) {
+      this.flush();
+    } else if (!this.timer) {
+      this.timer = setTimeout(() => {
+        this.flush();
+      }, this.options.flushIntervalMs);
+    }
+  }
 
   push(token: string) {
-    this.buffer.push(token);
+    this.add(token);
   }
 
-  flush(): string {
-    const result = this.buffer.join("");
+  flush(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    if (this.buffer.length === 0) return;
+
+    const text = this.buffer.join("");
     this.buffer = [];
-    return result;
+    this.flushCallback(text);
   }
 
-  getBuffer(): string[] {
-    return [...this.buffer];
+  getBufferText(): string {
+    return this.buffer.join("");
   }
 }

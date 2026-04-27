@@ -160,18 +160,40 @@ class MCPConnection {
     }
   }
 
+  private async postRequest(payload: any): Promise<any> {
+    if (this.type === "stdio") {
+      this.process?.stdin?.write(JSON.stringify(payload) + "\n");
+      return;
+    }
+
+    try {
+      const resp = await fetch(this.url!, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      const text = await resp.text();
+      this.handleMessage(text);
+    } catch (e: any) {
+      console.error(`[MCP ${this.serverName} HTTP Error]:`, e.message);
+      throw e;
+    }
+  }
+
   private sendRequest(method: string, params?: Record<string, unknown>): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const id = ++this.messageId;
-      const msg: MCPMessage = { jsonrpc: "2.0", id, method, params };
       this.pendingRequests.set(id, { resolve, reject });
-      this.process?.stdin?.write(JSON.stringify(msg) + "\n");
+
+      const payload = { jsonrpc: "2.0", id, method, params };
+      this.postRequest(payload).catch(reject);
     });
   }
 
   private sendNotification(method: string, params?: Record<string, unknown>): void {
-    const msg: MCPMessage = { jsonrpc: "2.0", method, params };
-    this.process?.stdin?.write(JSON.stringify(msg) + "\n");
+    const payload = { jsonrpc: "2.0", method, params };
+    this.postRequest(payload).catch(() => {});
   }
 
   async listTools(): Promise<MCPTool[]> {
