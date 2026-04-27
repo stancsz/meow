@@ -18,10 +18,12 @@ export interface MCPTool {
 
 export interface MCPServerConfig {
   name: string;
-  command: string;
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  type?: "stdio" | "http";
+  url?: string;
 }
 
 export interface MCPToolResult {
@@ -61,48 +63,61 @@ class MCPConnection {
   private messageId = 0;
   private serverName: string;
   private initialized = false;
+  private type: "stdio" | "http" = "stdio";
+  private url?: string;
 
   constructor(serverName: string) {
     this.serverName = serverName;
   }
 
   async connect(config: MCPServerConfig): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.process = spawn(config.command, config.args || [], {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, ...config.env },
+    this.type = config.type || (config.command ? "stdio" : "http");
+    this.url = config.url;
+
+    if (this.type === "stdio") {
+      if (!config.command) throw new Error(`MCP server ${this.serverName} missing command`);
+      return new Promise((resolve, reject) => {
+        this.process = spawn(config.command!, config.args || [], {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env, ...config.env },
+        });
+
+        this.process.stdout?.on("data", (data) => {
+          this.handleMessage(data.toString());
+        });
+
+        this.process.stderr?.on("data", (data) => {
+          console.error(`[MCP ${this.serverName} stderr]:`, data.toString());
+        });
+
+        this.process.on("error", (err) => {
+          reject(err);
+        });
+
+        this.process.on("close", (code) => {
+          console.log(`[MCP ${this.serverName}] exited with code ${code}`);
+          this.cleanup();
+        });
+
+        // Initialize and wait for tools
+        this.initialize().then(() => {
+          this.initialized = true;
+          resolve();
+        }).catch(reject);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          if (!this.initialized) {
+            reject(new Error(`MCP server ${this.serverName} initialization timed out`));
+          }
+        }, 10000);
       });
-
-      this.process.stdout?.on("data", (data) => {
-        this.handleMessage(data.toString());
-      });
-
-      this.process.stderr?.on("data", (data) => {
-        console.error(`[MCP ${this.serverName} stderr]:`, data.toString());
-      });
-
-      this.process.on("error", (err) => {
-        reject(err);
-      });
-
-      this.process.on("close", (code) => {
-        console.log(`[MCP ${this.serverName}] exited with code ${code}`);
-        this.cleanup();
-      });
-
-      // Initialize and wait for tools
-      this.initialize().then(() => {
-        this.initialized = true;
-        resolve();
-      }).catch(reject);
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        if (!this.initialized) {
-          reject(new Error(`MCP server ${this.serverName} initialization timed out`));
-        }
-      }, 10000);
-    });
+    } else {
+      // HTTP Transport
+      if (!this.url) throw new Error(`MCP server ${this.serverName} missing URL`);
+      await this.initialize();
+      this.initialized = true;
+    }
   }
 
   private async initialize(): Promise<void> {
@@ -314,16 +329,18 @@ export async function loadMCPConfig(customPath?: string): Promise<{ servers: str
         const s = srv as any;
         serverConfigs.push({
           name,
-          command: s.command || "",
-          args: s.args || [],
+          command: expandVars(s.command || ""),
+          args: (s.args || []).map((a: string) => expandVars(a)),
           env: s.env || {},
-          cwd: s.cwd || ""
+          cwd: expandVars(s.cwd || ""),
+          type: s.type,
+          url: expandVars(s.url || "")
         });
       }
     }
 
     for (const server of serverConfigs) {
-      if (!server.command) continue;
+      if (!server.command && !server.url) continue;
       try {
         await connectMCPServer(server);
         const tools = connectedServers.get(server.name)?.getAllTools() || [];
