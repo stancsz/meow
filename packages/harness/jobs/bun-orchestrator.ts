@@ -42,7 +42,7 @@ const DESIGN_DIR = join(__dirname, "..", "design");
 const SCRATCH_DIR = join(__dirname, "..", "scratch");
 
 // Meow CLI entry point
-const MEOW_CLI = join(__dirname, "..", "..", "kernel", "cli", "index.ts");
+const MEOW_CLI = join(__dirname, "..", "agent-kernel", "cli", "index.ts");
 
 // Ensure API Key is set for the Planner Agent
 if (!process.env.LLM_API_KEY) {

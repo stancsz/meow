@@ -785,7 +785,7 @@ class ClaudeCodeClient {
     return new Promise((resolve, reject) => {
       const cliPath = process.env.CLAUDE_CLI_PATH ||
         (process.platform === "win32"
-          ? "C:\\Users\\stanc\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js"
+          ? join(process.env.APPDATA || "", "npm/node_modules/@anthropic-ai/claude-code/cli.js")
           : "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js");
 
       const execPath = "node";

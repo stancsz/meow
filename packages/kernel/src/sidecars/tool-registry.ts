@@ -13,7 +13,10 @@
  * }
  */
 import { existsSync, readdirSync, statSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { runBeforeHooks, runAfterHooks } from "./hooks.ts";
+import { loadMCPConfig, setMCPToolRegistrar, registerMCPTools } from "./mcp-client.ts";
+import { getAllSkills } from "../skills/loader.ts";
 
 // ============================================================================
 // Types
@@ -588,6 +591,26 @@ export async function initializeToolRegistry(): Promise<void> {
   // Load built-in search tools
   searchTools = await loadSearchTools();
   tools = [...builtInTools, ...searchTools];
+
+  await loadMCPConfig();
+  registerMCPTools();
+
+  // Initialize Skill-based tools
+  for (const skill of getAllSkills()) {
+    if (skill.tools && Array.isArray(skill.tools)) {
+      for (const skillTool of skill.tools) {
+        registerTool({
+          name: skillTool.name,
+          description: skillTool.description,
+          parameters: skillTool.parameters,
+          execute: async (args: any, context: ToolContext) => {
+            const result = await skillTool.handler(args, context);
+            return { content: String(result) };
+          }
+        });
+      }
+    }
+  }
 }
 
 export function getAllTools(): Tool[] {

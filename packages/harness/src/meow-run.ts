@@ -39,7 +39,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const LEAN_AGENT = join(__dirname, "..", "..", "kernel", "src", "core", "lean-agent.ts");
+const LEAN_AGENT = join(__dirname, "..", "agent-kernel", "src", "core", "lean-agent.ts");
 
 /**
  * Strip lean-agent's debug output prefix to get only the actual content.
