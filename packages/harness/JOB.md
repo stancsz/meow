@@ -23,8 +23,12 @@
 - [x] **Goal**: Standalone WebSocket server to replace the Discord-coupled relay. ✅ COMPLETE
 - [x] **Success**: Sub-process gateway sends pings to a local web dashboard. ✅ VERIFIED
 
-### [XL-22] Docker Sandboxing [PENDING]
-- [ ] **Goal**: Process-level security for swarm agents.
+### [XL-22] Docker Sandboxing [✅ DONE]
+- [x] Architecture defined: `XL-22-Architecture.md`
+- [x] SandboxManager created: `src/sandbox/sandbox-manager.ts`
+- [x] Validation test created: `src/sandbox/sandbox-manager.test.ts`
+- [x] **Goal**: Process-level security for swarm agents. ✅ COMPLETE
+- Features: Docker process isolation, CPU/memory limits, network modes, timeout handling, SQLite audit logging
 
 ---
 
