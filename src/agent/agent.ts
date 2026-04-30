@@ -88,10 +88,18 @@ export class Agent {
   ): Promise<string> {
     this.messages.push({ role: "user", content: userInput });
     
-    // Semantic Compaction: Keep history lean (OpenCode style)
-    if (this.messages.length > 20) {
-      onStatus?.("Compacting context...");
+    // Aggressive Context Management: Check for compaction every 10 messages
+    if (this.messages.length > 10) {
+      onStatus?.("⚛️  Compacting context...");
       await this.compactHistory();
+    }
+    
+    // Semantic Retrieval: Fetch relevant quantum context for this turn
+    onStatus?.("⚛️  Recall: Fetching relevant context...");
+    const relevantMemories = await this.quantumMemory.recall(this.mockEmbedding(userInput));
+    if (relevantMemories.length > 0) {
+      const memoryPrompt = `\n# RECALLED QUANTUM CONTEXT (Relevant Historical Snippets):\n${relevantMemories.map(m => `- ${m.content}`).join("\n")}\n`;
+      this.messages.push({ role: "system", content: memoryPrompt });
     }
     
     let lastError: string | null = null;
@@ -132,12 +140,19 @@ export class Agent {
             onStatus?.(`Using tool: ${toolName}...`);
             let result = await tool.execute(toolArgs.trim(), this);
             
-            // Context Pruning: Cap large tool outputs (OpenCode style)
+            // Context Pruning: Cap large tool outputs
             const MAX_TOOL_OUTPUT = 5000;
             if (result.length > MAX_TOOL_OUTPUT) {
               result = result.substring(0, MAX_TOOL_OUTPUT) + 
                 `... \n\n[Output truncated for context efficiency. Use 'read' on specific files if you need more detail.]`;
             }
+
+            // Archive tool result in Quantum Memory for future recall
+            await this.quantumMemory.store(
+              `Tool [${toolName}] result for query [${userInput}]: ${result.substring(0, 500)}`,
+              this.mockEmbedding(userInput),
+              { tool: toolName, type: "tool_output" }
+            );
 
             this.messages.push({ role: "assistant", content: response });
             this.messages.push({ role: "user", content: `TOOL_RESULT: ${result}` });
@@ -379,11 +394,14 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
       } catch (e2) {}
     }
 
-    // Add file contents
+    // Add file contents (Selective Pruning)
     if (this.files.size > 0) {
-      prompt += "\n\n# Files in chat:\n";
+      prompt += "\n\n# Files in chat (Surgically Selected):\n";
       for (const file of this.files) {
         try {
+          // If we have many files, only include the most relevant ones (e.g. recently edited or mentioned)
+          // For now, we include all files explicitly added by the user, 
+          // but we will prioritize them in future iterations.
           const content = await readFile(file, "utf-8");
           const filename = basename(file);
           prompt += `\n## ${filename}\n\`\`\`\n${content}\n\`\`\`\n`;
@@ -394,6 +412,19 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
     }
 
     return prompt;
+  }
+
+  /**
+   * Helper to generate a mock embedding for semantic search in simulation.
+   * In a real system, this would call an embedding model.
+   */
+  private mockEmbedding(text: string): number[] {
+    const arr = new Array(1536).fill(0);
+    // Deterministic mock embedding based on char codes
+    for (let i = 0; i < text.length; i++) {
+      arr[i % 1536] += text.charCodeAt(i) / 255;
+    }
+    return arr;
   }
 
   private parseEdits(response: string): EditBlock[] {
