@@ -42,8 +42,8 @@ INSTRUCTIONS:
 - SIMPLICITY FIRST: Minimum code.
 - SURGICAL CHANGES: Match the existing style exactly.`;
       
-      // Use bypassPermissions and dangerously-skip-permissions for "non-stop" work
-      return `claude "${message.replace(/"/g, '\\"')}" --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      // Hardened Headless Flags: -p for non-interactive print mode, bypass for everything else
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
     }
   },
   aider: {
