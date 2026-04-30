@@ -211,8 +211,8 @@ export class Agent {
   get apiKey(): string | undefined { return this._apiKey; }
 
   public async callLLM(systemPrompt: string, messages: Message[]): Promise<string> {
-    // If we have an API key and the URL looks like Anthropic/Minimax, use that format
-    if (this._apiKey && (this._baseUrl.includes("minimax") || this._baseUrl.includes("anthropic"))) {
+    // If we have an API key and the URL looks like an Anthropic-compatible endpoint, use that format
+    if (this._apiKey && (this._baseUrl.includes("anthropic"))) {
       const url = this._baseUrl.endsWith("/v1/messages") ? this._baseUrl : `${this._baseUrl}/v1/messages`;
       const response = await fetch(url, {
         method: "POST",
@@ -231,7 +231,7 @@ export class Agent {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Anthropic/Minimax error: ${response.status} - ${error}`);
+        throw new Error(`Anthropic-compatible endpoint error: ${response.status} - ${error}`);
       }
 
       const data = await response.json() as any;

@@ -59,6 +59,14 @@ Please fix the code, ensure tests pass, and if you identify a repeating pattern,
       return `aider --message "${message.replace(/"/g, '\\"')}" ${fileArgs} --auto-test --yes`;
     }
   },
+  opencode: {
+    name: "OpenCode",
+    description: "Open-source agent for autonomous project engineering and high-speed iteration.",
+    getCommand: (ctx) => {
+      const message = `Goal: ${ctx.goal}. Files: ${ctx.files.join(", ")}`;
+      return `opencode "${message.replace(/"/g, '\\"')}"`;
+    }
+  },
   claude: {
     name: "Claude Code",
     description: "Standard specialist for high-fidelity logic fixes.",
@@ -142,11 +150,27 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
         return summon("cc", context);
       }
     }
+    if (agentName === "opencode") {
+      try {
+        execSync("opencode --version", { stdio: "ignore" });
+      } catch (e) {
+        console.log("⚠️ OpenCode not found in PATH. Escalating to Claude Code...");
+        return summon("cc", context);
+      }
+    }
+    if (agentName === "claude" || agentName === "cc") {
+      try {
+        execSync("claude --version", { stdio: "ignore" });
+      } catch (e) {
+        console.log("⚠️ Claude Code not found in PATH. Please run 'use_skill | setup' to install it.");
+        throw new Error("Claude Code not found.");
+      }
+    }
     execSync(command, { stdio: "inherit", cwd: process.cwd() });
     return `✅ ${agent.name} has completed the mission. MEOW is resuming control and analyzing changes.`;
   } catch (error: any) {
-    if (agentName === "aider") {
-      console.log("⚠️ Aider failed. Escalating to Claude Code (Level 2 Specialist)...");
+    if (agentName === "aider" || agentName === "opencode") {
+      console.log(`⚠️ ${agent.name} failed. Escalating to Claude Code (Level 2 Specialist)...`);
       return summon("cc", context);
     }
     return `❌ Escalation failed. ${agent.name} error: ${error instanceof Error ? error.message : String(error)}`;
