@@ -117,6 +117,7 @@ export interface SummonResult {
   output: string;
   agentName: string;
   exitCode?: number;
+  pid?: number;
 }
 
 export async function summonAsync(

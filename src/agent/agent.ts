@@ -13,7 +13,7 @@ import { summon } from "./summoner";
 import { DEFAULT_TOOLS, Tool } from "../types/tool";
 import { ExtensionManager } from "../extensions/ExtensionManager";
 import { MeowKernel } from "../kernel/kernel";
-import { QuantumMemory } from "./quantum_memory";
+import { QuantumMemory, MemoryResult } from "./quantum_memory";
 import { QuantumReasoning } from "./quantum_reasoning";
 import { MeowDatabase } from "../kernel/database";
 
@@ -86,8 +86,8 @@ export class Agent {
     this.extensionManager = new ExtensionManager();
     this.kernel = config.kernel;
     this.db = config.db;
-    this.quantumMemory = new QuantumMemory(config.db, config.kernel);
     this.quantumReasoning = new QuantumReasoning();
+    this.quantumMemory = new QuantumMemory(config.db, config.kernel, this.quantumReasoning);
   }
 
   async chat(

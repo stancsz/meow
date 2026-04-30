@@ -182,7 +182,7 @@ export class Orchestrator {
           model: this.agent.model,
           baseUrl: this.agent.baseUrl,
           apiKey: this.agent.apiKey,
-        },
+        } as any,
         mcpManager: this.mcpManager,
         skillManager: this.skillManager,
         kernel: this.agent.kernel,
