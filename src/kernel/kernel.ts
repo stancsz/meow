@@ -101,6 +101,35 @@ export class MeowKernel {
     this.isProcessing = false;
   }
 
+  public updateMissionPulse(pid: number, status: string = "running") {
+    this.push({ type: "SET_STATE", key: `mission_${pid}`, value: {
+      pid,
+      status,
+      last_pulse: new Date().toISOString()
+    }});
+    
+    this.db.getRawDb().prepare(`
+      UPDATE missions 
+      SET last_pulse = CURRENT_TIMESTAMP, status = ? 
+      WHERE pid = ?
+    `).run(status, pid);
+  }
+
+  public registerMission(pid: number, agentName: string, goal: string) {
+    this.db.getRawDb().prepare(`
+      INSERT INTO missions (pid, agent_name, goal, status)
+      VALUES (?, ?, ?, 'running')
+    `).run(pid, agentName, goal);
+
+    this.push({ type: "SET_STATE", key: `mission_${pid}`, value: {
+      pid,
+      agent_name: agentName,
+      goal,
+      status: "running",
+      created_at: new Date().toISOString()
+    }});
+  }
+
   /**
    * Graceful Shutdown: Ensure data is persisted
    */

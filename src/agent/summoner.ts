@@ -1,4 +1,5 @@
 import { execSync, spawn } from "child_process";
+import { MeowKernel } from "../kernel/kernel";
 
 export interface SummonContext {
   goal: string;
@@ -7,6 +8,7 @@ export interface SummonContext {
   attempt?: number;
   existingSkills?: string[];
   monolithBlueprint?: string;
+  kernel?: MeowKernel;
 }
 
 export interface ExternalAgent {
@@ -111,13 +113,31 @@ export async function summonAsync(
       env: process.env,
     });
 
+    const pid = child.pid || Math.floor(Math.random() * 100000);
+    
+    // 1. Register Mission with Kernel
+    if (context.kernel) {
+      context.kernel.registerMission(pid, agent.name, context.goal);
+    }
+
     let stdout = '';
     let stderr = '';
 
-    child.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
-    child.stderr?.on('data', (data: Buffer) => { stderr += data.toString(); });
+    child.stdout?.on('data', (data: Buffer) => { 
+      stdout += data.toString();
+      // 2. Heartbeat Pulse
+      context.kernel?.updateMissionPulse(pid, "running");
+    });
+    
+    child.stderr?.on('data', (data: Buffer) => { 
+      stderr += data.toString();
+      context.kernel?.updateMissionPulse(pid, "running");
+    });
 
     child.on('close', (code: number) => {
+      const status = code === 0 ? "completed" : "failed";
+      context.kernel?.updateMissionPulse(pid, status);
+      
       resolve({
         success: code === 0,
         output: stdout || stderr || 'No output',

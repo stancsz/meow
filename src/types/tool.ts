@@ -238,4 +238,53 @@ export const DEFAULT_TOOLS: Tool[] = [
       }
     },
   },
+  {
+    name: "check_mission_status",
+    description: "Check the status and heartbeat of all active/recent missions. Use this to detect hanged specialists.",
+    execute: async (_: string, agent?: any) => {
+      if (!agent || !agent.db) return "Error: Database not available.";
+      const db = agent.db.getRawDb();
+      const missions = db.prepare(`
+        SELECT pid, agent_name, goal, status, last_pulse, created_at 
+        FROM missions 
+        ORDER BY created_at DESC LIMIT 10
+      `).all();
+      
+      if (missions.length === 0) return "No missions found in history.";
+      
+      let report = "### Swarm Mission Status\n\n";
+      report += "| PID | Specialist | Status | Last Pulse | Goal |\n";
+      report += "|-----|------------|--------|------------|------|\n";
+      missions.forEach((m: any) => {
+        const pulse = new Date(m.last_pulse).getTime();
+        const diff = (Date.now() - pulse) / 1000;
+        const pulseStatus = diff > 300 ? "⚠️ STALLED" : "🟢 ACTIVE";
+        report += `| ${m.pid} | ${m.agent_name} | ${m.status} (${pulseStatus}) | ${m.last_pulse} | ${m.goal.substring(0, 50)}... |\n`;
+      });
+      return report;
+    },
+  },
+  {
+    name: "abort_mission",
+    description: "Kill a hanged mission by PID. Args: pid",
+    execute: async (pidStr: string, agent?: any) => {
+      const pid = parseInt(pidStr.trim());
+      if (isNaN(pid)) return "Error: Invalid PID.";
+      const { execSync } = await import("child_process");
+      try {
+        if (process.platform === "win32") {
+          execSync(`taskkill /F /PID ${pid}`);
+        } else {
+          execSync(`kill -9 ${pid}`);
+        }
+        
+        if (agent?.kernel) {
+          agent.kernel.updateMissionPulse(pid, "aborted");
+        }
+        return `✅ Mission ${pid} aborted successfully.`;
+      } catch (e: any) {
+        return `Error aborting mission ${pid}: ${e.message}`;
+      }
+    },
+  },
 ];

@@ -60,6 +60,18 @@ export class MeowDatabase {
     } catch (e) {
       console.error("Failed to create virtual table vec_memory:", e);
     }
+
+    // missions: track background specialist activity
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS missions (
+        pid INTEGER PRIMARY KEY,
+        agent_name TEXT,
+        goal TEXT,
+        status TEXT DEFAULT 'running', -- running, completed, failed, hanged
+        last_pulse DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
   }
 
   public getRawDb(): Database.Database {
