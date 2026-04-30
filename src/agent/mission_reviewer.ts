@@ -59,6 +59,7 @@ export class MissionReviewer {
     const result = await this.agent.quantumReasoning.solve(decisionSpace, constraints, (msg) => {
       process.stdout.write(`\r${pc.dim("Analyzing Coherence: " + msg)}`);
     });
+    process.stdout.write("\n"); // Clear the inline progress line
 
     // 3. Execution Verification (Async)
     let testResult = "";

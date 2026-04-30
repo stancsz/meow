@@ -68,7 +68,11 @@ export class QuantumReasoning {
     }
 
     const winner = space[bestState % space.length];
-    console.log(pc.green(`\n⚛️ Wavefunction Collapsed: Choice [${bestState % space.length}] with Prob ${maxProb.toFixed(4)}`));
+    if (onPulse) {
+      onPulse(pc.green(`⚛️ Wavefunction Collapsed: Choice [${bestState % space.length}] Prob ${maxProb.toFixed(4)}`));
+    } else {
+      console.log(pc.green(`\n⚛️ Wavefunction Collapsed: Choice [${bestState % space.length}] with Prob ${maxProb.toFixed(4)}`));
+    }
     
     return winner;
   }
@@ -128,7 +132,11 @@ export class QuantumReasoning {
     }
 
     const winner = candidates[bestIdx % candidates.length];
-    console.log(pc.magenta(`\n🌀 Grover Search Collapsed: Index [${bestIdx % candidates.length}] with Prob ${maxProb.toFixed(4)}`));
+    if (onPulse) {
+      onPulse(pc.magenta(`🌀 Grover Search Collapsed: Index [${bestIdx % candidates.length}] Prob ${maxProb.toFixed(4)}`));
+    } else {
+      console.log(pc.magenta(`\n🌀 Grover Search Collapsed: Index [${bestIdx % candidates.length}] with Prob ${maxProb.toFixed(4)}`));
+    }
     return winner;
   }
 }
