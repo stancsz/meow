@@ -1,5 +1,7 @@
 import { MeowDatabase } from "../kernel/database";
 import { MeowKernel } from "../kernel/kernel";
+import { QuantumReasoning } from "./quantum_reasoning";
+import pc from "picocolors";
 
 export interface MemoryResult {
   content: string;
@@ -8,92 +10,60 @@ export interface MemoryResult {
 }
 
 interface DBMemoryRow {
-  id: number;
+  rowid: number;
   content: string;
   metadata: string;
   distance: number;
 }
 
-interface DBVectorRow {
-  embedding: Buffer;
-}
-
 export class QuantumMemory {
   private db: MeowDatabase;
   private kernel: MeowKernel;
+  private reasoning: QuantumReasoning;
   private measuredIds: Set<number> = new Set();
 
-  constructor(db: MeowDatabase, kernel: MeowKernel) {
+  constructor(db: MeowDatabase, kernel: MeowKernel, reasoning: QuantumReasoning) {
     this.db = db;
     this.kernel = kernel;
+    this.reasoning = reasoning;
   }
 
-  /**
-   * Associative Recall with Simulated Amplitude Amplification
-   * Mimics Grover's Algorithm via iterative vector refinement.
-   */
-  public async recall(queryEmbedding: number[], iterations: number = 2): Promise<MemoryResult[]> {
-    let currentEmbedding = new Float32Array(queryEmbedding);
+  public async recall(queryText: string, queryEmbedding: number[]): Promise<MemoryResult[]> {
     const rawDb = this.db.getRawDb();
     
-    let topResult: any = null;
-
-    for (let i = 0; i < iterations; i++) {
-      // Phase Flip + Diffusion Simulation
-      // In a real Grover iteration, we amplify the target state.
-      // Here, we find the closest match and move the query vector towards it (constructive interference).
-      
-      const results = rawDb.prepare(`
-        SELECT 
-          rowid as id, 
-          distance 
-        FROM vec_memory 
-        WHERE embedding MATCH ? 
-        AND k = 1
-        ORDER BY distance 
-      `).all(currentEmbedding) as { id: number; distance: number }[];
-
-      if (results.length === 0) break;
-      
-      topResult = results[0];
-      
-      // Simulation of constructive interference: Move query towards target
-      // This increases the "probability amplitude" of the target match.
-      const targetVec = rawDb.prepare("SELECT embedding FROM vec_memory WHERE rowid = ?").get(topResult.id) as DBVectorRow | undefined;
-      if (targetVec) {
-        const targetArr = new Float32Array(targetVec.embedding);
-        for (let j = 0; j < currentEmbedding.length; j++) {
-          currentEmbedding[j] = currentEmbedding[j] * 0.7 + targetArr[j] * 0.3;
-        }
-      }
-    }
-
-    // Final Measurement (Collapse)
-    const finalResults = rawDb.prepare(`
+    // 1. Fetch Superposition of Candidates (Classical VDB)
+    const candidates = rawDb.prepare(`
       SELECT 
-        v.rowid as id,
+        v.rowid,
         d.content,
         d.metadata,
         v.distance
       FROM vec_memory v
       JOIN vector_memory_data d ON v.rowid = d.id
       WHERE v.embedding MATCH ?
-      AND k = 5
+      AND k = 10
       AND v.rowid NOT IN (${Array.from(this.measuredIds).join(',') || -1})
       ORDER BY v.distance
-    `).all(currentEmbedding) as DBMemoryRow[];
+    `).all(new Float32Array(queryEmbedding)) as DBMemoryRow[];
 
-    // No-Cloning Theorem: Destructive Read
-    // Once measured, the memory is collapsed and cannot be cloned/read again in this state.
-    for (const res of finalResults) {
-      this.measuredIds.add(res.id);
-    }
+    if (candidates.length === 0) return [];
 
-    return finalResults.map(r => ({
-      content: r.content,
-      metadata: JSON.parse(r.metadata),
-      distance: r.distance
-    }));
+    // 2. Grover Amplitude Amplification (Real Circuit Simulation)
+    const winner = await this.reasoning.groverSearch(candidates, queryText, (msg) => {
+      process.stdout.write(`\r${pc.magenta(msg)}`);
+    });
+
+    if (!winner) return [];
+
+    // 3. No-Cloning Theorem: Destructive Read
+    // Once measured, the memory is collapsed and removed from future superposition turns.
+    this.measuredIds.add(winner.rowid);
+
+    return [{
+      content: winner.content,
+      metadata: JSON.parse(winner.metadata),
+      distance: winner.distance
+    }];
   }
 
   /**

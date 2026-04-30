@@ -1,4 +1,5 @@
 import { MeowDatabase } from "./database";
+import pc from "picocolors";
 
 export type KernelAction = 
   | { type: "SET_STATE"; key: string; value: any }
@@ -12,6 +13,7 @@ export class MeowKernel {
   private drainInterval: number = 100; // ms
   private batchSize: number = 50;
   private maxRetries: number = 3;
+  private monolithEntanglement: Map<number, number[]> = new Map(); // Spooky Action tracking
 
   constructor(db: MeowDatabase) {
     this.db = db;
@@ -108,25 +110,50 @@ export class MeowKernel {
       last_pulse: new Date().toISOString()
     }});
     
+    // Also update the persistent missions table
     this.db.getRawDb().prepare(`
       UPDATE missions 
       SET last_pulse = CURRENT_TIMESTAMP, status = ? 
       WHERE pid = ?
     `).run(status, pid);
+
+    // Spooky Action at a Distance: Entanglement Propagation
+    const entangled = this.monolithEntanglement.get(pid);
+    if (entangled && (status === "completed" || status === "failed")) {
+      entangled.forEach(partnerPid => {
+        console.log(pc.magenta(`\n🌌 [SPOOKY ACTION] Mission ${pid} collapsed to ${status}. Propagating interference to Partner ${partnerPid}...`));
+        // Push an interference state to the partner's Hamiltonian logic
+        this.push({ type: "SET_STATE", key: `interference_${partnerPid}`, value: {
+          sourcePid: pid,
+          sourceStatus: status,
+          shift: status === "completed" ? 0.2 : -0.2 // Constructive or Destructive interference
+        }});
+      });
+    }
   }
 
-  public registerMission(pid: number, agentName: string, goal: string) {
+  public registerMission(pid: number, agentName: string, goal: string, entangledWith?: number[]) {
     this.db.getRawDb().prepare(`
       INSERT INTO missions (pid, agent_name, goal, status)
       VALUES (?, ?, ?, 'running')
     `).run(pid, agentName, goal);
+
+    if (entangledWith && entangledWith.length > 0) {
+      this.monolithEntanglement.set(pid, entangledWith);
+      // Ensure reciprocal entanglement (Bell State)
+      entangledWith.forEach(p => {
+        const existing = this.monolithEntanglement.get(p) || [];
+        this.monolithEntanglement.set(p, [...existing, pid]);
+      });
+    }
 
     this.push({ type: "SET_STATE", key: `mission_${pid}`, value: {
       pid,
       agent_name: agentName,
       goal,
       status: "running",
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      entangled: !!entangledWith
     }});
   }
 

@@ -175,15 +175,29 @@ export async function summonAsync(
         success: false,
         output: err.message,
         agentName: agent.name,
+        pid
       });
     });
   });
 }
 
-export async function summonParallel(
-  agents: Array<{ name: keyof typeof SPECIALISTS; context: SummonContext }>
-): Promise<SummonResult[]> {
-  return Promise.all(agents.map(a => summonAsync(a.name, a.context)));
+export async function summonParallel(agents: Array<{ name: string, context: SummonContext }>): Promise<SummonResult[]> {
+  const promises = agents.map(a => summonAsync(a.name as any, a.context));
+  const results = await Promise.all(promises);
+  
+  // Spooky Action at a Distance: Entangle the PIDs of the swarm
+  const pids = results.map(r => r.pid).filter((pid): pid is number => !!pid);
+  if (pids.length > 1 && agents[0].context.kernel) {
+    const kernel = agents[0].context.kernel;
+    pids.forEach(pid => {
+      const others = pids.filter(p => p !== pid);
+      // This is where we would normally call registerMission, but it's already called in summonAsync.
+      // So we'll update the entanglement map directly or trigger a 'Bell State' sync.
+      kernel.updateMissionPulse(pid, "entangled"); 
+    });
+  }
+
+  return results;
 }
 
 export async function summon(agentName: keyof typeof SPECIALISTS, context: SummonContext): Promise<string> {
