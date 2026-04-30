@@ -404,14 +404,15 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
     // RECALLED QUANTUM CONTEXT (Transient Injection)
     // We fetch memories based on the most recent user messages to provide context
     // without bloating the permanent history.
-    const lastUserMessage = [...this.messages].reverse().find(m => m.role === "user");
-    if (lastUserMessage) {
-      const relevantMemories = await this.quantumMemory.recall(this.mockEmbedding(lastUserMessage.content));
-      if (relevantMemories.length > 0) {
-        prompt += `\n\n# RECALLED QUANTUM CONTEXT (Associative Knowledge):\n`;
-        prompt += relevantMemories.map(m => `- ${m.content}`).join("\n");
-        prompt += `\n(Note: These are historical snippets retrieved from the Knowledge Base.)\n`;
-      }
+    const lastUserMessage = this.messages.filter(m => m.role === "user").pop();
+    let relevantMemories: MemoryResult[] = [];
+    if (lastUserMessage && lastUserMessage.content.trim()) {
+      relevantMemories = await this.quantumMemory.recall(lastUserMessage.content, this.mockEmbedding(lastUserMessage.content));
+    }
+    if (relevantMemories.length > 0) {
+      prompt += `\n\n# RECALLED QUANTUM CONTEXT (Associative Knowledge):\n`;
+      prompt += relevantMemories.map(m => `- ${m.content}`).join("\n");
+      prompt += `\n(Note: These are historical snippets retrieved from the Knowledge Base.)\n`;
     }
 
     // Add file contents (Selective Pruning)
@@ -440,6 +441,7 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
     const words = text.toLowerCase().split(/\W+/);
     
     words.forEach(word => {
+      if (!word) return;
       // Create a stable hash for each word
       let hash = 0;
       for (let i = 0; i < word.length; i++) {
@@ -450,6 +452,11 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
       const idx = Math.abs(hash) % 1536;
       arr[idx] += 1;
     });
+
+    // Ensure non-zero magnitude (Quantum Noise Floor)
+    if (arr.every(v => v === 0)) {
+      arr[0] = 0.0001; 
+    }
 
     // Normalize
     const magnitude = Math.sqrt(arr.reduce((sum, val) => sum + val * val, 0)) || 1;
