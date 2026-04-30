@@ -1,1 +1,5 @@
+- [.context/MISSION.md](../.context/MISSION.md) — The project's "North Star" and core values.
+- [.context/ARCHITECTURE.md](../.context/ARCHITECTURE.md) — Technical layout and dependency map.
+- [.context/SOP.md](../.context/SOP.md) — Standard Operating Procedures to reduce hallucinations.
+- [.context/HONESTY.md](../.context/HONESTY.md) — Behavioral standards for honest, verified completion.
 - [karpathy-guidelines](karpathy-guidelines.md) — coding guidelines to reduce common LLM mistakes
