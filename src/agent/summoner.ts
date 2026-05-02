@@ -33,6 +33,7 @@ RESOURCES: ${ctx.files.join(", ")}
 ${blueprint}
 
 INSTRUCTIONS:
+0. BEFORE STARTING: Run 'npx skills find <relevant-topic>' to check if a skill exists that can help with this task. If found, use or recommend it.
 1. FIX the immediate issue and ensure all tests pass.
 2. DO NOT TOUCH 'quantum_*.ts' files unless the goal specifically asks for it.
 3. DO NOT COMMIT: MEOW is the Expert Taster and will review/commit your work.

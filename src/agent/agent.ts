@@ -10,7 +10,7 @@ import { McpManager } from "./mcp";
 import { resolve } from "path";
 
 import { summon } from "./summoner";
-import { DEFAULT_TOOLS, Tool } from "../types/tool";
+import { DEFAULT_TOOLS } from "../types/tool";
 import { ExtensionManager } from "../extensions/ExtensionManager";
 import { MeowKernel } from "../kernel/kernel";
 import { QuantumMemory, MemoryResult } from "./quantum_memory";
@@ -258,7 +258,7 @@ export class Agent {
     if (this._apiKey && (this._baseUrl.includes("anthropic"))) {
       const url = this._baseUrl.endsWith("/v1/messages") ? this._baseUrl : `${this._baseUrl}/v1/messages`;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+      const timeout = setTimeout(() => controller.abort(), 120000);
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -346,6 +346,15 @@ Available Tools:
 - activate_extension | <name> : Load a specialized extension into the session
 - archive_context          : Explicitly offload current history to Knowledge Base (Use when context is bloated)
 - verify_mission | goal|test : Review and verify if the work is done properly (MANDATORY after 'summon')
+- use_skill | <name> : Activate a specialist skill (run 'use_skill | list' to see available skills)
+
+# SKILLS ECOSYSTEM (ALWAYS CHECK FIRST):
+Before delegating to Level-2 specialists (summon), ALWAYS check if a skill exists:
+- Run 'npx skills find <relevant-topic>' to search skills.sh ecosystem
+- Skills from 'vercel-labs/agent-skills' and 'anthropics/skills' are battle-tested (100K+ installs)
+- Common categories: testing, deployment, documentation, code quality, design, devops
+- If a relevant skill exists, install it: npx skills add <owner/repo@skill> -g -y
+- Only summon a specialist if no skill can help with the task.
 
 Example: TOOL: verify_mission | Fixed the race condition in the kernel | npm test
 
