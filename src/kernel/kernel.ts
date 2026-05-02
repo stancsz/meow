@@ -1,4 +1,3 @@
-import { MeowDatabase } from "./database";
 import { DatabasePort } from "../extensions/database/manifest";
 import pc from "picocolors";
 import fs from "fs";
