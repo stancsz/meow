@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 // MEOW - Lightweight AI Coding Agent
 
 import { config } from "./config/env";

@@ -2,6 +2,7 @@ import { Extension } from './Extension';
 import { Tool } from '../types/tool';
 import { globby } from 'globby';
 import { resolve } from 'path';
+import { pathToFileURL } from 'url';
 
 export interface ExtensionManifest {
   name: string;
@@ -37,7 +38,8 @@ export class ExtensionManager {
         // We do a "shallow" import just to get the name/description if possible,
         // or we infer it from the directory structure for now to avoid full execution.
         // For simplicity in this demo, we'll do a full import but store it as a manifest.
-        const module = await import(file);
+        const fileUrl = pathToFileURL(file).href;
+        const module = await import(fileUrl);
         const extension: Extension = module.default || module.extension;
         
         if (extension && extension.name) {
@@ -66,7 +68,8 @@ export class ExtensionManager {
     }
 
     try {
-      const module = await import(manifest.path);
+      const manifestUrl = pathToFileURL(manifest.path).href;
+      const module = await import(manifestUrl);
       const extension: Extension = module.default || module.extension;
       this.activeExtensions.set(name, extension);
       console.log(`🔌 Activated extension: ${extension.name}`);

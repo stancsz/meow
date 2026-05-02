@@ -8,12 +8,12 @@
     "meow": "./src/index.ts"
   },
   "scripts": {
-    "start": "bun run src/index.ts",
-    "dev": "bun run src/index.ts",
+    "start": "tsx src/index.ts",
+    "dev": "tsx src/index.ts",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun run lint",
-    "prepare": "bunx husky install"
+    "check": "npm run typecheck && npm run lint",
+    "prepare": "husky install"
   },
   "dependencies": {
     "@clack/prompts": "1.2.0",
@@ -38,6 +38,7 @@
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.57.0",
     "husky": "^9.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0"
   }
 }

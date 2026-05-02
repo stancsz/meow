@@ -16,6 +16,7 @@ import { MeowKernel } from "../kernel/kernel";
 import { QuantumMemory, MemoryResult } from "./quantum_memory";
 import { QuantumReasoning } from "./quantum_reasoning";
 import { MeowDatabase } from "../kernel/database";
+import { config } from "../config/env";
 
 export interface AgentConfig {
   model: string;
@@ -479,7 +480,8 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
    * Maps similar text to similar vector spaces without a full model.
    */
   private mockEmbedding(text: string): number[] {
-    const arr = new Array(1536).fill(0);
+    const dim = config.embeddingDimension;
+    const arr = new Array(dim).fill(0);
     const words = text.toLowerCase().split(/\W+/);
     
     words.forEach(word => {
@@ -490,8 +492,8 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
         hash = (hash << 5) - hash + word.charCodeAt(i);
         hash |= 0; 
       }
-      // Distribute hash into the 1536-dim vector
-      const idx = Math.abs(hash) % 1536;
+      // Distribute hash into the vector
+      const idx = Math.abs(hash) % dim;
       arr[idx] += 1;
     });
 

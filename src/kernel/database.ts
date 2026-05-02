@@ -1,21 +1,25 @@
-import { Database } from "bun:sqlite";
+import Database from "better-sqlite3";
 import { join } from "path";
+import { createRequire } from "module";
+import { config } from "../config/env";
+
+const require = createRequire(import.meta.url);
 
 export class MeowDatabase {
-  private db: Database;
+  private db: Database.Database;
 
   constructor(dbPath: string = "meow.db") {
     this.db = new Database(dbPath);
 
     // Physical Mandate: WAL mode for concurrent reads
-    this.db.exec("PRAGMA journal_mode = WAL");
-    this.db.exec("PRAGMA synchronous = NORMAL");
+    this.db.pragma("journal_mode = WAL");
+    this.db.pragma("synchronous = NORMAL");
 
     // Load sqlite-vec extension for vector search (cross-platform)
     try {
       // sqlite-vec package handles platform detection automatically
       const vec = require("sqlite-vec");
-      vec.load(this.db);
+      this.db.loadExtension(vec.getLoadablePath());
       console.log("✓ sqlite-vec extension loaded");
     } catch (e) {
       console.warn("⚠️ Could not load sqlite-vec extension:", e);
@@ -45,15 +49,35 @@ export class MeowDatabase {
       );
     `);
 
-    // sqlite-vec virtual table for embeddings
+    // sqlite-vec virtual table for embeddings with dynamic dimension support
+    const dimension = config.embeddingDimension;
     try {
-      this.db.exec(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS vec_memory USING vec0(
-          embedding float[1536]
-        );
-      `);
+      // Check if table exists and what its dimension is
+      const tableInfo = this.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'vec_memory'").get() as { sql: string } | undefined;
+      
+      if (tableInfo) {
+        const match = tableInfo.sql.match(/float\[(\d+)\]/);
+        const existingDim = match ? parseInt(match[1]) : null;
+        
+        if (existingDim !== dimension) {
+          console.warn(`⚠️ Embedding dimension mismatch (found ${existingDim}, expected ${dimension}). Recreating vec_memory table...`);
+          this.db.exec("DROP TABLE vec_memory");
+          this.db.exec(`
+            CREATE VIRTUAL TABLE vec_memory USING vec0(
+              embedding float[${dimension}]
+            );
+          `);
+        }
+      } else {
+        this.db.exec(`
+          CREATE VIRTUAL TABLE vec_memory USING vec0(
+            embedding float[${dimension}]
+          );
+        `);
+      }
+      console.log(`✓ vec_memory table ready (dimension: ${dimension})`);
     } catch (e) {
-      console.warn("⚠️ Could not create vec_memory virtual table:", e);
+      console.warn("⚠️ Could not initialize vec_memory virtual table:", e);
     }
 
     // missions: track background specialist activity
@@ -69,7 +93,7 @@ export class MeowDatabase {
     `);
   }
 
-  public getRawDb(): Database {
+  public getRawDb(): Database.Database {
     return this.db;
   }
 

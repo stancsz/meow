@@ -11,6 +11,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { resolve, dirname } from "path";
 import pc from "picocolors";
 import yaml from "js-yaml";
+import { config } from "../config/env";
 
 export interface HarvestContext {
   goal: string;
@@ -77,7 +78,8 @@ export class Harvester {
   private async recallRecentMemories(goal: string): Promise<string[]> {
     // Use a simple embedding proxy for recall
     const mockEmbedding = (text: string): number[] => {
-      const arr = new Array(1536).fill(0);
+      const dim = config.embeddingDimension;
+      const arr = new Array(dim).fill(0);
       const words = text.toLowerCase().split(/\W+/);
       words.forEach(word => {
         if (!word) return;
@@ -86,7 +88,7 @@ export class Harvester {
           hash = (hash << 5) - hash + word.charCodeAt(i);
           hash |= 0;
         }
-        const idx = Math.abs(hash) % 1536;
+        const idx = Math.abs(hash) % dim;
         arr[idx] += 1;
       });
       if (arr.every(v => v === 0)) arr[0] = 0.0001;

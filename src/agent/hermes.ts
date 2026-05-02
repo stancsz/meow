@@ -21,6 +21,7 @@ import { QuantumMemory, MemoryResult } from "./quantum_memory";
 import { QuantumReasoning } from "./quantum_reasoning";
 import { MeowDatabase } from "../kernel/database";
 import { Harvester, HarvestResult } from "./harvester";
+import { config } from "../config/env";
 
 export interface HermesConfig {
   model: string;
@@ -373,7 +374,8 @@ new code
   }
 
   private mockEmbedding(text: string): number[] {
-    const arr = new Array(1536).fill(0);
+    const dim = config.embeddingDimension;
+    const arr = new Array(dim).fill(0);
     const words = text.toLowerCase().split(/\W+/);
 
     words.forEach(word => {
@@ -383,7 +385,7 @@ new code
         hash = (hash << 5) - hash + word.charCodeAt(i);
         hash |= 0;
       }
-      const idx = Math.abs(hash) % 1536;
+      const idx = Math.abs(hash) % dim;
       arr[idx] += 1;
     });
 

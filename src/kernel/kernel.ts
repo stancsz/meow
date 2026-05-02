@@ -137,7 +137,8 @@ export class MeowKernel {
 
     // Fork a new meow process
     const { spawn } = require('child_process');
-    const newPid = spawn('bun', ['src/index.ts'], {
+    const shell = process.platform === 'win32';
+    const newPid = spawn(shell ? 'npx.cmd' : 'npx', ['tsx', 'src/index.ts'], {
       cwd: process.cwd(),
       detached: true,
       stdio: 'inherit'
