@@ -1,8 +1,10 @@
 import { exec } from "child_process";
 import { promisify } from "util";
+import { readFile } from "fs/promises";
 import pc from "picocolors";
 import { Agent } from "./agent";
 import { ReasoningConstraint } from "./quantum_reasoning";
+import yaml from "js-yaml";
 
 const execAsync = promisify(exec);
 
@@ -145,6 +147,71 @@ Shadow Audit: PASS.`;
 The work is NOT complete.
 REASON: ${reason}
 ERROR: ${testResult.substring(0, 500)}`;
+    }
+  }
+
+  /**
+   * Skill Verification: Ensure harvested skills are actually functional.
+   * This is called after a skill is created to validate its quality.
+   */
+  public async verifySkill(skillPath: string): Promise<{ valid: boolean; issues: string[] }> {
+    console.log(pc.bold(pc.magenta(`\n🎯 [SKILL VERIFICATION] Verifying skill at: ${skillPath}`)));
+    
+    const issues: string[] = [];
+    
+    try {
+      // 1. Parse and validate SKILL.md structure
+      const content = await readFile(skillPath, "utf-8");
+      const sections = content.split("---");
+      
+      if (sections.length < 3) {
+        issues.push("Missing frontmatter or body sections");
+        return { valid: false, issues };
+      }
+      
+      // 2. Validate frontmatter has required fields
+      const frontmatter = yaml.load(sections[1]) as any;
+      if (!frontmatter.name) issues.push("Missing 'name' in frontmatter");
+      if (!frontmatter.description) issues.push("Missing 'description' in frontmatter");
+      
+      // 3. Check body has meaningful content (not just placeholders)
+      const body = sections.slice(2).join("---").trim();
+      if (body.length < 100) {
+        issues.push("Skill body is too short - likely placeholder content");
+      }
+      
+      // Placeholder check
+      const placeholders = ["<!--", "-->", "TODO", "Add any"];
+      const hasPlaceholders = placeholders.some(p => body.includes(p));
+      if (hasPlaceholders) {
+        issues.push("Skill contains placeholder content that should be replaced");
+      }
+      
+      // 4. Verify examples exist and are non-trivial
+      const hasExamples = body.includes("## Examples") && body.length > body.indexOf("## Examples") + 50;
+      if (!hasExamples) {
+        issues.push("Missing or inadequate Examples section");
+      }
+      
+      // 5. Verify verification steps exist
+      const hasVerification = body.includes("## Verification");
+      if (!hasVerification) {
+        issues.push("Missing Verification section");
+      }
+      
+      const valid = issues.length === 0;
+      
+      if (valid) {
+        console.log(pc.green("✅ [SKILL VERIFICATION] Skill is valid and functional."));
+      } else {
+        console.log(pc.red(`❌ [SKILL VERIFICATION] Found ${issues.length} issues:`));
+        issues.forEach(issue => console.log(pc.yellow(`  - ${issue}`)));
+      }
+      
+      return { valid, issues };
+    } catch (e: any) {
+      issues.push(`Failed to read/parse skill file: ${e.message}`);
+      return { valid: false, issues };
     }
   }
 }

@@ -1,5 +1,7 @@
 import { execSync, spawn } from "child_process";
 import { MeowKernel } from "../kernel/kernel";
+import { Harvester } from "./harvester";
+import { QuantumMemory } from "./quantum_memory";
 
 export interface SummonContext {
   goal: string;
@@ -108,6 +110,100 @@ RESOURCES: ${ctx.files.join(", ")}
 - SIMPLICITY FIRST: Clean, readable test code.
 - GOAL-DRIVEN: Your success is defined by test coverage and documentation clarity.`;
       
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+    }
+  },
+  "claude-hermes": {
+    name: "Hermes Agent",
+    description: "[PARITY] Specializes in self-evolving skills. Uses Claude Code with Hermes-style prompts (hermes-agent CLI not available).",
+    getCommand: (ctx) => {
+      const blueprint = ctx.monolithBlueprint || "Maintain surgical changes.";
+      const message = `I am MEOW (Meta-Orchestrator). You are HERMES - the Skill Evolution Specialist.
+GOAL: ${ctx.goal}
+FAILURE: ${ctx.lastError || "None reported"}
+RESOURCES: ${ctx.files.join(", ")}
+
+# MONOLITH BLUEPRINT (Rules of the House):
+${blueprint}
+
+HERMES SPECIALTY: Self-evolving skills and complex workflow codification.
+
+INSTRUCTIONS:
+1. Analyze the goal and identify the core workflow pattern
+2. Implement the solution following KARPATHY guidelines
+3. RECURSIVE IMPROVEMENT: Extract the workflow into a reusable SKILL.md in 'skills/'
+4. DO NOT COMMIT: MEOW is the Expert Taster and will review/commit your work
+5. REPORT: Summarize changes, the new skill created, and how to verify
+
+# KARPATHY GUIDELINES:
+- THINK BEFORE CODING: State assumptions explicitly
+- SIMPLICITY FIRST: Minimum code that solves the problem
+- SURGICAL CHANGES: Touch only what must, match existing style
+- GOAL-DRIVEN: Define success criteria before starting`;
+
+      // Hermes uses Claude Code with specialized prompts for skill evolution
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+    }
+  },
+  "claude-browseros": {
+    name: "BrowserOS",
+    description: "Expert at web automation, research, and GUI-based web interaction. Uses browseros-cli with MCP tools.",
+    getCommand: (ctx) => {
+      // BrowserOS CLI doesn't have 'chat' - it uses MCP or direct commands
+      // We use MCP tools via claude CLI to interact with browseros-cli server
+      const message = `I am MEOW (Meta-Orchestrator). You are the WEB SPECIALIST using BrowserOS MCP.
+GOAL: ${ctx.goal}
+RESOURCES: ${ctx.files.join(", ")}
+
+# BROWSEROS CAPABILITIES:
+- Navigate to URLs, extract page content, take screenshots
+- Fill forms, click elements, scroll, extract links
+- Handle dialogs, uploads, downloads
+- Multi-tab management
+
+INSTRUCTIONS:
+1. Use mcp__browseros__new_hidden_page to open URLs
+2. Use mcp__browseros__get_page_content to extract text
+3. Use mcp__browseros__ss for screenshots
+4. If data needs saving, put it in project root
+5. REPORT: Summarize actions taken and results found
+
+# EXAMPLE WORKFLOW:
+- Open: claude mcp call mcp__browseros__new_hidden_page --url "https://example.com" --hidden true
+- Get content: claude mcp call mcp__browseros__get_page_content --page <pageId>
+- Take screenshot: claude mcp call mcp__browseros__ss --page <pageId>`;
+
+      // BrowserOS works through MCP tools with Claude Code
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+    }
+  },
+  eigent: {
+    name: "Eigent AI",
+    description: "Multi-agent workforce via native HTTP integration with Eigent desktop app. Use EigentClient for parallel task execution.",
+    getCommand: (ctx) => {
+      // Eigent now has native integration via EigentClient (eigent_client.ts)
+      // This fallback uses Claude Code + BrowserOS MCP for web-based parallel tasks
+      const message = `I am MEOW (Meta-Orchestrator). You are EIGENT - the Multi-Agent Desktop Workforce.
+GOAL: ${ctx.goal}
+RESOURCES: ${ctx.files.join(", ")}
+
+# EIGENT CAPABILITIES:
+- Parallel task execution using multiple agents
+- Native HTTP integration with Eigent desktop app (localhost:3001)
+- Web automation via BrowserOS MCP
+- Desktop workflow automation
+
+INSTRUCTIONS:
+1. Check if EigentClient is available for native task execution
+2. If native unavailable, use BrowserOS MCP for web-based parallel tasks
+3. Aggregate results and handle dependencies
+4. DO NOT COMMIT: MEOW is the Expert Taster and will review/commit
+5. REPORT: Summarize parallel tasks executed and final aggregated results
+
+# KARPATHY GUIDELINES:
+- THINK BEFORE CODING: Plan parallelization strategy
+- SIMPLICITY FIRST: Minimize redundant parallel tasks`;
+
       return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
     }
   }
@@ -236,6 +332,24 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
         throw new Error("Claude Code not found.");
       }
     }
+    if (agentName === "claude-hermes") {
+      // Hermes now uses Claude Code as backend - no separate installation needed
+      // Just verify Claude is available
+      try {
+        execSync("claude --version", { stdio: "ignore" });
+      } catch (e) {
+        console.log("⚠️ Hermes Agent requires Claude Code. Please run 'use_skill | setup' to install it.");
+        throw new Error("Claude Code not found - Hermes backend unavailable.");
+      }
+    }
+    if (agentName === "claude-browseros") {
+      try {
+        execSync("browseros-cli status", { stdio: "ignore" });
+      } catch (e) {
+        console.log("⚠️ BrowserOS CLI not found or not connected. Run 'npm install -g browseros-cli' and 'browseros-cli init'.");
+        throw new Error("BrowserOS not found.");
+      }
+    }
     execSync(command, { stdio: "inherit", cwd: process.cwd() });
     return `✅ ${agent.name} has completed the mission. MEOW is resuming control and analyzing changes.`;
   } catch (error: any) {
@@ -245,4 +359,26 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
     }
     return `❌ Escalation failed. ${agent.name} error: ${error instanceof Error ? error.message : String(error)}`;
   }
+};
+
+/**
+ * Summon the Harvester specialist to distill mission patterns into skills.
+ * This is called after a mission is marked "COHERENT" for complex goals.
+ */
+export async function summonHarvester(
+  goal: string, 
+  complexity: "low" | "medium" | "high",
+  quantumMemory: QuantumMemory,
+  successfulPatterns: string[] = []
+): Promise<{ success: boolean; skillPath?: string; skillName?: string; error?: string }> {
+  const harvester = new Harvester(quantumMemory);
+  
+  const ctx = {
+    goal,
+    complexity,
+    sessionLogs: [],
+    successfulPatterns,
+  };
+  
+  return harvester.harvest(ctx);
 }
