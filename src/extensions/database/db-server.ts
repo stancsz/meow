@@ -138,15 +138,15 @@ class DbServer {
       switch (method) {
         case "query": {
           const [sql, args] = params ?? [];
+          const callArgs = this.deserializeParams(args);
           const stmt = this.db.prepare(sql);
-          const callArgs = Array.isArray(args) && args.length > 0 ? args : undefined;
           result = callArgs ? stmt.all(...callArgs) : stmt.all();
           break;
         }
         case "execute": {
           const [sql, args] = params ?? [];
+          const callArgs = this.deserializeParams(args);
           const stmt = this.db.prepare(sql);
-          const callArgs = Array.isArray(args) && args.length > 0 ? args : undefined;
           const runResult = callArgs ? stmt.run(...callArgs) : stmt.run();
           result = {
             changes: runResult.changes,
@@ -229,6 +229,23 @@ class DbServer {
 
     transaction(actions);
     return { processed: actions.length, errors };
+  }
+
+  /**
+   * Reconstruct typed arrays from the portable serialization produced by deepSerialize.
+   * Handles the { __typed_array__: true, dtype, data, len } format.
+   */
+  private deserializeParams(args: any): any[] | undefined {
+    if (!Array.isArray(args) || args.length === 0) return undefined;
+    return args.map((arg: any) => {
+      if (arg && arg.__typed_array__ === true) {
+        const buf = Buffer.from(arg.data, "base64");
+        if (arg.dtype === "float32") {
+          return new Float32Array(buf.buffer, buf.byteOffset, arg.len);
+        }
+      }
+      return arg;
+    });
   }
 
   private startListening() {

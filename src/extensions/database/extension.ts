@@ -89,10 +89,8 @@ export class DatabaseExtension implements DatabasePort {
     return new Promise((resolve, reject) => {
       const id = nextId();
       this.pending.set(id, resolve);
-      // Convert Float32Array to plain arrays for safe JSON serialization over IPC
-      const serializedParams = params?.map(p =>
-        p instanceof Float32Array ? Array.from(p) : p
-      );
+      // Deep-convert Float32Array to plain arrays for safe JSON serialization over IPC
+      const serializedParams = this.deepSerialize(params);
       const request = JSON.stringify({ id, method, params: serializedParams });
       this.proc.stdin?.write(request + "\n");
 
@@ -138,6 +136,30 @@ export class DatabaseExtension implements DatabasePort {
       // Server may already be closing
     }
     this.proc.kill();
+  }
+
+  /**
+   * Recursively converts Float32Array/Float64Array to portable form.
+   * SQLite's vec0 MATCH requires a typed array, but JSON over stdio can't transmit
+   * typed arrays directly. We encode as base64 with a type marker, then decode
+   * on the server side.
+   */
+  private deepSerialize(value: any): any {
+    if (value instanceof Float32Array || value instanceof Float64Array) {
+      const b64 = Buffer.from(value.buffer).toString("base64");
+      return { __typed_array__: true, dtype: "float32", data: b64, len: value.length };
+    }
+    if (Array.isArray(value)) {
+      return value.map(item => this.deepSerialize(item));
+    }
+    if (value !== null && typeof value === "object") {
+      const result: Record<string, any> = {};
+      for (const [k, v] of Object.entries(value)) {
+        result[k] = this.deepSerialize(v);
+      }
+      return result;
+    }
+    return value;
   }
 }
 
