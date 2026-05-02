@@ -1,6 +1,6 @@
-import { MeowDatabase } from "../kernel/database";
 import { MeowKernel } from "../kernel/kernel";
 import { QuantumReasoning } from "./quantum_reasoning";
+import { DatabasePort } from "../extensions/database/manifest";
 import pc from "picocolors";
 
 export interface MemoryResult {
@@ -17,25 +17,24 @@ interface DBMemoryRow {
 }
 
 export class QuantumMemory {
-  private db: MeowDatabase;
+  private db: DatabasePort;
   private kernel: MeowKernel;
   private reasoning: QuantumReasoning;
   private measuredIds: Set<number> = new Set();
 
-  constructor(db: MeowDatabase, kernel: MeowKernel, reasoning: QuantumReasoning) {
+  constructor(db: DatabasePort, kernel: MeowKernel, reasoning: QuantumReasoning) {
     this.db = db;
     this.kernel = kernel;
     this.reasoning = reasoning;
   }
 
   public async recall(queryText: string, queryEmbedding: number[]): Promise<MemoryResult[]> {
-    const rawDb = this.db.getRawDb();
-
     // Check vec_memory table exists and has data
     let candidates: DBMemoryRow[] = [];
     try {
-      candidates = rawDb.prepare(`
-        SELECT
+      const notInClause = Array.from(this.measuredIds).join(',') || -1;
+      candidates = await this.db.query<DBMemoryRow>(
+        `SELECT
           v.rowid,
           d.content,
           d.metadata,
@@ -44,9 +43,10 @@ export class QuantumMemory {
         JOIN vector_memory_data d ON v.rowid = d.id
         WHERE v.embedding MATCH ?
         AND k = 10
-        AND v.rowid NOT IN (${Array.from(this.measuredIds).join(',') || -1})
-        ORDER BY v.distance
-      `).all(new Float32Array(queryEmbedding)) as DBMemoryRow[];
+        AND v.rowid NOT IN (${notInClause})
+        ORDER BY v.distance`,
+        [new Float32Array(queryEmbedding)]
+      );
     } catch (e) {
       // vec_memory might not be available or empty
       return [];

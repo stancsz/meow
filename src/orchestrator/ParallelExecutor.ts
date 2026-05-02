@@ -8,7 +8,7 @@ import { McpManager } from '../agent/mcp';
 import { SkillManager } from '../agent/skills';
 import { DEFAULT_TOOLS } from '../types/tool';
 import { MeowKernel } from '../kernel/kernel';
-import { MeowDatabase } from '../kernel/database';
+import { DatabasePort } from '../extensions/database/manifest';
 
 export interface WorkerConfig {
   workerId: string;
@@ -16,7 +16,7 @@ export interface WorkerConfig {
   mcpManager?: McpManager;
   skillManager?: SkillManager;
   kernel: MeowKernel;
-  db: MeowDatabase;
+  db: DatabasePort;
 }
 
 export interface ExecutorConfig {

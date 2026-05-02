@@ -17,6 +17,7 @@ import { QuantumMemory, MemoryResult } from "./quantum_memory";
 import { QuantumReasoning } from "./quantum_reasoning";
 import { MeowDatabase } from "../kernel/database";
 import { config } from "../config/env";
+import { DatabasePort } from "../extensions/database/manifest";
 
 export interface AgentConfig {
   model: string;
@@ -25,7 +26,7 @@ export interface AgentConfig {
   maxRetries?: number;
   files?: string[];
   kernel: MeowKernel;
-  db: MeowDatabase;
+  db: DatabasePort | MeowDatabase;
 }
 
 export interface EditBlock {
@@ -81,12 +82,12 @@ export class Agent {
     if (config.files) {
       config.files.forEach(f => this.files.add(f));
     }
-    
+
     this.skillManager = new SkillManager();
     this.mcpManager = new McpManager();
     this.extensionManager = new ExtensionManager();
     this.kernel = config.kernel;
-    this.db = config.db;
+    this.db = config.db as any;
     this.quantumReasoning = new QuantumReasoning();
     this.quantumMemory = new QuantumMemory(config.db, config.kernel, this.quantumReasoning);
   }

@@ -1,15 +1,16 @@
 import { MeowDatabase } from "./database";
+import { DatabasePort } from "../extensions/database/manifest";
 import pc from "picocolors";
 import fs from "fs";
 import path from "path";
 
-export type KernelAction = 
+export type KernelAction =
   | { type: "SET_STATE"; key: string; value: any }
   | { type: "STORE_VECTOR"; content: string; embedding: number[]; metadata: any }
   | { type: "DELETE_STATE"; key: string };
 
 export class MeowKernel {
-  private db: MeowDatabase;
+  private db: DatabasePort;
   private queue: KernelAction[] = [];
   private isProcessing: boolean = false;
   private drainInterval: number = 100; // ms
@@ -20,7 +21,7 @@ export class MeowKernel {
   private watchdogInterval: number = 60000; // 60 seconds
   private frozenThresholdMs: number = 1200000; // 20 minutes - agent considered frozen if no heartbeat
 
-  constructor(db: MeowDatabase) {
+  constructor(db: DatabasePort) {
     this.db = db;
     this.setupLogDirectory();
     this.setupExitHandlers();
@@ -91,9 +92,9 @@ export class MeowKernel {
   /**
    * Agent heartbeat - agents should call this periodically to show they're alive
    */
-  public pulse(pid: number) {
+  public async pulse(pid: number) {
     this.agentHeartbeats.set(pid, new Date());
-    this.updateMissionPulse(pid, "running");
+    await this.updateMissionPulse(pid, "running");
   }
 
   /**
@@ -113,11 +114,13 @@ export class MeowKernel {
   /**
    * Respawn a frozen agent
    */
-  private respawnAgent(pid: number) {
+  private async respawnAgent(pid: number) {
     // Get the frozen agent's mission info
-    const mission = this.db.getRawDb().prepare(`
-      SELECT agent_name, goal FROM missions WHERE pid = ?
-    `).get(pid) as any;
+    const missions = await this.db.query<{ agent_name: string; goal: string }>(
+      `SELECT agent_name, goal FROM missions WHERE pid = ?`,
+      [pid]
+    );
+    const mission = missions[0];
 
     if (!mission) {
       console.error(`🚨 [WATCHDOG] Cannot respawn PID ${pid} - no mission record found`);
@@ -125,9 +128,10 @@ export class MeowKernel {
     }
 
     // Mark old mission as failed
-    this.db.getRawDb().prepare(`
-      UPDATE missions SET status = 'failed_frozen' WHERE pid = ?
-    `).run(pid);
+    await this.db.execute(
+      `UPDATE missions SET status = 'failed_frozen' WHERE pid = ?`,
+      [pid]
+    );
 
     // Remove from heartbeat tracking
     this.agentHeartbeats.delete(pid);
@@ -145,7 +149,7 @@ export class MeowKernel {
     }).pid;
 
     // Register new mission
-    this.registerMission(newPid, mission.agent_name, mission.goal);
+    await this.registerMission(newPid, mission.agent_name, mission.goal);
     console.log(pc.green(`✅ [WATCHDOG] Respawned agent with new PID ${newPid}`));
   }
 
@@ -158,40 +162,16 @@ export class MeowKernel {
     this.isProcessing = true;
 
     const batch = this.queue.splice(0, this.batchSize);
-    const rawDb = this.db.getRawDb();
     let attempt = 0;
     let success = false;
 
     while (attempt < this.maxRetries && !success) {
       try {
-        const transaction = rawDb.transaction((actions: KernelAction[]) => {
-          for (const action of actions) {
-            switch (action.type) {
-              case "SET_STATE":
-                rawDb.prepare(`
-                  INSERT INTO swarm_state (key, value, updated_at) 
-                  VALUES (?, ?, CURRENT_TIMESTAMP)
-                  ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP
-                `).run(action.key, JSON.stringify(action.value));
-                break;
-              case "DELETE_STATE":
-                rawDb.prepare("DELETE FROM swarm_state WHERE key = ?").run(action.key);
-                break;
-              case "STORE_VECTOR":
-                const result = rawDb.prepare(`
-                  INSERT INTO vector_memory_data (content, metadata) VALUES (?, ?)
-                `).run(action.content, JSON.stringify(action.metadata));
-                
-                const lastId = result.lastInsertRowid;
-                rawDb.prepare(`
-                  INSERT INTO vec_memory (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)
-                `).run(lastId, new Float32Array(action.embedding));
-                break;
-            }
-          }
-        });
-
-        transaction(batch);
+        // Use batch RPC to process all actions in one round-trip
+        const result = await this.db.batch(batch);
+        if (result.errors.length > 0) {
+          console.error("Kernel drain errors:", result.errors);
+        }
         success = true;
       } catch (e) {
         attempt++;
@@ -208,7 +188,7 @@ export class MeowKernel {
     this.isProcessing = false;
   }
 
-  public updateMissionPulse(pid: number, status: string = "running") {
+  public async updateMissionPulse(pid: number, status: string = "running") {
     this.push({ type: "SET_STATE", key: `mission_${pid}`, value: {
       pid,
       status,
@@ -216,11 +196,12 @@ export class MeowKernel {
     }});
     
     // Also update the persistent missions table
-    this.db.getRawDb().prepare(`
-      UPDATE missions 
-      SET last_pulse = CURRENT_TIMESTAMP, status = ? 
-      WHERE pid = ?
-    `).run(status, pid);
+    await this.db.execute(
+      `UPDATE missions
+      SET last_pulse = CURRENT_TIMESTAMP, status = ?
+      WHERE pid = ?`,
+      [status, pid]
+    );
 
     // Spooky Action at a Distance: Entanglement Propagation
     const entangled = this.monolithEntanglement.get(pid);
@@ -237,11 +218,12 @@ export class MeowKernel {
     }
   }
 
-  public registerMission(pid: number, agentName: string, goal: string, entangledWith?: number[]) {
-    this.db.getRawDb().prepare(`
-      INSERT INTO missions (pid, agent_name, goal, status)
-      VALUES (?, ?, ?, 'running')
-    `).run(pid, agentName, goal);
+  public async registerMission(pid: number, agentName: string, goal: string, entangledWith?: number[]) {
+    await this.db.execute(
+      `INSERT INTO missions (pid, agent_name, goal, status)
+       VALUES (?, ?, ?, 'running')`,
+      [pid, agentName, goal]
+    );
 
     if (entangledWith && entangledWith.length > 0) {
       this.monolithEntanglement.set(pid, entangledWith);
@@ -273,7 +255,7 @@ export class MeowKernel {
       await this.drain();
     }
     
-    this.db.close();
+    await this.db.close();
     console.log("✓ Database handles released. Pulse stopped.");
   }
 

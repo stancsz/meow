@@ -6,9 +6,33 @@ import { Agent } from "./agent/agent";
 import { createRepl } from "./cli/repl";
 import { MeowDatabase } from "./kernel/database";
 import { MeowKernel } from "./kernel/kernel";
+import { DatabasePort } from "./extensions/database/manifest";
+
+/**
+ * Detects whether we're running under Bun or Node.
+ * Bun has a global `Bun` object; Node does not.
+ */
+function isBun(): boolean {
+  return typeof (globalThis as any).Bun !== "undefined";
+}
 
 async function main() {
-  const db = new MeowDatabase();
+  let db: DatabasePort;
+
+  if (isBun()) {
+    // Bun: load database as an out-of-process extension via Node
+    const { DatabaseExtension } = await import("./extensions/database/extension");
+    db = new DatabaseExtension({
+      dbPath: "meow.db",
+      embeddingDimension: config.embeddingDimension,
+    });
+    console.log("✓ Database: Bun + Node subprocess mode");
+  } else {
+    // Node/tsx: use MeowDatabase directly
+    db = new MeowDatabase();
+    console.log("✓ Database: Node.js direct mode");
+  }
+
   const kernel = new MeowKernel(db);
   kernel.start();
 

@@ -1,11 +1,11 @@
 import Database from "better-sqlite3";
-import { join } from "path";
 import { createRequire } from "module";
 import { config } from "../config/env";
+import { DatabasePort, DbExecuteResult } from "../extensions/database/manifest";
 
 const require = createRequire(import.meta.url);
 
-export class MeowDatabase {
+export class MeowDatabase implements DatabasePort {
   private db: Database.Database;
 
   constructor(dbPath: string = "meow.db") {
@@ -17,7 +17,6 @@ export class MeowDatabase {
 
     // Load sqlite-vec extension for vector search (cross-platform)
     try {
-      // sqlite-vec package handles platform detection automatically
       const vec = require("sqlite-vec");
       this.db.loadExtension(vec.getLoadablePath());
       console.log("✓ sqlite-vec extension loaded");
@@ -29,7 +28,6 @@ export class MeowDatabase {
   }
 
   private initializeSchema() {
-    // swarm_state: JSON config, TTL, agent status
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS swarm_state (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +37,6 @@ export class MeowDatabase {
       );
     `);
 
-    // vector_memory: metadata and content
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS vector_memory_data (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,16 +46,14 @@ export class MeowDatabase {
       );
     `);
 
-    // sqlite-vec virtual table for embeddings with dynamic dimension support
     const dimension = config.embeddingDimension;
     try {
-      // Check if table exists and what its dimension is
       const tableInfo = this.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'vec_memory'").get() as { sql: string } | undefined;
-      
+
       if (tableInfo) {
         const match = tableInfo.sql.match(/float\[(\d+)\]/);
         const existingDim = match ? parseInt(match[1]) : null;
-        
+
         if (existingDim !== dimension) {
           console.warn(`⚠️ Embedding dimension mismatch (found ${existingDim}, expected ${dimension}). Recreating vec_memory table...`);
           this.db.exec("DROP TABLE vec_memory");
@@ -80,7 +75,6 @@ export class MeowDatabase {
       console.warn("⚠️ Could not initialize vec_memory virtual table:", e);
     }
 
-    // missions: track background specialist activity
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS missions (
         pid INTEGER PRIMARY KEY,
@@ -93,11 +87,70 @@ export class MeowDatabase {
     `);
   }
 
-  public getRawDb(): Database.Database {
-    return this.db;
+  // Implements DatabasePort
+  async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+    const stmt = this.db.prepare(sql);
+    return stmt.all(...(params ?? [])) as T[];
   }
 
-  public close() {
+  async execute(sql: string, params?: any[]): Promise<DbExecuteResult> {
+    const stmt = this.db.prepare(sql);
+    const result = stmt.run(...(params ?? []));
+    return { changes: result.changes, lastInsertRowid: Number(result.lastInsertRowid) };
+  }
+
+  async exec(sql: string): Promise<{ done: boolean }> {
+    this.db.exec(sql);
+    return { done: true };
+  }
+
+  async batch(actions: any[]): Promise<{ processed: number; errors: string[] }> {
+    // Synchronous batch for direct Node path — no IPC overhead
+    const errors: string[] = [];
+    const transaction = this.db.transaction((batch: any[]) => {
+      for (const action of batch) {
+        try {
+          switch (action.type) {
+            case "SET_STATE":
+              this.db.prepare(
+                `INSERT INTO swarm_state (key, value, updated_at)
+                 VALUES (?, ?, CURRENT_TIMESTAMP)
+                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`
+              ).run(action.key, JSON.stringify(action.value));
+              break;
+            case "DELETE_STATE":
+              this.db.prepare("DELETE FROM swarm_state WHERE key = ?").run(action.key);
+              break;
+            case "STORE_VECTOR": {
+              const result = this.db.prepare(
+                "INSERT INTO vector_memory_data (content, metadata) VALUES (?, ?)"
+              ).run(action.content, JSON.stringify(action.metadata));
+              const lastId = result.lastInsertRowid;
+              this.db.prepare(
+                "INSERT INTO vec_memory (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)"
+              ).run(lastId, new Float32Array(action.embedding));
+              break;
+            }
+          }
+        } catch (e: any) {
+          errors.push(`${action.type}: ${e.message}`);
+        }
+      }
+    });
+    transaction(actions);
+    return { processed: actions.length, errors };
+  }
+
+  async loadExtension(path: string): Promise<void> {
+    this.db.loadExtension(path);
+  }
+
+  async close(): Promise<void> {
     this.db.close();
+  }
+
+  // Legacy — for code that still uses getRawDb()
+  public getRawDb(): Database.Database {
+    return this.db;
   }
 }

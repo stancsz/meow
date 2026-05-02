@@ -1,0 +1,262 @@
+/**
+ * db-server.ts — Node.js database server
+ *
+ * Runs as a child process of the Bun main process.
+ * Wraps MeowDatabase (better-sqlite3 + sqlite-vec) and responds to
+ * JSON-RPC commands over stdio.
+ *
+ * Usage: node db-server.ts <dbPath>
+ *
+ * Protocol:
+ *   stdin:  JSON-RPC Request  { id, method, params }
+ *   stdout: JSON-RPC Response { id, result } or { id, error }
+ *
+ * Line-delimited JSON (one JSON object per line).
+ */
+
+import Database from "better-sqlite3";
+import { createRequire } from "module";
+import { join } from "path";
+import { KernelAction } from "../../kernel/kernel";
+
+const require = createRequire(import.meta.url);
+
+interface JsonRpcRequest {
+  id: number;
+  method: string;
+  params: any[];
+}
+
+interface JsonRpcResponse {
+  id: number;
+  result?: any;
+  error?: string;
+}
+
+interface DbExecuteResult {
+  changes: number;
+  lastInsertRowid: number;
+}
+
+class DbServer {
+  private db: Database.Database;
+  private id = 0;
+  private pending = new Map<number, (val: any) => void>();
+
+  constructor(dbPath: string = "meow.db") {
+    this.db = new Database(dbPath);
+    this.db.pragma("journal_mode = WAL");
+    this.db.pragma("synchronous = NORMAL");
+
+    // Load sqlite-vec extension
+    try {
+      const vec = require("sqlite-vec");
+      this.db.loadExtension(vec.getLoadablePath());
+      console.error("✓ db-server: sqlite-vec extension loaded");
+    } catch (e: any) {
+      console.error("⚠️ db-server: Could not load sqlite-vec:", e.message);
+    }
+
+    this.initializeSchema();
+    this.startListening();
+  }
+
+  private initializeSchema() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS swarm_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE,
+        value TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS vector_memory_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content TEXT,
+        metadata TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Vector memory table with dynamic dimension
+    const dimension = parseInt(process.env.EMBEDDING_DIMENSION || "1536");
+    try {
+      const tableInfo = this.db.prepare(
+        "SELECT sql FROM sqlite_master WHERE name = 'vec_memory'"
+      ).get() as { sql: string } | undefined;
+
+      if (tableInfo) {
+        const match = tableInfo.sql.match(/float\[(\d+)\]/);
+        const existingDim = match ? parseInt(match[1]) : null;
+        if (existingDim !== dimension) {
+          console.error(
+            `⚠️ db-server: Embedding dimension mismatch (found ${existingDim}, expected ${dimension}). Recreating vec_memory.`
+          );
+          this.db.exec("DROP TABLE vec_memory");
+          this.db.exec(
+            `CREATE VIRTUAL TABLE vec_memory USING vec0(embedding float[${dimension}]);`
+          );
+        }
+      } else {
+        this.db.exec(
+          `CREATE VIRTUAL TABLE vec_memory USING vec0(embedding float[${dimension}]);`
+        );
+      }
+      console.error(`✓ db-server: vec_memory table ready (dimension: ${dimension})`);
+    } catch (e: any) {
+      console.error("⚠️ db-server: Could not initialize vec_memory:", e.message);
+    }
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS missions (
+        pid INTEGER PRIMARY KEY,
+        agent_name TEXT,
+        goal TEXT,
+        status TEXT DEFAULT 'running',
+        last_pulse DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  }
+
+  private send(response: JsonRpcResponse) {
+    process.stdout.write(JSON.stringify(response) + "\n");
+  }
+
+  private handleRequest(req: JsonRpcRequest) {
+    const { id, method, params } = req;
+    let result: any;
+    let error: string | undefined;
+
+    try {
+      switch (method) {
+        case "query": {
+          const [sql, args] = params ?? [];
+          const stmt = this.db.prepare(sql);
+          const callArgs = Array.isArray(args) && args.length > 0 ? args : undefined;
+          result = callArgs ? stmt.all(...callArgs) : stmt.all();
+          break;
+        }
+        case "execute": {
+          const [sql, args] = params ?? [];
+          const stmt = this.db.prepare(sql);
+          const callArgs = Array.isArray(args) && args.length > 0 ? args : undefined;
+          const runResult = callArgs ? stmt.run(...callArgs) : stmt.run();
+          result = {
+            changes: runResult.changes,
+            lastInsertRowid: Number(runResult.lastInsertRowid),
+          };
+          break;
+        }
+        case "exec": {
+          const [sql] = params ?? [];
+          this.db.exec(sql);
+          result = { done: true };
+          break;
+        }
+        case "loadExtension": {
+          const [path] = params ?? [];
+          this.db.loadExtension(path);
+          result = { loaded: true };
+          break;
+        }
+        case "close": {
+          this.db.close();
+          result = { closed: true };
+          break;
+        }
+        case "ping": {
+          result = { ok: true };
+          break;
+        }
+        case "batch": {
+          const actions = params?.[0] ?? [];
+          result = this.processBatch(actions);
+          break;
+        }
+        default:
+          error = `Unknown method: ${method}`;
+      }
+    } catch (e: any) {
+      error = e.message;
+    }
+
+    this.send(error ? { id, error } : { id, result });
+  }
+
+  private processBatch(actions: KernelAction[]): { processed: number; errors: string[] } {
+    const errors: string[] = [];
+    const transaction = this.db.transaction((batch: KernelAction[]) => {
+      for (const action of batch) {
+        try {
+          switch (action.type) {
+            case "SET_STATE":
+              this.db
+                .prepare(
+                  `INSERT INTO swarm_state (key, value, updated_at)
+                   VALUES (?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`
+                )
+                .run(action.key, JSON.stringify(action.value));
+              break;
+            case "DELETE_STATE":
+              this.db
+                .prepare("DELETE FROM swarm_state WHERE key = ?")
+                .run(action.key);
+              break;
+            case "STORE_VECTOR": {
+              const insertResult = this.db
+                .prepare("INSERT INTO vector_memory_data (content, metadata) VALUES (?, ?)")
+                .run(action.content, JSON.stringify(action.metadata));
+              const lastId = insertResult.lastInsertRowid;
+              this.db
+                .prepare("INSERT INTO vec_memory (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)")
+                .run(lastId, new Float32Array(action.embedding));
+              break;
+            }
+          }
+        } catch (e: any) {
+          errors.push(`${action.type}: ${e.message}`);
+        }
+      }
+    });
+
+    transaction(actions);
+    return { processed: actions.length, errors };
+  }
+
+  private startListening() {
+    let buffer = "";
+
+    process.stdin.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const req = JSON.parse(trimmed) as JsonRpcRequest;
+          if (req.id && req.method) {
+            this.handleRequest(req);
+          }
+        } catch (e) {
+          // Ignore malformed lines
+        }
+      }
+    });
+
+    process.stdin.on("end", () => {
+      this.db.close();
+      process.exit(0);
+    });
+  }
+}
+
+// Entry point
+const dbPath = process.argv[2] ?? "meow.db";
+console.error(`db-server: Starting with dbPath=${dbPath}`);
+new DbServer(dbPath);

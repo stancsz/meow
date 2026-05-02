@@ -1,5 +1,7 @@
 # MEOW — Sovereign AI Coding Agent
 
+> **IMPORTANT — READ FIRST**: Before working in this project, run `claude "Read .meow/skills/meow-setup/SKILL.md and remember how to use MEOW as an orchestrator" -p --dangerously-skip-permissions` to understand how MEOW works and how to set it up. For global installation, run `npm install -g .` from this directory (or `pip install uv && uv tool install .` if using uv).
+
 **MEOW** (Meta Orchestrator Operating on World) is a lightweight, terminal-native AI coding agent that acts as a **meta-orchestrator**: it doesn't write code directly, it coordinates specialist agents to get work done.
 
 Built on [Bun](https://bun.sh), TypeScript, and SQLite-vec for vector operations, MEOW brings real quantum circuit simulation to agent coordination — using Grover's algorithm for memory recall and Bell-state entanglement for swarm interference.
@@ -148,28 +150,34 @@ All LLM API calls and web tools enforce timeouts:
 ## Usage
 
 ```bash
+# Install globally (recommended — enables 'meow' command from anywhere)
+npm install -g .
+
 # Run in REPL mode (interactive)
-bun run meow
+npx tsx src/index.ts
 
 # Run a single command
-bun run meow "summon | claude | implement unit tests for quantum_memory.ts"
+npx tsx src/index.ts "your task here"
 
 # Or pipe directly
-echo "summon | claude | fix the stalled REPL" | bun run meow
+echo "fix the stalled REPL" | npx tsx src/index.ts
 
 # Check system health
-bun run meow "health check"
+npx tsx src/index.ts "health check"
 ```
 
 ### Configuration
+
+> **Note**: MEOW requires **Node.js + tsx**, not Bun. Bun does not support `better-sqlite3` (native C++ addons).
 
 Environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic API key for LLM calls |
-| `OPENAI_API_KEY` | OpenAI API key (fallback) |
-| `MEOW_BASE_URL` | Custom LLM endpoint (defaults to Anthropic) |
+| `LLM_API_KEY` or `ANTHROPIC_API_KEY` | API key for LLM calls |
+| `LLM_BASE_URL` or `ANTHROPIC_BASE_URL` | LLM endpoint (defaults to `http://localhost:11434` for Ollama) |
+| `ANTHROPIC_MODEL` or `MEOW_MODEL` | Model name (defaults to `claude-3-5-sonnet-latest`) |
+| `EMBEDDING_DIMENSION` | Vector embedding dimension (defaults to `1536`) |
 
 ---
 
@@ -199,8 +207,8 @@ From `.context/MISSION.md`:
 
 | Package | Purpose |
 |---------|---------|
-| `bun` | Runtime |
-| `better-sqlite3` / `bun:sqlite` | Database |
+| `node` + `tsx` | Runtime (Node.js only — Bun is NOT supported due to `better-sqlite3` native addons) |
+| `better-sqlite3` | SQLite database with WAL mode |
 | `sqlite-vec` | Vector similarity search |
 | `quantum-circuit` | Real quantum gate simulation |
 | `@modelcontextprotocol/sdk` | MCP client (40+ integrations) |

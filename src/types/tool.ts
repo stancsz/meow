@@ -251,12 +251,11 @@ export const DEFAULT_TOOLS: Tool[] = [
     description: "Check the status and heartbeat of all active/recent missions. Use this to detect hanged specialists.",
     execute: async (_: string, agent?: any) => {
       if (!agent || !agent.db) return "Error: Database not available.";
-      const db = agent.db.getRawDb();
-      const missions = db.prepare(`
-        SELECT pid, agent_name, goal, status, last_pulse, created_at 
-        FROM missions 
-        ORDER BY created_at DESC LIMIT 10
-      `).all();
+      const missions = await agent.db.query(
+        `SELECT pid, agent_name, goal, status, last_pulse, created_at
+        FROM missions
+        ORDER BY created_at DESC LIMIT 10`
+      );
       
       if (missions.length === 0) return "No missions found in history.";
       
