@@ -89,7 +89,11 @@ export class DatabaseExtension implements DatabasePort {
     return new Promise((resolve, reject) => {
       const id = nextId();
       this.pending.set(id, resolve);
-      const request = JSON.stringify({ id, method, params });
+      // Convert Float32Array to plain arrays for safe JSON serialization over IPC
+      const serializedParams = params?.map(p =>
+        p instanceof Float32Array ? Array.from(p) : p
+      );
+      const request = JSON.stringify({ id, method, params: serializedParams });
       this.proc.stdin?.write(request + "\n");
 
       // Timeout after 30s

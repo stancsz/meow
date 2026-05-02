@@ -16,8 +16,12 @@
 
 import Database from "better-sqlite3";
 import { createRequire } from "module";
-import { join } from "path";
-import { KernelAction } from "../../kernel/kernel";
+
+// Kernel action types (duplicated from kernel.ts to avoid ESM module resolution issues)
+type KernelAction =
+  | { type: "SET_STATE"; key: string; value: any }
+  | { type: "DELETE_STATE"; key: string }
+  | { type: "STORE_VECTOR"; content: string; embedding: number[]; metadata: any };
 
 const require = createRequire(import.meta.url);
 

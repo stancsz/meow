@@ -4,7 +4,6 @@
 import { config } from "./config/env";
 import { Agent } from "./agent/agent";
 import { createRepl } from "./cli/repl";
-import { MeowDatabase } from "./kernel/database";
 import { MeowKernel } from "./kernel/kernel";
 import { DatabasePort } from "./extensions/database/manifest";
 
@@ -29,6 +28,7 @@ async function main() {
     console.log("✓ Database: Bun + Node subprocess mode");
   } else {
     // Node/tsx: use MeowDatabase directly
+    const { MeowDatabase } = await import("./kernel/database");
     db = new MeowDatabase();
     console.log("✓ Database: Node.js direct mode");
   }

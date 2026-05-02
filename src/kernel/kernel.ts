@@ -142,7 +142,20 @@ export class MeowKernel {
     // Fork a new meow process
     const { spawn } = require('child_process');
     const shell = process.platform === 'win32';
-    const newPid = spawn(shell ? 'npx.cmd' : 'npx', ['tsx', 'src/index.ts'], {
+    const isBun = typeof (globalThis as any).Bun !== "undefined";
+    
+    let spawnCmd: string;
+    let spawnArgs: string[];
+
+    if (isBun) {
+      spawnCmd = shell ? 'bun.exe' : 'bun';
+      spawnArgs = ['src/index.ts'];
+    } else {
+      spawnCmd = shell ? 'npx.cmd' : 'npx';
+      spawnArgs = ['tsx', 'src/index.ts'];
+    }
+
+    const newPid = spawn(spawnCmd, spawnArgs, {
       cwd: process.cwd(),
       detached: true,
       stdio: 'inherit'
