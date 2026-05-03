@@ -25,3 +25,9 @@ Thumbs.db
 *.log
 npm-debug.log**.db*
 *.db*
+
+# Installer
+**.exe
+
+# Screenshots
+**screenshot**

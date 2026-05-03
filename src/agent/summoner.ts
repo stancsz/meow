@@ -2,6 +2,7 @@ import { execSync, spawn } from "child_process";
 import { MeowKernel } from "../kernel/kernel";
 import { Harvester } from "./harvester";
 import { QuantumMemory } from "./quantum_memory";
+import { BrowserOSManager, getBrowserOSManager } from "./browseros_manager";
 
 export interface SummonContext {
   goal: string;
@@ -343,12 +344,13 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
       }
     }
     if (agentName === "claude-browseros") {
-      try {
-        execSync("browseros-cli status", { stdio: "ignore" });
-      } catch (e) {
-        console.log("⚠️ BrowserOS CLI not found or not connected. Run 'npm install -g browseros-cli' and 'browseros-cli init'.");
-        throw new Error("BrowserOS not found.");
+      // Use BrowserOSManager to check and auto-start if needed
+      const browserOS = getBrowserOSManager();
+      const status = await browserOS.ensureRunning();
+      if (!status.connected || !status.cdpConnected) {
+        throw new Error("BrowserOS not available.");
       }
+      console.log(`✓ BrowserOS ready at ${status.serverUrl} (CDP: ${status.cdpConnected ? "connected" : "disconnected"})`);
     }
     execSync(command, { stdio: "inherit", cwd: process.cwd() });
     return `✅ ${agent.name} has completed the mission. MEOW is resuming control and analyzing changes.`;
