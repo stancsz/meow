@@ -352,9 +352,11 @@ Available Tools:
 
 # SKILLS ECOSYSTEM (ALWAYS CHECK FIRST):
 Before delegating to Level-2 specialists (summon), ALWAYS check if a skill exists:
-- Run 'npx skills find <relevant-topic>' to search skills.sh ecosystem
-- Skills from 'vercel-labs/agent-skills' and 'anthropics/skills' are battle-tested (100K+ installs)
-- Common categories: testing, deployment, documentation, code quality, design, devops
+- Run 'npx skills find <relevant-topic>' to search the unified ecosystem.
+- Core Repositories: https://github.com/stancsz/skills and https://github.com/vercel-labs/skills
+- Reference: https://github.com/vercel-labs/skills/blob/main/skills/find-skills/SKILL.md
+- Skills from 'vercel-labs/agent-skills' and 'anthropics/skills' are battle-tested (100K+ installs).
+- Common categories: testing, deployment, documentation, code quality, design, devops.
 - If a relevant skill exists, install it: npx skills add <owner/repo@skill> -g -y
 - Only summon a specialist if no skill can help with the task.
 

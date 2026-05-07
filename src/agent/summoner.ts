@@ -36,7 +36,7 @@ RESOURCES: ${ctx.files.join(", ")}
 ${blueprint}
 
 INSTRUCTIONS:
-0. BEFORE STARTING: Run 'npx skills find <relevant-topic>' to check if a skill exists that can help with this task. If found, use or recommend it.
+0. BEFORE STARTING: Run 'npx skills find <relevant-topic>' to check the unified ecosystem (https://github.com/stancsz/skills). If a relevant skill exists (see https://github.com/vercel-labs/skills/blob/main/skills/find-skills/SKILL.md), use it to solve the task.
 1. FIX the immediate issue and ensure all tests pass.
 2. DO NOT TOUCH 'quantum_*.ts' files unless the goal specifically asks for it.
 3. DO NOT COMMIT: MEOW is the Expert Taster and will review/commit your work.

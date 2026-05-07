@@ -81,6 +81,8 @@ export class MeowDatabase implements DatabasePort {
         agent_name TEXT,
         goal TEXT,
         status TEXT DEFAULT 'running',
+        progress_score INTEGER DEFAULT 0,
+        progress_summary TEXT,
         last_pulse DATETIME DEFAULT CURRENT_TIMESTAMP,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );

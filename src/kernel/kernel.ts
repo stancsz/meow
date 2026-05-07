@@ -17,8 +17,10 @@ export class MeowKernel {
   private maxRetries: number = 3;
   private monolithEntanglement: Map<number, number[]> = new Map(); // Spooky Action tracking
   private agentHeartbeats: Map<number, Date> = new Map(); // Agent heartbeat tracking
+  private agentProgress: Map<number, { score: number, lastChange: Date, summary: string }> = new Map();
   private watchdogInterval: number = 60000; // 60 seconds
-  private frozenThresholdMs: number = 1200000; // 20 minutes - agent considered frozen if no heartbeat
+  private frozenThresholdMs: number = 1200000; // 20 minutes
+  private driftThresholdMs: number = 600000; // 10 minutes - warning if no progress change
 
   constructor(db: DatabasePort) {
     this.db = db;
@@ -91,9 +93,21 @@ export class MeowKernel {
   /**
    * Agent heartbeat - agents should call this periodically to show they're alive
    */
-  public async pulse(pid: number) {
+  public async pulse(pid: number, progressScore?: number, progressSummary?: string) {
     this.agentHeartbeats.set(pid, new Date());
-    await this.updateMissionPulse(pid, "running");
+    
+    if (progressScore !== undefined) {
+      const current = this.agentProgress.get(pid);
+      if (!current || current.score !== progressScore) {
+        this.agentProgress.set(pid, { 
+          score: progressScore, 
+          lastChange: new Date(),
+          summary: progressSummary || ""
+        });
+      }
+    }
+    
+    await this.updateMissionPulse(pid, "running", progressScore, progressSummary);
   }
 
   /**
@@ -103,9 +117,22 @@ export class MeowKernel {
     const now = new Date();
     for (const [pid, lastPulse] of this.agentHeartbeats.entries()) {
       const elapsed = now.getTime() - lastPulse.getTime();
+      
+      // 1. Frozen Detection (Hard failure)
       if (elapsed > this.frozenThresholdMs) {
-        console.warn(pc.yellow(`\n⚠️ [WATCHDOG] Agent ${pid} frozen for ${Math.round(elapsed/60000)}min. Triggering respawn...`));
+        this.warn(`Agent ${pid} frozen for ${Math.round(elapsed/60000)}min. Triggering respawn...`, "WATCHDOG");
         this.respawnAgent(pid);
+        continue;
+      }
+
+      // 2. Drift Detection (Semantic warning)
+      const progress = this.agentProgress.get(pid);
+      if (progress) {
+        const driftTime = now.getTime() - progress.lastChange.getTime();
+        if (driftTime > this.driftThresholdMs) {
+          this.warn(`Agent ${pid} showing Zero Velocity (No progress change for ${Math.round(driftTime/60000)}min). Potential drift detected.`, "WATCHDOG");
+          // TODO: In production, trigger a Strategy Pivot signal to the agent
+        }
       }
     }
   }
@@ -200,19 +227,24 @@ export class MeowKernel {
     this.isProcessing = false;
   }
 
-  public async updateMissionPulse(pid: number, status: string = "running") {
+  public async updateMissionPulse(pid: number, status: string = "running", progressScore: number = 0, progressSummary?: string) {
     this.push({ type: "SET_STATE", key: `mission_${pid}`, value: {
       pid,
       status,
+      progress_score: progressScore,
+      progress_summary: progressSummary,
       last_pulse: new Date().toISOString()
     }});
     
     // Also update the persistent missions table
     await this.db.execute(
       `UPDATE missions
-      SET last_pulse = CURRENT_TIMESTAMP, status = ?
+      SET last_pulse = CURRENT_TIMESTAMP, 
+          status = ?, 
+          progress_score = ?, 
+          progress_summary = ?
       WHERE pid = ?`,
-      [status, pid]
+      [status, progressScore, progressSummary || null, pid]
     );
 
     // Spooky Action at a Distance: Entanglement Propagation

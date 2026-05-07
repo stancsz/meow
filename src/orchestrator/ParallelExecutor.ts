@@ -29,9 +29,12 @@ export class ParallelExecutor {
   private queue: TaskQueue;
   private coordinator: FileCoordinator;
   private workers: Map<string, WorkerConfig> = new Map();
-  private runningTasks: Map<string, { task: Task; workerId: string; timeout: NodeJS.Timeout }> = new Map();
   private executorConfig: ExecutorConfig;
   private taskEvents?: TaskEvents;
+  private runningTasks: Map<string, { task: Task; workerId: string; timeout: NodeJS.Timeout }> = new Map();
+  private activeTaskCount: number = 0;
+  private runResolve?: (value: Map<string, TaskResult>) => void;
+  private runResults?: Map<string, TaskResult>;
 
   constructor(
     queue: TaskQueue,
@@ -51,17 +54,18 @@ export class ParallelExecutor {
 
   async run(): Promise<Map<string, TaskResult>> {
     return new Promise((resolve) => {
-      const results = new Map<string, TaskResult>();
-      let pendingCompletions = 0;
+      this.runResolve = resolve;
+      this.runResults = new Map<string, TaskResult>();
+      this.activeTaskCount = 0;
 
       const checkDone = () => {
-        if (pendingCompletions > 0) return;
+        if (this.activeTaskCount > 0) return;
         if (this.queue.canAcceptWork()) return;
-        resolve(results);
+        this.runResolve?.(this.runResults!);
       };
 
       const startTask = (task: Task, worker: WorkerConfig) => {
-        pendingCompletions++;
+        this.activeTaskCount++;
         const timeout = setTimeout(() => {
           this.handleTaskTimeout(task.id);
         }, task.timeoutMs || this.executorConfig.taskTimeoutMs);
@@ -70,23 +74,27 @@ export class ParallelExecutor {
         this.taskEvents?.onStatusChange?.(task.id, 'running');
 
         this.executeTask(task, worker).then((result: TaskResult) => {
-          results.set(task.id, result);
+          if (!this.runningTasks.has(task.id)) return; // Already timed out
+          
+          this.runResults?.set(task.id, result);
           clearTimeout(timeout);
           this.runningTasks.delete(task.id);
           this.taskEvents?.onResult?.(task.id, result);
-          pendingCompletions--;
+          this.activeTaskCount--;
           checkDone();
         }).catch((error: any) => {
+          if (!this.runningTasks.has(task.id)) return; // Already timed out
+
           const failedResult: TaskResult = {
             taskId: task.id,
             success: false,
             error: error.message || String(error),
           };
-          results.set(task.id, failedResult);
+          this.runResults?.set(task.id, failedResult);
           clearTimeout(timeout);
           this.runningTasks.delete(task.id);
           this.taskEvents?.onResult?.(task.id, failedResult);
-          pendingCompletions--;
+          this.activeTaskCount--;
           checkDone();
         });
       };
@@ -108,6 +116,12 @@ export class ParallelExecutor {
       dispatch();
       checkDone();
     });
+  }
+
+  private checkDone(): void {
+    if (this.activeTaskCount > 0) return;
+    if (this.queue.canAcceptWork()) return;
+    this.runResolve?.(this.runResults!);
   }
 
   private async executeTask(task: Task, worker: WorkerConfig): Promise<TaskResult> {
@@ -215,12 +229,17 @@ export class ParallelExecutor {
     const timeoutResult: TaskResult = {
       taskId,
       success: false,
-      error: `Task timed out after ${execution.task.timeoutMs}ms`,
+      error: `Task timed out after ${execution.task.timeoutMs || this.executorConfig.taskTimeoutMs}ms`,
     };
 
+    this.runResults?.set(taskId, timeoutResult);
     this.queue.complete(taskId, timeoutResult);
     this.taskEvents?.onResult?.(taskId, timeoutResult);
     this.runningTasks.delete(taskId);
+    this.activeTaskCount--;
+    
+    // Check if we can dispatch more or if we are done
+    this.checkDone();
   }
 
   private sleep(ms: number): Promise<void> {

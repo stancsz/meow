@@ -34,18 +34,36 @@ export class QuantumReasoning {
       circuit.addGate("h", i, i);
     }
 
-    // 2. QAOA STEPS (Simplified Variational Loop)
+    // 2. QAOA STEPS (Variational Loop)
+    const numStates = Math.pow(2, numQubits);
     for (let step = 0; step < 10; step++) {
+      // Cost Hamiltonian Simulation: 
+      // Apply phase rotations based on constraint fulfillment for each state.
+      for (let s = 0; s < numStates; s++) {
+        const choice = space[s % space.length];
+        const totalScore = constraints.reduce((acc, c) => acc + (c.evaluate(choice) ? c.weight : 0), 0);
+        
+        if (totalScore > 0) {
+          // Apply a phase shift to the specific state 's'
+          // Standard technique: wrap controlled-Z in X gates for zero-bits
+          for (let q = 0; q < numQubits; q++) {
+            if (!((s >> q) & 1)) circuit.addGate("x", q, q);
+          }
+          
+          // Multi-controlled phase proxy: apply Z to the last qubit if it's part of state 's'
+          // In a real circuit this would be a CnZ gate. 
+          // For this sim, we apply a rotation proportional to score.
+          circuit.addGate("rz", numQubits - 1, numQubits - 1, { params: [gamma * (totalScore / 100)] });
+
+          for (let q = 0; q < numQubits; q++) {
+            if (!((s >> q) & 1)) circuit.addGate("x", q, q);
+          }
+        }
+      }
+
       // Mixer Hamiltonian (X rotations)
       for (let i = 0; i < numQubits; i++) {
         circuit.addGate("rx", i, i, { params: [beta] });
-      }
-
-      // Cost Hamiltonian Simulation: 
-      // In a real circuit, we'd use phase gates. 
-      // For this simulator, we'll use RZ gates to apply phases.
-      for (let i = 0; i < numQubits; i++) {
-        circuit.addGate("rz", i, i, { params: [gamma] });
       }
 
       beta *= 0.95; // Cool down
@@ -101,12 +119,19 @@ export class QuantumReasoning {
     
     for (let iter = 0; iter < iterations; iter++) {
       // THE ORACLE: Phase flip for candidates that match the query
-      // We simulate the oracle's effect on the state vector for semantic matching
       candidates.forEach((c: any, idx) => {
-        const score = query.toLowerCase().split(" ").filter(q => JSON.stringify(c).toLowerCase().includes(q)).length;
-        if (score > 0) {
-          // Flip phase (Z gate equivalent)
-          circuit.addGate("z", idx % numQubits, idx % numQubits);
+        // More robust semantic matching: check for keyword overlap with higher precision
+        const queryTerms = query.toLowerCase().split(/\W+/).filter(t => t.length > 2);
+        const content = JSON.stringify(c).toLowerCase();
+        const score = queryTerms.filter(q => content.includes(q)).length / queryTerms.length;
+        
+        if (score > 0.3) {
+          // Flip phase of the specific qubits representing this index
+          for (let q = 0; q < numQubits; q++) {
+            if ((idx >> q) & 1) {
+              circuit.addGate("z", q, q);
+            }
+          }
         }
       });
 
