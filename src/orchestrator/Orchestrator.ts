@@ -10,6 +10,8 @@ import { ResultAggregator, AggregatedResult } from './ResultAggregator';
 import { Agent } from '../agent/agent';
 import { McpManager } from '../agent/mcp';
 import { SkillManager } from '../agent/skills';
+import { Architect } from '../architect/Architect';
+import { MissionBrief } from '../liaison/MissionBrief';
 
 export interface OrchestratorConfig {
   queue: QueueConfig;
@@ -40,6 +42,7 @@ export class Orchestrator {
   private executor: ParallelExecutor;
   private coordinator: FileCoordinator;
   private aggregator: ResultAggregator;
+  private architect: Architect;
 
   private agent: Agent;
   private skillManager: SkillManager;
@@ -67,6 +70,7 @@ export class Orchestrator {
     this.coordinator = new FileCoordinator();
     this.aggregator = new ResultAggregator();
     this.decomposer = new TaskDecomposer(baseAgent);
+    this.architect = new Architect(this);
 
     this.executor = new ParallelExecutor(
       this.queue,

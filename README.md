@@ -191,6 +191,28 @@ Environment variables:
 
 ---
 
+## Towards the 2028 Frontier (The Quantum-Agentic Convergence)
+
+MEOW is currently in **Phase 2 (Specialized Reasoning)**. Our trajectory is aligned with the 2027-2028 shift toward autonomous, goal-directed intelligence fabrics.
+
+### Roadmap to the 2028 Stack
+
+| Milestone | Capability | Status |
+| :--- | :--- | :--- |
+| **Hardware Integration** | Transition from `quantum-circuit` JS simulation to real QPU integration (IBM Cockatoo/Starling) | 🧪 Researching |
+| **Synchronized Agency** | Implementing a "Temporal Backbone" for decentralized agent synchronization via Bell-state measurements | 🏗️ Planning |
+| **QUBO Planning** | Moving `TaskDecomposer` to Quadratic Unconstrained Binary Optimization (QUBO) for multi-agent conflict resolution | 🏗️ Planning |
+| **Bounded Autonomy** | Identity-aware access controls and Post-Quantum Cryptography (PQC) for agent security | 🧪 Researching |
+| **Physical Agency** | Integration with VLA (Vision-Language-Action) models for robotic control and industrial sensing | 🗓️ 2027+ |
+
+### Critical Gaps We Are Bridging
+
+- **Simulation Era vs. Hardware Era**: We are moving from " Hilbert space simulation" on classical CPUs to real-time quantum error correction and mid-circuit measurements.
+- **Local Swarm vs. Decentralized Network**: We are evolving from a single local orchestrator to a decentralized, synchronized intelligence fabric.
+- **FinOps for Agents**: Implementing internal reward functions that embed cost-per-task logic, preventing expensive recursive loops while maximizing strategic outcomes.
+
+---
+
 ## Philosophy
 
 > MEOW is a **Sovereign AI Coding Agent** — designed to run locally in your terminal without excessive reliance on opaque cloud abstractions.

@@ -2,6 +2,7 @@ import blessed from 'blessed';
 import * as contrib from 'blessed-contrib';
 import { Orchestrator, StatusUpdate } from '../orchestrator/Orchestrator';
 import { Agent } from '../agent/agent';
+import { Liaison } from '../liaison/Liaison';
 
 export class MeowTUI {
   private screen: blessed.Widgets.Screen;
@@ -10,9 +11,11 @@ export class MeowTUI {
   private input!: blessed.Widgets.TextboxElement;
   private header!: blessed.Widgets.BoxElement;
   private orchestrator: Orchestrator;
+  private liaison: Liaison;
 
   constructor(agent: Agent, screen?: blessed.Widgets.Screen) {
     this.orchestrator = new Orchestrator(agent);
+    this.liaison = new Liaison(agent);
 
     this.screen = screen || blessed.screen({
       smartCSR: true,
@@ -100,15 +103,43 @@ export class MeowTUI {
     }
 
     try {
-      this.updateHeader('ORCHESTRATING', 'yellow');
-      const result = await this.orchestrator.execute(cmd, {
-        onStatus: (update: StatusUpdate) => {
-          this.handleStatusUpdate(update);
+      this.updateHeader('L1: PARSING', 'cyan');
+
+      // L1 Path: Use Liaison for fast-path interaction
+      const liaisonResponse = await this.liaison.chat(
+        cmd,
+        // Stream callback
+        (chunk) => {
+          if (!chunk.done && chunk.text) {
+            process.stdout.write(chunk.text);
+          }
+        },
+        // Status callback
+        (status) => {
+          this.log(`{gray-fg}[${status}]{/gray-fg}`);
         }
-      });
-      this.updateHeader('READY', 'green');
-      this.log(`{bold}Result:{/bold} ${result.success ? '{green-fg}SUCCESS{/green-fg}' : '{red-fg}FAILED{/red-fg}'}`);
-      this.log(result.summary);
+      );
+
+      this.log(`{cyan-fg}[Intent: ${liaisonResponse.brief.intent}] [Domain: ${liaisonResponse.brief.domain}] [Complexity: ${liaisonResponse.brief.complexity}]{/cyan-fg}`);
+
+      // If complexity is high, hand off to L2 Architect
+      if (liaisonResponse.brief.complexity > 60) {
+        this.updateHeader('L2: ORCHESTRATING', 'yellow');
+        this.log('{yellow-fg}Complex request detected. Handing off to Architect (L2)...{/yellow-fg}');
+
+        const result = await this.orchestrator.execute(cmd, {
+          onStatus: (update: StatusUpdate) => {
+            this.handleStatusUpdate(update);
+          }
+        });
+
+        this.updateHeader('READY', 'green');
+        this.log(`{bold}Result:{/bold} ${result.success ? '{green-fg}SUCCESS{/green-fg}' : '{red-fg}FAILED{/red-fg}'}`);
+        this.log(result.summary);
+      } else {
+        this.updateHeader('READY', 'green');
+        this.log(liaisonResponse.text);
+      }
     } catch (err: any) {
       this.updateHeader('ERROR', 'red');
       this.log(`{red-fg}Error: ${err.message}{/red-fg}`);
@@ -136,7 +167,8 @@ export class MeowTUI {
   }
 
   public start() {
-    this.log('{cyan-fg}MEOW Dashboard Online.{/cyan-fg}');
+    this.log('{cyan-fg}MEOW Layered Agency System Online.{/cyan-fg}');
+    this.log('L1: Liaison | L2: Architect | L3: Swarm | L4: Auditor');
     this.log('Type your request to begin orchestration.');
     this.screen.render();
   }

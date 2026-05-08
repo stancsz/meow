@@ -1,6 +1,7 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Agent } from "../agent/agent";
+import { Liaison, LiaisonResponse } from "../liaison/Liaison";
 import { resolve } from "path";
 import { SPECIALISTS, summon } from "../agent/summoner";
 import { DEFAULT_TOOLS } from "../types/tool";
@@ -8,6 +9,7 @@ import { Orchestrator } from "../orchestrator/Orchestrator";
 
 export function createRepl(agent: Agent) {
   let orchestrator: Orchestrator | null = null;
+  let liaison: Liaison | null = null;
   let parallelMode = false;
 
   // Helper: Get terminal width for dynamic box drawing
@@ -21,12 +23,10 @@ export function createRepl(agent: Agent) {
   };
 
   // Helper: Sanitize line for display inside box frame
-  // Replaces box-drawing characters that would conflict with frame
   const sanitizeForBox = (line: string): string => {
-    // Replace problematic box-drawing chars with space-compatible alternatives
     return line.replace(/[┌┐└┘├┤┬┴┼│─]/g, (c) => {
       const map: Record<string, string> = {
-        '│': '│',  // Keep vertical but it's still problematic inside frame
+        '│': '│',
         '─': '-',
         '┌': '+',
         '┐': '+',
@@ -46,8 +46,11 @@ export function createRepl(agent: Agent) {
     async start() {
       process.stdout.write("\x1Bc"); // Clear terminal
 
-      console.log(pc.bold(pc.cyan("MEOW")) + pc.dim(" | ") + pc.white("Lightweight AI Coding Agent"));
-      console.log(pc.dim("Sovereign Mode: Commands, Files, Escalation Active\n"));
+      console.log(pc.bold(pc.cyan("MEOW")) + pc.dim(" | ") + pc.white("Layered Agency System"));
+      console.log(pc.dim("L1: Liaison | L2: Architect | L3: Swarm | L4: Auditor\n"));
+
+      // Initialize L1 Liaison for fast-path interactions
+      liaison = new Liaison(agent);
 
       while (true) {
         const input = await p.text({
@@ -139,12 +142,14 @@ export function createRepl(agent: Agent) {
         const hasExplicitTasks = text.includes(" / ");
 
         const s = p.spinner();
-        s.start(pc.dim(parallelMode || hasExplicitTasks ? "Orchestrating..." : "Thinking..."));
 
         try {
           let response: string;
 
           if (parallelMode || hasExplicitTasks) {
+            // L2+ Path: Use Orchestrator for complex tasks
+            s.message(pc.dim("Initializing Architect (L2)..."));
+
             if (!orchestrator) {
               orchestrator = new Orchestrator(agent);
             }
@@ -165,22 +170,50 @@ export function createRepl(agent: Agent) {
 
             response = result.summary;
           } else {
-            response = await agent.chat(
+            // L1 Path: Use Liaison for fast-path interaction
+            s.message(pc.dim("L1: Parsing intent..."));
+
+            // Non-blocking Liaison.chat() with streaming
+            const liaisonResponse = await liaison.chat(
               text,
-              false,
-              undefined,
+              // Stream callback - shows thoughts as they arrive
+              (chunk) => {
+                if (!chunk.done && chunk.text) {
+                  process.stdout.write(pc.dim(chunk.text));
+                }
+              },
+              // Status callback - updates spinner message
               (status) => {
-                // Robust status color: use dim by default, but show important statuses clearly
-                const isImportant = /error|warning|⚠️|❌|failed|critical/i.test(status);
-                const message = isImportant ? pc.yellow(status) : pc.dim(status);
-                s.message(message);
+                s.message(pc.dim(status));
               }
             );
+
+            response = liaisonResponse.text;
+
+            // Log brief for transparency
+            console.log(pc.dim(`\n[Intent: ${liaisonResponse.brief.intent}] [Domain: ${liaisonResponse.brief.domain}] [Complexity: ${liaisonResponse.brief.complexity}]`));
+
+            // If complexity is high, hand off to L2
+            if (liaisonResponse.brief.complexity > 60) {
+              s.message(pc.dim("Complex request detected. Handing off to Architect (L2)..."));
+
+              if (!orchestrator) {
+                orchestrator = new Orchestrator(agent);
+              }
+
+              const result = await orchestrator.execute(text, {
+                onStatus: (update: any) => {
+                  s.message(pc.dim(update.message));
+                }
+              });
+
+              response = result.summary;
+            }
           }
 
           s.stop(pc.dim("Done"));
 
-          // Premium Response Rendering with dynamic box width
+          // Premium Response Rendering
           console.log("");
           const termWidth = getTerminalWidth();
           const usableWidth = Math.max(termWidth - 6, 20);
