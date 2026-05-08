@@ -43,9 +43,12 @@ export class TaskQueue {
 
   private areDependenciesMet(task: Task): boolean {
     for (const dep of task.dependencies) {
-      const depTask = this.completed.get(dep.taskId) || this.running.get(dep.taskId);
+      // Check completed, running, AND failed maps
+      const depTask = this.completed.get(dep.taskId) || this.running.get(dep.taskId) || this.failed.get(dep.taskId);
       if (!depTask) return false;
       if (dep.required && !depTask.result?.success) return false;
+      // Soft dependencies (required: false) proceed regardless of success/failure
+      // as long as the dependency exists (was attempted)
     }
     return true;
   }

@@ -32,10 +32,16 @@ export class TaskDecomposer {
 
     const decompositionPrompt = this.buildDecompositionPrompt(userRequest, context, opts);
 
-    const response = await this.agent.callLLM(
-      await this.agent.buildSystemPrompt(),
-      [{ role: 'user', content: decompositionPrompt }]
-    );
+    const timeoutMs = 60000; // 60 second timeout for LLM decomposition
+    const response = await Promise.race([
+      this.agent.callLLM(
+        await this.agent.buildSystemPrompt(),
+        [{ role: 'user', content: decompositionPrompt }]
+      ),
+      new Promise< never >((_, reject) =>
+        setTimeout(() => reject(new Error(`LLM decomposition timed out after ${timeoutMs}ms`)), timeoutMs)
+      )
+    ]);
 
     return this.parseTasksFromResponse(response, userRequest);
   }

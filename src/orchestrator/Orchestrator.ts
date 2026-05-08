@@ -235,4 +235,21 @@ export class Orchestrator {
       lockedFiles: this.coordinator.getLockedFiles().size,
     };
   }
+
+  /**
+   * Graceful shutdown: release all resources including stale locks
+   */
+  async shutdown(): Promise<void> {
+    // Release stale locks before shutdown
+    const maxLockAgeMs = 5 * 60 * 1000; // 5 minutes
+    const stale = this.coordinator.releaseStaleLocks(maxLockAgeMs);
+    if (stale.length > 0) {
+      console.log(`[Orchestrator] Released ${stale.length} stale file locks: ${stale.join(', ')}`);
+    }
+
+    // Release all remaining locks
+    for (const [path, lock] of this.coordinator.getLockedFiles()) {
+      this.coordinator.release(lock.taskId);
+    }
+  }
 }

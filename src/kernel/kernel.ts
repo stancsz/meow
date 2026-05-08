@@ -21,6 +21,7 @@ export class MeowKernel {
   private watchdogInterval: number = 60000; // 60 seconds
   private frozenThresholdMs: number = 1200000; // 20 minutes
   private driftThresholdMs: number = 600000; // 10 minutes - warning if no progress change
+  private respawnCallbacks: Array<(oldPid: number, newPid: number) => void> = [];
 
   constructor(db: DatabasePort) {
     this.db = db;
@@ -55,6 +56,14 @@ export class MeowKernel {
 
   public log(message: string, source: string = "KERNEL") {
     this._log("INFO", source, message);
+  }
+
+  /**
+   * Register a callback to be notified when an agent is respawned.
+   * This allows the ParallelExecutor to update its PID mapping.
+   */
+  public onRespawn(callback: (oldPid: number, newPid: number) => void): void {
+    this.respawnCallbacks.push(callback);
   }
 
   public warn(message: string, source: string = "KERNEL") {
@@ -190,6 +199,11 @@ export class MeowKernel {
     // Register new mission
     await this.registerMission(newPid, mission.agent_name, mission.goal);
     console.log(pc.green(`✅ [WATCHDOG] Respawned agent with new PID ${newPid}`));
+
+    // Notify listeners of PID change
+    for (const cb of this.respawnCallbacks) {
+      cb(pid, newPid!);
+    }
   }
 
   /**

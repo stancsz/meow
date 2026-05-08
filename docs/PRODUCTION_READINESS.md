@@ -102,9 +102,34 @@ Before declaring MEOW "Production Ready," the following criteria must be met:
 - [ ] **Quantum Reliability**: `QuantumReasoning.solve` converges on correct choices >90% of the time.
 - [ ] **State Persistence**: 100% recovery of mission state after a hard process crash.
 
+## 9. Strategic Autonomy Scaffolding
+
+To achieve a high "Single Prompt to Final Success" rate, MEOW must evolve its agentic scaffolding from reactive tool-calling to proactive mission governance.
+
+### The OODA Loop Architecture
+Instead of immediate code generation, the orchestrator should enforce a formal **Observe-Orient-Decide-Act** cycle:
+1. **Observe**: Run a recursive `ls` and `grep` to map the entire context of the problem.
+2. **Orient**: Identify cross-file dependencies and potential side effects (The "Blast Radius").
+3. **Decide**: Generate a structured **Mission Plan** with 3-5 verifiable sub-goals.
+4. **Act**: Execute one sub-goal at a time, followed by a mandatory **Intermediate Verification**.
+
+### Continuous Evaluation Harness (`evals/`)
+We must establish a local **MEOW-bench** to measure autonomy regressions:
+- **`evals/missions.jsonl`**: A collection of historical "Hard" tasks that previously failed.
+- **`evals/harness.ts`**: An automated runner that executes missions in a clean container and validates the output using `git diff` and `npm test`.
+- **Target Metric**: >85% success on the "First Turn" for all tasks in `missions.jsonl`.
+
+### Intermediate Checkpointing
+If a mission involves more than 3 file changes, the orchestrator must **checkpoint** the state:
+- Save the current memory and file delta.
+- If the agent fails at step 4, it should respawn at the step 3 checkpoint rather than restarting from the original prompt.
+
+---
+
 ### Verification Integrity
 - [ ] **The Liar Check**: MissionReviewer rejects "placeholder" commits 100% of the time.
 - [ ] **Context Fidelity**: Generated specialist commands contain >90% relevant information (Files, Goals, SOPs).
+- [ ] **OODA Compliance**: Agent generates a verifiable plan before modifying any code.
 - [ ] **Semantic Pulse**: `MeowKernel` tracks `progressScore` and kills agents with 0 velocity.
 - [ ] **Drift Detection**: Shadow Audit correctly identifies and pivots "random stuff" behavior.
 - [ ] **Automatic Retries**: Failed missions automatically re-spawn with context from the failure.
