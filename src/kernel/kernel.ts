@@ -220,7 +220,23 @@ export class MeowKernel {
 
     while (attempt < this.maxRetries && !success) {
       try {
-        // Use batch RPC to process all actions in one round-trip
+        // 1. Process interference actions before persistence (Spooky Action Propagation)
+        for (const action of batch) {
+          if (action.type === "SET_STATE" && action.key.startsWith("interference_")) {
+            const partnerPid = parseInt(action.key.split("_")[1]);
+            const interference = action.value;
+            this.log(`🌌 [SPOOKY ACTION] Mission ${interference.sourcePid} collapsed. Interfering with Partner ${partnerPid} (Shift: ${interference.shift})`, "KERNEL");
+            
+            // In a real quantum system, this would shift the phase of the partner's reasoning loop
+            // Here we update the progress summary to reflect the entanglement state
+            const progress = this.agentProgress.get(partnerPid);
+            if (progress) {
+              progress.summary += ` | [Entangled Interference from ${interference.sourcePid}]`;
+            }
+          }
+        }
+
+        // 2. Use batch RPC to process all actions in one round-trip
         const result = await this.db.batch(batch);
         if (result.errors.length > 0) {
           console.error("Kernel drain errors:", result.errors);

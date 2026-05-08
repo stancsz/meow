@@ -44,7 +44,7 @@ export class SkillManager {
         const body = sections.slice(2).join("---").trim();
 
         if (frontmatter.name) {
-          this.skills.set(frontmatter.name, {
+          this.registerSkill({
             name: frontmatter.name,
             description: frontmatter.description || "",
             content: body,
@@ -56,6 +56,10 @@ export class SkillManager {
       }
     }
     this.isInitialized = true;
+  }
+
+  registerSkill(skill: Skill) {
+    this.skills.set(skill.name, skill);
   }
 
   getSkill(name: string): Skill | undefined {

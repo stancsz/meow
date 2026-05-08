@@ -71,6 +71,7 @@ Production readiness requires moving from "Is the process alive?" to "Is the wor
 | **Paginated Context** | Implement sliding-window L1 context management to prevent OOM on massive repos. | Q4 2026 |
 | **SOP Governance** | Fully automated injection of `.context/SOP.md` with zero-bypass enforcement. | COMPLETED |
 | **Health Telemetry** | Real-time monitoring of agent "Pulse" and "Entanglement Quality" via CLI dashboard. | Q4 2026 |
+| **Environment Awareness** | Automated discovery and integration of host-level MCP servers and global skills. | Q2 2026 |
 
 ---
 
@@ -127,13 +128,17 @@ If a mission involves more than 3 file changes, the orchestrator must **checkpoi
 ---
 
 ### Verification Integrity
-- [ ] **The Liar Check**: MissionReviewer rejects "placeholder" commits 100% of the time.
-- [ ] **Context Fidelity**: Generated specialist commands contain >90% relevant information (Files, Goals, SOPs).
-- [ ] **OODA Compliance**: Agent generates a verifiable plan before modifying any code.
-- [ ] **Semantic Pulse**: `MeowKernel` tracks `progressScore` and kills agents with 0 velocity.
-- [ ] **Drift Detection**: Shadow Audit correctly identifies and pivots "random stuff" behavior.
-- [ ] **Automatic Retries**: Failed missions automatically re-spawn with context from the failure.
-- [ ] **Type Check Enforcement**: Every mission requires a clean `tsc --noEmit` before verification.
+- [x] **The Liar Check**: MissionReviewer rejects "placeholder" commits 100% of the time.
+- [x] **Context Fidelity**: Generated specialist commands contain >90% relevant information (Files, Goals, SOPs).
+- [x] **OODA Compliance**: Agent generates a verifiable plan before modifying any code.
+- [x] **Semantic Pulse**: `MeowKernel` tracks `progressScore` and kills agents with 0 velocity.
+- [x] **Drift Detection**: Shadow Audit correctly identifies and pivots "random stuff" behavior.
+- [x] **Automatic Retries**: Failed missions automatically re-spawn with context from the failure.
+- [x] **Type Check Enforcement**: Every mission requires a clean `tsc --noEmit` before verification.
+- [x] **Concurrency Safety**: File conflicts block execution to prevent corruption.
+- [x] **Worker Resilience**: No spin loops on overload; dispatching is completion-driven.
+- [ ] **Environment Awareness**: Orchestrator discovers host-level MCP servers and global skills for delegation.
+- [x] **Entanglement Processing**: Spooky Action interference is processed in the kernel loop.
 
 ### Operations & UX
 - [ ] **One-Command Setup**: `npm install -g .` works on Linux, macOS, and Windows.

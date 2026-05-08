@@ -23,6 +23,10 @@ export class McpManager {
     this.configs.set(config.name, config);
   }
 
+  getConfigs(): Map<string, McpConfig> {
+    return this.configs;
+  }
+
   async connect(name: string) {
     const config = this.configs.get(name);
     if (!config) throw new Error(`MCP Server ${name} not found in config`);

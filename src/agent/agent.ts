@@ -7,6 +7,7 @@ import { basename } from "path";
 import DiffMatchPatch from "diff-match-patch";
 import { SkillManager } from "./skills";
 import { McpManager } from "./mcp";
+import { DiscoveryModule } from "./discovery";
 import { resolve } from "path";
 
 import { summon } from "./summoner";
@@ -58,6 +59,7 @@ export class Agent {
 
   public skillManager: SkillManager;
   public mcpManager: McpManager;
+  public discoveryModule: DiscoveryModule;
   public extensionManager: ExtensionManager;
   public quantumMemory: QuantumMemory;
   public quantumReasoning: QuantumReasoning;
@@ -85,6 +87,7 @@ export class Agent {
 
     this.skillManager = new SkillManager();
     this.mcpManager = new McpManager();
+    this.discoveryModule = new DiscoveryModule();
     this.extensionManager = new ExtensionManager();
     this.kernel = config.kernel;
     this.db = config.db as any;
@@ -426,6 +429,17 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
     // Discover Skills and Extensions
     await this.skillManager.discover();
     await this.extensionManager.discover();
+
+    // Host Environment Awareness
+    const hostMcp = await this.discoveryModule.discoverMcpServers();
+    for (const server of hostMcp) {
+      await this.mcpManager.addServer(server);
+    }
+    
+    const hostSkills = await this.discoveryModule.discoverGlobalSkills();
+    for (const skill of hostSkills) {
+      this.skillManager.registerSkill(skill);
+    }
 
     const skillsPrompt = this.skillManager.getSkillsPrompt();
     const extensionsPrompt = this.extensionManager.getExtensionsPrompt();

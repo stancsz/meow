@@ -81,6 +81,7 @@ export class ParallelExecutor {
           this.runningTasks.delete(task.id);
           this.taskEvents?.onResult?.(task.id, result);
           this.activeTaskCount--;
+          dispatch();
           checkDone();
         }).catch((error: any) => {
           if (!this.runningTasks.has(task.id)) return; // Already timed out
@@ -95,21 +96,38 @@ export class ParallelExecutor {
           this.runningTasks.delete(task.id);
           this.taskEvents?.onResult?.(task.id, failedResult);
           this.activeTaskCount--;
+          dispatch();
           checkDone();
         });
       };
 
       const dispatch = () => {
+        // Track if we're making progress to prevent spin loops
+        let noWorkerAvailableCount = 0;
+
         while (this.queue.canAcceptWork()) {
           const task = this.queue.dequeue();
           if (!task) break;
+
           const worker = this.selectWorker(task);
           if (!worker) {
-            this.queue.cancel(task.id);
+            // No worker can accept this task - re-enqueue and stop this dispatch round
             this.queue.enqueue(task);
+            noWorkerAvailableCount++;
+            // If multiple tasks in a row can't find workers, stop dispatching
+            // to avoid spinning when all workers are at capacity
+            if (noWorkerAvailableCount >= 2) break;
+            continue;
+          }
+
+          noWorkerAvailableCount = 0; // Reset on successful dispatch
+          startTask(task, worker);
+
+          // If we just started a task, there may be more work to do
+          // But don't hog the event loop - let other async operations proceed
+          if (this.activeTaskCount >= this.executorConfig.maxWorkers) {
             break;
           }
-          startTask(task, worker);
         }
       };
 
@@ -238,8 +256,21 @@ export class ParallelExecutor {
     this.runningTasks.delete(taskId);
     this.activeTaskCount--;
     
+    // Notify the worker to abort if possible
+    this.abortTask(taskId);
+
     // Check if we can dispatch more or if we are done
     this.checkDone();
+  }
+
+  private abortTask(taskId: string): void {
+    const execution = this.runningTasks.get(taskId);
+    if (!execution) return;
+
+    // If it's a specialist child process, try to kill it
+    // Note: We'd need the child process reference, which we don't have here.
+    // TODO: Store child process in runningTasks metadata
+    console.warn(`[ParallelExecutor] Aborting task ${taskId} (Cleanup pending)`);
   }
 
   private sleep(ms: number): Promise<void> {

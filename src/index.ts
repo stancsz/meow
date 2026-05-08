@@ -44,8 +44,24 @@ async function main() {
     kernel
   });
 
+  // Support for --tui flag
+  if (process.argv.includes("--tui")) {
+    const { MeowTUI } = await import("./cli/tui");
+    // Create 4 independent agent swarms for parallel orchestration
+    const agents = Array.from({ length: 4 }, (_, i) => new Agent({
+      model: config.model,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      db,
+      kernel
+    }));
+    const tui = new MeowTUI(agents);
+    tui.start();
+    return;
+  }
+
   // Support for non-interactive command mode
-  const command = process.argv.slice(2).join(" ");
+  const command = process.argv.filter(arg => !arg.startsWith("--")).slice(2).join(" ");
   if (command) {
     console.log(`🤖 [MEOW] Executing command: ${command}`);
     const response = await agent.chat(command, false, undefined, (status) => {

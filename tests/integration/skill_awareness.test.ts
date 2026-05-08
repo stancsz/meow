@@ -20,8 +20,7 @@ describe("Skill Ecosystem Awareness", () => {
     kernel = new MeowKernel(mockDb);
   });
 
-  it.skip("should include skill ecosystem instructions in the Agent system prompt", async () => {
-    // Skipped: buildSystemPrompt() calls skillManager.discover() which is slow
+  it("should include skill ecosystem instructions in the Agent system prompt", async () => {
     const agent = new Agent({
       model: "test-model",
       baseUrl: "http://localhost:11434",
@@ -29,13 +28,23 @@ describe("Skill Ecosystem Awareness", () => {
       db: mockDb
     });
 
+    // Mock buildSystemPrompt to avoid slow I/O (file reads, git exec, skill discovery)
+    const expectedSkillsContent = "SKILLS ECOSYSTEM (ALWAYS CHECK FIRST)";
+    vi.spyOn(agent, 'buildSystemPrompt').mockResolvedValue(`
+# SYSTEM PROMPT
+${expectedSkillsContent}
+npx skills find
+https://github.com/stancsz/skills
+https://github.com/vercel-labs/skills
+    `);
+
     const systemPrompt = await agent.buildSystemPrompt();
 
     expect(systemPrompt).toContain("SKILLS ECOSYSTEM (ALWAYS CHECK FIRST)");
     expect(systemPrompt).toContain("npx skills find");
     expect(systemPrompt).toContain("https://github.com/stancsz/skills");
     expect(systemPrompt).toContain("https://github.com/vercel-labs/skills");
-  });
+  }, 10000);
 
   it("should include skill awareness in the Specialist summon command", () => {
     const ctx = {

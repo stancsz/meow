@@ -141,7 +141,7 @@ export class Orchestrator {
       tasks = await this.decomposer.decompose(request, {
         availableFiles: this.agent.getFiles(),
         existingSkills: this.skillManager.getAllSkills().map(s => s.name),
-        mcpServers: Array.from(this.mcpManager.getClients().keys()),
+        mcpServers: Array.from(this.mcpManager.getConfigs().keys()),
       });
       onStatus?.({
         level: 'info',
@@ -155,11 +155,13 @@ export class Orchestrator {
         if (task.producedFiles) {
           const conflicts = this.coordinator.wouldConflict(task.id, task.producedFiles);
           if (conflicts.length > 0) {
+            const msg = `CRITICAL: Parallel task collision detected on files: ${conflicts.join(', ')}. Execution blocked to prevent corruption.`;
             onStatus?.({
-              level: 'warning',
-              message: `File conflicts: ${conflicts.join(', ')}`,
+              level: 'error',
+              message: msg,
               timestamp: Date.now(),
             });
+            throw new Error(msg);
           }
         }
       }
