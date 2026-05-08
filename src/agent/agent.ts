@@ -19,6 +19,7 @@ import { QuantumReasoning } from "./quantum_reasoning";
 import { MeowDatabase } from "../kernel/database";
 import { config } from "../config/env";
 import { DatabasePort } from "../extensions/database/manifest";
+import pc from "picocolors";
 
 export interface AgentConfig {
   model: string;
@@ -40,6 +41,10 @@ export interface EditBlock {
 const HEAD_PATTERN = /^<{5,9} SEARCH>?\s*$/;
 const DIVIDER_PATTERN = /^={5,9}\s*$/;
 const UPDATED_PATTERN = /^>{5,9} REPLACE\s*$/;
+
+// Unified diff patterns (udiff format - more compact)
+const UDIFF_PATTERN = /^---?\s/m;
+const UDIFF_HUNK_PATTERN = /^@@\s*[-+]\d+,\d+\s*[+]\d+,\d+\s*@@/gm;
 
 // Reasoning tag patterns (for models like Deepseek)
 const REASONING_TAGS = [
@@ -68,6 +73,8 @@ export class Agent {
 
   private L1_TOKEN_LIMIT = 40000; // The Reasoning Sweet Spot
   private currentL1Tokens = 0;
+  private lintFixAttempts = 0;
+  private LINT_FIX_LOOP_MAX = 3; // Cap recovery attempts to prevent token burning
 
   public MONOLITH_BLUEPRINT = `
 1. SINGLE WRITER PHYSICS: All state mutations (DB/Swarm) MUST go through MeowKernel. No direct writes.
@@ -147,12 +154,29 @@ export class Agent {
           if (tool) {
             onStatus?.(`Using tool: ${toolName}...`);
             let result = await tool.execute(toolArgs.trim(), this);
-            
+
             // Context Pruning: Cap large tool outputs
             const MAX_TOOL_OUTPUT = 5000;
             if (result.length > MAX_TOOL_OUTPUT) {
-              result = result.substring(0, MAX_TOOL_OUTPUT) + 
+              result = result.substring(0, MAX_TOOL_OUTPUT) +
                 `... \n\n[Output truncated for context efficiency. Use 'read' on specific files if you need more detail.]`;
+            }
+
+            // LINT-FIX LOOP: Detect failures from run/lint/test tools
+            const runToolName = toolName.toLowerCase();
+            if (runToolName === "run" || runToolName === "test") {
+              const errorDetected = this.detectRunFailure(result);
+              if (errorDetected && this.lintFixAttempts < this.LINT_FIX_LOOP_MAX) {
+                this.lintFixAttempts++;
+                const fixPrompt = this.buildSurgicalFixPrompt(result, toolArgs.trim());
+                this.messages.push({ role: "assistant", content: response });
+                this.messages.push({ role: "user", content: fixPrompt });
+                onStatus?.(`🔧 [LINT-FIX LOOP] Error detected (${this.lintFixAttempts}/${this.LINT_FIX_LOOP_MAX}). Prompting fix...`);
+                continue; // Free recovery turn
+              } else if (errorDetected && this.lintFixAttempts >= this.LINT_FIX_LOOP_MAX) {
+                console.log(pc.yellow(`⚠️ [LINT-FIX LOOP] Max recovery attempts (${this.LINT_FIX_LOOP_MAX}) reached. Flagging for human review.`));
+                result += "\n\n[RECOVERY LOOP EXHAUSTED - Manual intervention required]";
+              }
             }
 
             // Archive tool result in Quantum Memory for future recall
@@ -566,7 +590,94 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
       }
       i++;
     }
-    
+
+    // Also try parsing unified diffs (udiff format) as fallback
+    const udiffEdits = this.parseUdiffs(response);
+    for (const udiffEdit of udiffEdits) {
+      if (!edits.some(e => e.path === udiffEdit.path)) {
+        edits.push(udiffEdit);
+      }
+    }
+
+    return edits;
+  }
+
+  /**
+   * Parse unified diffs (udiff format) from model response.
+   * Format: --- filename\n@@ -start,+count @@\n+added lines\n-removed lines
+   * This is more compact than SEARCH/REPLACE blocks.
+   */
+  private parseUdiffs(response: string, fileContext?: Map<string, string>): EditBlock[] {
+    const edits: EditBlock[] = [];
+
+    // Check if response contains unified diff markers
+    if (!UDIFF_PATTERN.test(response)) {
+      return edits;
+    }
+
+    // Reset regex lastIndex
+    UDIFF_HUNK_PATTERN.lastIndex = 0;
+
+    // Split into diff sections
+    const sections = response.split(/(?=^---?\s)/m);
+    let currentFile = "";
+    let currentOriginal: string[] = [];
+    let currentUpdated: string[] = [];
+    let inHunk = false;
+    let hunkStart = 0;
+
+    for (const section of sections) {
+      const lines = section.split('\n');
+
+      for (const line of lines) {
+        // File header: --- filename or +++ filename
+        const fileHeaderMatch = line.match(/^[+-]{3}\s+(.+?)\s*$/);
+        if (fileHeaderMatch) {
+          // Save previous diff if complete
+          if (currentFile && currentOriginal.length > 0) {
+            edits.push({
+              path: currentFile,
+              original: currentOriginal.join('\n'),
+              updated: currentUpdated.join('\n'),
+            });
+          }
+          currentFile = fileHeaderMatch[1];
+          currentOriginal = [];
+          currentUpdated = [];
+          inHunk = false;
+          continue;
+        }
+
+        // Hunk header: @@ -start,+count @@ +start,+count @@
+        const hunkMatch = line.match(/^@@\s*[-+](\d+)(?:,(\d+))?\s+[-+](\d+)(?:,(\d+))?\s*@@/);
+        if (hunkMatch) {
+          inHunk = true;
+          // For simplicity, we'll fetch the original from fileContext or current file
+          continue;
+        }
+
+        if (inHunk) {
+          if (line.startsWith('-')) {
+            currentOriginal.push(line.substring(1));
+          } else if (line.startsWith('+')) {
+            currentUpdated.push(line.substring(1));
+          } else if (line.startsWith(' ')) {
+            currentOriginal.push(line.substring(1));
+            currentUpdated.push(line.substring(1));
+          }
+        }
+      }
+    }
+
+    // Save last diff
+    if (currentFile && currentOriginal.length > 0) {
+      edits.push({
+        path: currentFile,
+        original: currentOriginal.join('\n'),
+        updated: currentUpdated.join('\n'),
+      });
+    }
+
     return edits;
   }
 
@@ -782,6 +893,52 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
       }
       return String(e);
     }
+  }
+
+  /**
+   * Detect run/test tool failures using error pattern matching.
+   * Covers: compile errors, runtime errors, lint errors, test failures.
+   */
+  private detectRunFailure(output: string): boolean {
+    const failurePatterns = [
+      /\b(error|Error|ERROR|failed|FAILED|Failed)\b/,
+      /\b(fatal|FATAL)\b/,
+      /\bSyntaxError\b/,
+      /\bReferenceError\b/,
+      /\bTypeError\b/,
+      /\bParseError\b/,
+      /\bAssertionError\b/,
+      /\bCannot find\b/,
+      /\bModule not found\b/,
+      /\bENOENT\b/,
+      /\bCommand failed\b/,
+      /\bNon-zero exit\b/,
+      /\bTypeScript error\b/,
+      /\bESLint error\b/,
+      /\bTS[0-9]{4}\b/, // TypeScript error codes like TS2345
+    ];
+
+    return failurePatterns.some(pattern => pattern.test(output));
+  }
+
+  /**
+   * Build a surgical fix prompt directing the model to fix specific errors.
+   */
+  private buildSurgicalFixPrompt(errorOutput: string, toolArgs: string): string {
+    const extracted = this.extractError(errorOutput);
+    return `⚠️ [LINT-FIX] The previous command failed with errors:
+
+${extracted}
+
+COMMAND: ${toolArgs}
+
+INSTRUCTIONS:
+1. Read the relevant source file(s) to understand the context.
+2. Apply a MINIMAL surgical fix to resolve only the reported error(s).
+3. Do NOT refactor unrelated code.
+4. After fixing, re-run the command to verify.
+
+Respond with your fix using SEARCH/REPLACE blocks.`;
   }
 
   private updateTokenEstimate() {
