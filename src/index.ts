@@ -47,15 +47,7 @@ async function main() {
   // Support for --tui flag
   if (process.argv.includes("--tui")) {
     const { MeowTUI } = await import("./cli/tui");
-    // Create 4 independent agent swarms for parallel orchestration
-    const agents = Array.from({ length: 4 }, (_, i) => new Agent({
-      model: config.model,
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey,
-      db,
-      kernel
-    }));
-    const tui = new MeowTUI(agents);
+    const tui = new MeowTUI(agent);
     tui.start();
     return;
   }

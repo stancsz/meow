@@ -64,8 +64,10 @@ export class E2EHarness extends EventEmitter {
 
     if (type === "meow") {
       const isWindows = process.platform === "win32";
-      cmd = isWindows ? "npx.cmd" : "npx";
-      args = ["tsx", entryPoint];
+      // Use node directly with tsx module - tsx has a .mjs entry point
+      const tsxPath = path.join(workingDir, "node_modules", "tsx", "dist", "cli.mjs");
+      cmd = "node";
+      args = [tsxPath, entryPoint];
     } else {
       // For claude/aider, we use the system PATH
       cmd = type;

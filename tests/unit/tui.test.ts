@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createHeadlessTUI, getElementText, simulateCommand } from '../utils/tui-harness';
+import { createHeadlessTUI, getElementText } from '../utils/tui-harness';
 import { Agent } from '../../src/agent/agent';
 import { MeowKernel } from '../../src/kernel/kernel';
 import { DatabasePort } from '../../src/extensions/database/manifest';
@@ -25,43 +25,39 @@ describe('MeowTUI', () => {
     });
   });
 
-  it('should initialize with 4 panes by default', () => {
+  it('should initialize with a log pane', () => {
     const { tui } = createHeadlessTUI(agent);
-    expect(tui.getSplitCount()).toBe(4);
-    expect(tui.getWorkerPanes().length).toBe(4);
+    expect(tui.getLogPane()).toBeDefined();
   });
 
-  it('should change split count via /split command', async () => {
+  it('should log system messages to the log pane', async () => {
     const { tui } = createHeadlessTUI(agent);
-    
-    await tui.handleCommand('/split 1');
-    expect(tui.getSplitCount()).toBe(1);
-    expect(tui.getWorkerPanes().length).toBe(1);
+    const logPane = tui.getLogPane();
 
-    await tui.handleCommand('/split 2');
-    expect(tui.getSplitCount()).toBe(2);
-    expect(tui.getWorkerPanes().length).toBe(2);
-  });
-
-  it('should log system messages to the console', async () => {
-    const { tui } = createHeadlessTUI(agent);
-    const consolePane = tui.getConsole();
-    
-    // Simulate a message
     (tui as any).log('Test system message');
-    
-    const text = getElementText(consolePane);
+
+    const text = getElementText(logPane);
     expect(text).toContain('Test system message');
   });
 
   it('should clear logs via /clear command', async () => {
     const { tui } = createHeadlessTUI(agent);
-    const consolePane = tui.getConsole();
-    
+    const logPane = tui.getLogPane();
+
     (tui as any).log('Persistent message');
-    expect(getElementText(consolePane)).toContain('Persistent message');
-    
+    expect(getElementText(logPane)).toContain('Persistent message');
+
     await tui.handleCommand('/clear');
-    expect(getElementText(consolePane)).toBe('');
+    expect(getElementText(logPane)).toBe('');
+  });
+
+  it('should handle /help command', async () => {
+    const { tui } = createHeadlessTUI(agent);
+    const logPane = tui.getLogPane();
+
+    await tui.handleCommand('/help');
+    const text = getElementText(logPane);
+    expect(text).toContain('Commands');
+    expect(text).toContain('/exit');
   });
 });

@@ -28,7 +28,7 @@ export function createHeadlessTUI(agent: Agent): HeadlessTUI {
     }),
   });
 
-  const tui = new MeowTUI([agent], screen);
+  const tui = new MeowTUI(agent, screen);
   
   return {
     tui,

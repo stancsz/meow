@@ -17,8 +17,7 @@ export function createRepl(agent: Agent) {
 
   // Helper: Create box line with dynamic width
   const boxLine = (char: string, width: number): string => {
-    const usableWidth = width - 4; // Account for "│  " prefix and suffix
-    return char.repeat(Math.max(usableWidth, 10));
+    return char.repeat(Math.max(width, 0));
   };
 
   // Helper: Sanitize line for display inside box frame
@@ -184,9 +183,10 @@ export function createRepl(agent: Agent) {
           // Premium Response Rendering with dynamic box width
           console.log("");
           const termWidth = getTerminalWidth();
-          const dashLine = boxLine("─", termWidth);
-          const headerLine = pc.bold(pc.cyan("┌── MEOW ─" + dashLine));
-          const footerLine = pc.bold(pc.cyan("└" + dashLine));
+          const usableWidth = Math.max(termWidth - 6, 20);
+          const dashLine = boxLine("─", usableWidth);
+          const headerLine = pc.bold(pc.cyan("┌── MEOW ─" + boxLine("─", usableWidth - 7)));
+          const footerLine = pc.bold(pc.cyan("└" + dashLine + "──┘"));
           console.log(headerLine);
 
           const coloredResponse = response
