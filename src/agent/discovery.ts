@@ -53,6 +53,7 @@ export class DiscoveryModule {
     const globalPaths = [
       join(this.home, ".claude", "skills"),
       join(this.home, ".meow", "skills"),
+      join(this.home, ".agents", "skills"),
     ];
 
     const skills: Skill[] = [];
