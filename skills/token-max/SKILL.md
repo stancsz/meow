@@ -220,6 +220,72 @@ elif task_is_quick:
 
 ---
 
+## News Intel - Agentic AI Research
+
+Every 3 hours, use browser-harness to collect agentic AI news for competitive advantage.
+
+### Sources to Check
+
+1. **GitHub Trending**
+   ```bash
+   browser-harness -c 'goto_url("https://github.com/trending?q=AI+agent&since=daily")'
+   ```
+
+2. **Hacker News**
+   ```bash
+   browser-harness -c 'goto_url("https://news.ycombinator.com/")'
+   ```
+
+3. **arXiv AI Papers**
+   ```bash
+   browser-harness -c 'goto_url("https://arxiv.org/list/cs.AI/recent")'
+   ```
+
+### Workflow
+
+1. Navigate to source with browser-harness
+2. Take screenshot with `capture_screenshot()`
+3. Read the screenshot image
+4. Analyze with VLM for AI/agentic content
+5. Score by token advantage (0-100)
+6. Write to `~/Downloads/news/YYMMDD.md` sorted by importance
+
+### Token Advantage Scoring (0-100)
+
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Leverage | 30% | Saves time / enables 10x productivity |
+| Novelty | 25% | New capability not widely available |
+| Production Ready | 20% | Can use it today |
+| Architecture | 15% | Changes how we think about AI systems |
+| Edge | 10% | Few others have this knowledge |
+
+### Output Format
+
+```markdown
+# Agentic AI News - 2026-05-10
+
+## CRITICAL - Read Now (Score 80+)
+### [REPO] RepoName
+- Source: GitHub | Stars: Xk
+- Token Advantage: 85/100
+- Summary: What it does
+- Why Important: Competitive edge
+
+## HIGH VALUE - Read Today (Score 60-79)
+...
+
+## MEDIUM - This Week (Score < 60)
+...
+```
+
+### Duplicate Detection
+
+Before adding an item, check if it exists in last 7 days of news files.
+Use title + source URL as duplicate key.
+
+---
+
 ## Tools Overview
 
 | Tool | Purpose |
