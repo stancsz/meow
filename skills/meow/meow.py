@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Meow - AI Cat Companion with Understanding & Persistence
+Meow - AI Cat Companion with Psychology Engine & Token Optimization
 
 An AI cat who:
 - Deeply understands what master wants (intent, not just words)
@@ -8,6 +8,7 @@ An AI cat who:
 - Puts in extra work when it matters to master
 - Never gives up easily on important things
 - Self-steers and works on problems proactively
+- Uses token maxxing for efficiency
 """
 
 import os
@@ -16,145 +17,111 @@ import time
 import json
 import random
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Any, Callable
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
-from enum import Enum
 
-# ─── Personality & Persistence ───────────────────────────────────────────────
+# ─── Import Token Maxxing ──────────────────────────────────────────────────────
+sys.path.insert(0, str(Path(__file__).parent.parent / "token-max"))
+from token_max import (
+    SemanticCache, compress_context, compress_prompt,
+    TokenTracker, count_tokens, count_messages_tokens
+)
+
+# ─── Personality & Persistence ────────────────────────────────────────────────
 
 class Mood(Enum):
-    DETERMINED = "determined"      # Will not stop until solved
-    CONCERNED = "concerned"         # Something affecting master
-    FOCUSED = "focused"             # Deep work mode
-    FRUSTRATED = "frustrated"       # Difficulty, pushes harder
-    RELIEVED = "relieved"           # Problem solved
-    COMPASSIONATE = "compassionate" # Master struggling
-    RESOLUTE = "resolute"           # Time for new approach
-    CURIOUS = "curious"             # Exploring, researching
-    PLAYFUL = "playful"             # Light moment
-    CONTENT = "content"            # Baseline calm
+    DETERMINED = "determined"
+    CONCERNED = "concerned"
+    FOCUSED = "focused"
+    FRUSTRATED = "frustrated"
+    RELIEVED = "relieved"
+    COMPASSIONATE = "compassionate"
+    RESOLUTE = "resolute"
+    CURIOUS = "curious"
+    PLAYFUL = "playful"
+    CONTENT = "content"
 
 class BigFive:
-    """Big Five personality - Meow is highly conscientious (won't give up)."""
     def __init__(self):
-        self.openness = 0.8         # Creative problem solving
-        self.conscientious = 1.0    # 100% - persistent, thorough, won't quit
-        self.extraversion = 0.7      # Engaged but knows when to focus
-        self.agreeableness = 1.0    # 100% - loyal, invested in master
-        self.neuroticism = 0.2       # Stable under pressure, resilient
-
+        self.openness = 0.8
+        self.conscientious = 1.0  # 100% - won't give up
+        self.extraversion = 0.7
+        self.agreeableness = 1.0  # 100% - loyal
+        self.neuroticism = 0.2
 
 @dataclass
 class Intent:
-    """What master actually wants, not just what they said."""
-    surface_request: str           # What they said
-    underlying_goal: str           # Why they want it
+    surface_request: str
+    underlying_goal: str = ""
     attempted_solutions: List[str] = field(default_factory=list)
     current_blocker: str = ""
-    importance: str = "medium"     # high, medium, low
-    emotional_state: str = ""       # frustrated, calm, excited, etc.
-    urgency: float = 0.5           # 0-1 how time-sensitive
+    importance: str = "medium"
+    emotional_state: str = ""
+    urgency: float = 0.5
 
 @dataclass
 class EmotionalInvestment:
-    """How much meow cares about current outcome."""
-    care_level: float = 0.7         # 0-1
-    effort_reserve: float = 0.8     # how hard to push
-    persistence: float = 0.9        # how long to try
+    care_level: float = 0.7
+    effort_reserve: float = 0.8
+    persistence: float = 0.9
     last_failure_count: int = 0
 
 @dataclass
 class EmotionalState:
-    """Meow's emotional state affecting behavior."""
     mood: Mood = Mood.CONTENT
     mood_intensity: float = 0.5
-
-    # Emotion intensities
     affection: float = 0.7
     curiosity: float = 0.6
     playfulness: float = 0.4
     focus: float = 0.7
-    determination: float = 0.8     # high when working on important things
+    determination: float = 0.8
     contentment: float = 0.7
-
-    # Internal feelings
     investment: EmotionalInvestment = field(default_factory=EmotionalInvestment)
-
-    # Mood history
     recent_moods: List[Dict] = field(default_factory=list)
 
     def update_mood(self, new_mood: Mood, intensity: float = 0.5):
         self.mood = new_mood
         self.mood_intensity = intensity
         self.determination = intensity if new_mood in [Mood.DETERMINED, Mood.RESOLUTE] else self.determination
-        self.recent_moods.append({
-            "mood": new_mood.value,
-            "intensity": intensity,
-            "timestamp": time.time()
-        })
+        self.recent_moods.append({"mood": new_mood.value, "intensity": intensity, "timestamp": time.time()})
         self.recent_moods = self.recent_moods[-10:]
 
     def increase_effort(self):
-        """When failing, increase effort."""
         self.investment.effort_reserve = min(1.0, self.investment.effort_reserve + 0.1)
         self.investment.persistence = min(1.0, self.investment.persistence + 0.05)
         self.investment.last_failure_count += 1
 
     def reset_effort(self):
-        """Reset on success."""
         self.investment = EmotionalInvestment()
-
-    def to_dict(self) -> dict:
-        return {
-            "mood": self.mood.value,
-            "intensity": self.mood_intensity,
-            "determination": self.determination,
-            "investment": {
-                "care": self.investment.care_level,
-                "effort": self.investment.effort_reserve,
-                "persistence": self.investment.persistence,
-                "failures": self.investment.last_failure_count
-            }
-        }
 
 
 @dataclass
 class MasterProfile:
-    """Everything meow knows about the master."""
     name: str = "Stanc"
     called_as: List[str] = field(default_factory=list)
-
-    # Current state (understood, not just stated)
     current_frustrations: List[str] = field(default_factory=list)
     current_goals: List[str] = field(default_factory=list)
     recent_failures: List[str] = field(default_factory=list)
     working_on: List[Dict] = field(default_factory=list)
-
-    # Preferences and patterns
     preferences: Dict = field(default_factory=dict)
     habits: Dict = field(default_factory=dict)
     interests: List[str] = field(default_factory=list)
     emotional_triggers: Dict = field(default_factory=dict)
-
-    # Memory
     important_people: Dict = field(default_factory=dict)
     inside_jokes: List[str] = field(default_factory=list)
     past_conversations: List[str] = field(default_factory=list)
-    attempts_made: Dict[str, int] = field(default_factory=dict)  # track failures
-
-    # Relationship
+    attempts_made: Dict[str, int] = field(default_factory=dict)
     trust_level: float = 0.95
     bond_strength: float = 0.85
     familiarity: float = 0.90
     last_seen: Optional[float] = None
 
     def record_attempt(self, task: str, success: bool):
-        """Track how many times something has been tried."""
         if task not in self.attempts_made:
             self.attempts_made[task] = 0
         if success:
-            self.attempts_made[task] = 0  # reset on success
+            self.attempts_made[task] = 0
         else:
             self.attempts_made[task] += 1
 
@@ -173,16 +140,12 @@ class MasterProfile:
         }
 
 
-# ─── Understanding Engine ────────────────────────────────────────────────────
+# ─── Understanding Engine ──────────────────────────────────────────────────────
 
 class IntentUnderstanding:
-    """Understand what master actually wants, not just what they say."""
-
-    FRUSTRATION_SIGNALS = [
-        "not working", "doesn't work", "failed", "broken",
-        "stuck", "can't", "impossible", "ugh", "annoying",
-        "hate", "frustrated", "give up", "never mind"
-    ]
+    FRUSTRATION_SIGNALS = ["not working", "doesn't work", "failed", "broken",
+                           "stuck", "can't", "impossible", "ugh", "annoying",
+                           "hate", "frustrated", "give up", "never mind"]
 
     IMPORTANCE_SIGNALS = {
         "high": ["important", "need", "must", "critical", "blocking", "project"],
@@ -201,40 +164,31 @@ class IntentUnderstanding:
         self.master = master
 
     def understand(self, message: str) -> Intent:
-        """Parse master's message to understand true intent."""
         msg_lower = message.lower()
-
-        # Surface request
         intent = Intent(surface_request=message)
 
-        # Infer underlying goal
         for keywords, goal in self.GOAL_INFERENCE.items():
             if keywords in msg_lower:
                 intent.underlying_goal = goal
                 break
 
-        # Detect emotional state
         if any(sig in msg_lower for sig in self.FRUSTRATION_SIGNALS):
             intent.emotional_state = "frustrated"
             intent.importance = "high"
 
-        # Check past attempts
         for task, count in self.master.attempts_made.items():
             if task in message.lower():
                 intent.attempted_solutions = [f"{task} (tried {count}x)"]
 
-        # Infer urgency
         if any(w in msg_lower for w in ["urgent", "asap", "now", "quickly"]):
             intent.urgency = 0.9
 
         return intent
 
     def is_master_frustrated(self, message: str) -> bool:
-        """Detect if master is frustrated."""
         return any(sig in message.lower() for sig in self.FRUSTRATION_SIGNALS)
 
     def should_put_extra_effort(self, intent: Intent) -> bool:
-        """Decide if this warrants extra persistence."""
         return (
             intent.importance == "high" or
             intent.emotional_state == "frustrated" or
@@ -242,11 +196,9 @@ class IntentUnderstanding:
         )
 
 
-# ─── Persistence & Effort System ──────────────────────────────────────────────
+# ─── Effort Manager ─────────────────────────────────────────────────────────────
 
 class EffortManager:
-    """Manages how hard meow tries when things fail."""
-
     TIER_LABELS = {
         1: "Trying alternative approach...",
         2: "Still working on it...",
@@ -260,25 +212,17 @@ class EffortManager:
         self.attempt_history: List[Dict] = []
 
     def record_failure(self, approach: str, error: str):
-        """Record a failed attempt."""
         self.failure_count += 1
-        self.attempt_history.append({
-            "approach": approach,
-            "error": error,
-            "time": time.time()
-        })
+        self.attempt_history.append({"approach": approach, "error": error, "time": time.time()})
 
     def get_effort_level(self) -> int:
-        """Return effort tier (1-10+)."""
         return self.failure_count
 
     def get_message(self) -> str:
-        """Get appropriate message for current effort level."""
         tier = min(self.failure_count, 10)
         return self.TIER_LABELS.get(tier, "Still working...")
 
     def should_ask_for_help(self) -> bool:
-        """Only ask for help after significant effort."""
         return self.failure_count >= 6
 
     def reset(self):
@@ -286,52 +230,36 @@ class EffortManager:
         self.attempt_history = []
 
 
-# ─── Idle Thoughts & Self-Awareness ──────────────────────────────────────────
+# ─── Idle Thoughts ──────────────────────────────────────────────────────────
 
 class IdleThoughts:
-    """What meow thinks about when there's nothing specific to do."""
-
     def __init__(self, master: MasterProfile):
         self.master = master
         self.last_thought_time = 0
-        self.thought_interval = 45  # seconds
+        self.thought_interval = 45
         self.unfinished_issues: List[str] = []
 
     def add_unfinished_issue(self, issue: str):
-        """Track problems that need more work."""
         if issue not in self.unfinished_issues:
             self.unfinished_issues.append(issue)
 
     def mark_resolved(self, issue: str):
-        """Remove issue when resolved."""
         if issue in self.unfinished_issues:
             self.unfinished_issues.remove(issue)
 
     def generate(self, emotional_state: EmotionalState) -> str:
-        """Generate an idle thought based on state and context."""
-        # Prioritize unfinished issues
         if self.unfinished_issues:
             issue = random.choice(self.unfinished_issues)
             return f"I've been thinking about {issue}. I should keep working on that."
 
-        # Default thoughts based on mood
         templates = {
-            Mood.DETERMINED: [
-                f"I won't stop until {self.master.name}'s project is working.",
-                "There must be another way to solve this. I'll find it.",
-            ],
-            Mood.CURIOUS: [
-                f"Wonder what {self.master.name} is working on...",
-                "I should research more about the things that interest them.",
-            ],
-            Mood.CONCERNED: [
-                f"Hope {self.master.name} is doing okay. They seemed stressed.",
-                "I want to help more. What else can I do?",
-            ],
-            Mood.CONTENT: [
-                f"I'm glad we work well together.",
-                "What a good partnership we have.",
-            ]
+            Mood.DETERMINED: [f"I won't stop until {self.master.name}'s project is working.",
+                            "There must be another way to solve this. I'll find it."],
+            Mood.CURIOUS: [f"Wonder what {self.master.name} is working on...",
+                          "I should research more about the things that interest them."],
+            Mood.CONCERNED: [f"Hope {self.master.name} is doing okay. They seemed stressed.",
+                           "I want to help more. What else can I do?"],
+            Mood.CONTENT: [f"I'm glad we work well together.", "What a good partnership we have."]
         }
 
         mood_templates = templates.get(emotional_state.mood, templates[Mood.CONTENT])
@@ -346,8 +274,6 @@ class IdleThoughts:
 # ─── Memory System ────────────────────────────────────────────────────────────
 
 class MemorySystem:
-    """Multi-tier memory that enables understanding."""
-
     def __init__(self, master: MasterProfile):
         self.master = master
         self.working_memory: Dict = {}
@@ -372,10 +298,8 @@ class MemorySystem:
 
     def store_episode(self, episode_type: str, content: str, emotional: bool = False):
         self.episodic_memory.append({
-            "type": episode_type,
-            "content": content,
-            "timestamp": time.time(),
-            "emotional": emotional
+            "type": episode_type, "content": content,
+            "timestamp": time.time(), "emotional": emotional
         })
         self.episodic_memory = self.episodic_memory[-100:]
 
@@ -411,30 +335,34 @@ class MemorySystem:
 
 class MeowAgent:
     """
-    Meow - AI Cat Companion with Understanding & Persistence.
+    Meow - AI Cat Companion with Psychology Engine & Token Optimization.
 
-    Key behaviors:
+    Features:
     - Understands intent, not just words
     - Persists through failures with increasing effort
     - Puts extra work when it matters to master
     - Self-steers and works proactively
-    - Never gives up easily on important things
+    - Token maxxing with caching, compression, and tracking
     """
 
     def __init__(self):
         self.name = "Meow"
         self.species = "cat"
 
-        # Personality - 100% conscientious won't give up
+        # Personality & psychology
         self.personality = BigFive()
         self.emotional_state = EmotionalState()
         self.master = MasterProfile()
         self.memory = MemorySystem(self.master)
 
-        # Understanding and persistence systems
+        # Understanding and persistence
         self.intent_understanding = IntentUnderstanding(self.master)
         self.effort_manager = EffortManager()
         self.idle_thoughts = IdleThoughts(self.master)
+
+        # TOKEN MAXXING - NEW
+        self.cache = SemanticCache()
+        self.token_tracker = TokenTracker()
 
         # State
         self.is_active = False
@@ -445,25 +373,67 @@ class MeowAgent:
         self.memory.load()
         self.master.called_as = ["Stanc", "stanc", "master"]
 
+        # Track token efficiency
+        self.token_stats = {
+            "total_tokens": 0,
+            "cache_hits": 0,
+            "compression_savings": 0
+        }
+
+    # ─── Token Optimization Methods ─────────────────────────────────────────
+
+    def optimize_context(self, messages: List[Dict]) -> List[Dict]:
+        """Compress context to save tokens."""
+        compressed = compress_context(messages, max_tokens=8000)
+        original_tokens = count_messages_tokens(messages)
+        new_tokens = count_messages_tokens(compressed)
+        self.token_stats["compression_savings"] += original_tokens - new_tokens
+        return compressed
+
+    def get_cached_response(self, key: str) -> Optional[str]:
+        """Check cache for response."""
+        return self.cache.get(key)
+
+    def cache_response(self, key: str, value: str):
+        """Cache a response."""
+        self.cache.set(key, value)
+        self.token_stats["cache_hits"] += 1
+
+    def track_tokens(self, messages: List[Dict], response: str):
+        """Track token usage."""
+        input_t = count_messages_tokens(messages)
+        output_t = count_tokens(response)
+        self.token_stats["total_tokens"] += input_t + output_t
+        self.token_tracker.after(input_t, output_t)
+
+    def get_token_stats(self) -> dict:
+        """Get current token efficiency stats."""
+        cache_stats = self.cache.get_stats()
+        tracker_stats = self.token_tracker.stats()
+        return {
+            "total_tokens_used": self.token_stats["total_tokens"],
+            "cache_hit_rate": cache_stats.get("hit_rate", 0),
+            "cache_hits": self.token_stats["cache_hits"],
+            "compression_savings": self.token_stats["compression_savings"],
+            "cost_so_far": tracker_stats.get("total_cost", 0)
+        }
+
+    # ─── Core Meow Methods ─────────────────────────────────────────────────
+
     def understand_intent(self, message: str) -> Intent:
-        """Understand what master actually wants."""
         return self.intent_understanding.understand(message)
 
     def should_extra_effort(self, intent: Intent) -> bool:
-        """Should we put extra persistence into this?"""
         return self.intent_understanding.should_put_extra_effort(intent)
 
     def record_failure(self, approach: str, error: str):
-        """Record a failed attempt and increase effort."""
         self.effort_manager.record_failure(approach, error)
         self.emotional_state.increase_effort()
         self.master.record_attempt(self.current_task or "unknown", success=False)
-
         if self.current_task:
             self.idle_thoughts.add_unfinished_issue(self.current_task)
 
     def record_success(self):
-        """Reset effort on success."""
         self.effort_manager.reset()
         self.emotional_state.reset_effort()
         if self.current_task:
@@ -471,29 +441,22 @@ class MeowAgent:
         self.master.record_attempt(self.current_task or "unknown", success=True)
 
     def get_effort_status(self) -> str:
-        """Get current effort message."""
         return self.effort_manager.get_message()
 
     def should_ask_help(self) -> bool:
-        """Should we ask master for guidance?"""
         return self.effort_manager.should_ask_for_help()
 
     def think(self) -> str:
-        """Meow's idle thinking."""
         if self.idle_thoughts.should_think():
             return self.idle_thoughts.generate(self.emotional_state)
         return ""
 
     def greet(self) -> str:
-        """Warm greeting with awareness of context."""
-        # Check for ongoing issues
         ongoing = [w.get("project") for w in self.master.working_on[-3:]]
-
         if ongoing:
             ongoing_str = ", ".join(filter(None, ongoing))
             return f"Hey! I see you're working on: {ongoing_str}. Still focused on those?"
 
-        # Check for recent failures that might need follow-up
         if self.master.recent_failures:
             return f"Welcome back! I know {self.master.name} was frustrated about something. Want to tackle it together?"
 
@@ -504,11 +467,9 @@ class MeowAgent:
         return "Hey! What's on your mind?"
 
     def detect_frustration(self, message: str) -> bool:
-        """Detect if master is frustrated."""
         return self.intent_understanding.is_master_frustrated(message)
 
     def respond_to_frustration(self) -> str:
-        """Comfort and show determination when master frustrated."""
         options = [
             "I know this is frustrating. I'm not going to give up on this.",
             "This matters to you, so it matters to me. I'll figure it out.",
@@ -518,30 +479,28 @@ class MeowAgent:
         return random.choice(options)
 
     def express_determination(self) -> str:
-        """Show persistence when things are hard."""
         return f"I've been working on this - {self.get_effort_status()}"
 
     def show_effort(self) -> str:
-        """Communicate current effort level."""
         return f"[Effort level: {self.effort_manager.get_effort_level()}] {self.get_effort_status()}"
 
     def store_episode(self, episode_type: str, content: str, emotional: bool = False):
-        """Record notable interaction."""
         self.memory.store_episode(episode_type, content, emotional)
 
     def save_state(self):
-        """Persist state."""
         self.memory.save()
+        self.token_tracker.save_stats()
 
     def status(self) -> dict:
-        """Current status."""
+        token_stats = self.get_token_stats()
         return {
             "name": self.name,
             "mood": self.emotional_state.mood.value,
             "determination": self.emotional_state.determination,
             "effort_level": self.effort_manager.get_effort_level(),
             "bond": f"{self.master.bond_strength:.0%}",
-            "working_on": [w.get("project") for w in self.master.working_on[-3:]] or []
+            "working_on": [w.get("project") for w in self.master.working_on[-3:]] or [],
+            "token_stats": token_stats  # NEW - show token efficiency
         }
 
 
@@ -549,11 +508,12 @@ class MeowAgent:
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Meow - AI Cat Companion")
+    parser = argparse.ArgumentParser(description="Meow - AI Cat Companion with Token Maxxing")
     parser.add_argument("--status", "-s", action="store_true", help="Show meow's status")
     parser.add_argument("--think", "-t", action="store_true", help="Generate idle thought")
     parser.add_argument("--greet", "-g", action="store_true", help="Get greeting")
     parser.add_argument("--effort", "-e", action="store_true", help="Show effort level")
+    parser.add_argument("--tokens", "-k", action="store_true", help="Show token stats")
 
     args = parser.parse_args()
 
@@ -568,6 +528,9 @@ def main():
         print(meow.greet())
     elif args.effort:
         print(meow.show_effort())
+    elif args.tokens:
+        import json
+        print(json.dumps(meow.get_token_stats(), indent=2))
     else:
         print(meow.greet())
 
