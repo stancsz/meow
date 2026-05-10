@@ -28,26 +28,59 @@ try:
 except ImportError:
     pyperclip = None
 
+try:
+    from mcp.client.stdio import stdio_client, StdioServerParameters
+    from mcp import ClientSession
+    import asyncio
+    HAS_MCP = True
+except ImportError:
+    HAS_MCP = False
+
+# Load .env if exists
+def load_env():
+    env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                if "=" in line and not line.startswith("#"):
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+load_env()
+MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY") or os.environ.get("LLM_API_KEY", "")
+MINIMAX_API_HOST = os.environ.get("MINIMAX_API_HOST", "https://api.minimax.io")
+
 # pyautogui config
 pyautogui.PAUSE = 0
 pyautogui.FAILSAFE = True
 
 
-def screenshot(filename=None, region=None, resize=None, quality=85, frames=1, delay=0.5):
+def screenshot(filename=None, region=None, resize=None, quality=85, frames=1, delay=0.5, compact=False):
     """Capture screen. Optionally crop to region=(left, top, width, height).
     Use resize=(width, height) to downscale image for smaller file size.
-    Use quality=1-100 for JPEG compression (default 85).
+    Use quality=1-100 for JPEG/WebP compression (default 85).
+    Use compact=True to use high-efficiency compression (WebP/Optimized JPEG) 
+    to reduce file size while maintaining resolution.
     Use frames=N to capture multiple screenshots (for animations).
     Use delay=S to wait between frames (default 0.5 seconds).
 
-    Default saves to tmp/screenshot_YYYYMMDD_HHMMSS.png
+    Default saves to tmp/screenshot_YYYYMMDD_HHMMSS.webp (compact) or .png (normal)
 
     Returns: {"path": str, "original_size": (w,h), "resized_to": (w,h)?}
     IMPORTANT: When resize is used, click coordinates should be relative (0.0-1.0)
     because image is scaled down. Multiply by original W/H to get actual screen coords."""
     if filename is None:
+        ext = ".webp" if compact else ".png"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"tmp/screenshot_{timestamp}"
+        filename = f"tmp/screenshot_{timestamp}{ext}"
+    
+    # Ensure filename has an extension if it doesn't
+    base, ext = os.path.splitext(filename)
+    if not ext:
+        ext = ".webp" if compact else ".png"
+        filename = base + ext
+    else:
+        ext = ext.lower()
 
     os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else "tmp", exist_ok=True)
 
@@ -67,11 +100,21 @@ def screenshot(filename=None, region=None, resize=None, quality=85, frames=1, de
         if resize:
             im = im.resize(resize, Image.LANCZOS)
 
-        frame_filename = f"{filename}_{i:03d}.png" if frames > 1 else f"{filename}.png"
-        if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
-            im.save(frame_filename, 'JPEG', quality=quality)
+        base_path = os.path.splitext(filename)[0]
+        ext = os.path.splitext(filename)[1]
+        frame_filename = f"{base_path}_{i:03d}{ext}" if frames > 1 else filename
+        
+        save_args = {"optimize": True}
+        if ext in ['.jpg', '.jpeg']:
+            save_args['quality'] = quality
+            im.save(frame_filename, 'JPEG', **save_args)
+        elif ext == '.webp':
+            save_args['quality'] = quality
+            im.save(frame_filename, 'WEBP', **save_args)
         else:
-            im.save(frame_filename)
+            if compact:
+                save_args['compress_level'] = 9
+            im.save(frame_filename, 'PNG', **save_args)
 
         paths.append(os.path.abspath(frame_filename))
 
@@ -362,6 +405,111 @@ def get_info():
     return {"screen": (w, h), "mouse": (x, y)}
 
 
+# --- Vision Analysis (VLM) Functions ---
+
+def parse_coordinates(text: str) -> list[tuple[float, float]]:
+    """Parse coordinates from VLM response. Looks for patterns like (0.5, 0.85) or 0.5, 0.85."""
+    import re
+    coords = []
+    # Match patterns like (0.5, 0.85) or 0.5, 0.85
+    pattern = r'[\((]?\s*(\d+\.?\d*)\s*[,\s]+(\d+\.?\d*)\s*[\))]?'
+    matches = re.findall(pattern, text)
+    for m in matches:
+        try:
+            x, y = float(m[0]), float(m[1])
+            if 0 <= x <= 1 and 0 <= y <= 1:
+                coords.append((x, y))
+        except ValueError:
+            pass
+    return coords
+
+
+async def understand_image(image_path: str, prompt: str) -> str:
+    """Call MiniMax understand_image tool via MCP."""
+    if not HAS_MCP:
+        return "Error: mcp package not installed. Cannot use VLM analysis."
+    
+    if not MINIMAX_API_KEY:
+        return "Error: MINIMAX_API_KEY not found in environment."
+
+    server_params = StdioServerParameters(
+        command="uvx",
+        args=["minimax-coding-plan-mcp", "-y"],
+        env={
+            "MINIMAX_API_KEY": MINIMAX_API_KEY,
+            "MINIMAX_API_HOST": MINIMAX_API_HOST,
+        },
+    )
+
+    abs_image_path = os.path.abspath(image_path)
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool("understand_image", {
+                "image_source": abs_image_path,
+                "prompt": prompt,
+            })
+            
+            # Extract text from result
+            if hasattr(result, 'content'):
+                return "".join([block.text for block in result.content if hasattr(block, 'text')])
+            return str(result)
+
+
+# Standard Prompts
+PROMPTS = {
+    "game-state": """Describe the game state in detail. Focus on:
+1. What's the main objective/current task?
+2. Where are enemies located (give coordinates 0.0-1.0)?
+3. What is your health/energy/mana status?
+4. What abilities are available?
+5. Any items, weapons, or inventory visible?
+6. Minimap showing enemy positions?
+
+Return coordinates as: (x, y) where 0.0-1.0 represents left-to-right and top-to-bottom.""",
+
+    "ui": """Extract all clickable UI elements. For each element provide:
+- Type: button, card, icon, menu, link, etc.
+- Position: coordinates (0.0-1.0) of center
+- Label: text on the element or its function
+
+Focus on: action buttons, menu options, cards, inventory slots, skill icons, dialog buttons.""",
+
+    "strategic": """Analyze this screenshot for strategic decision making:
+1. What is the current state? (menu, combat, exploration, cutscene)
+2. What threats are visible?
+3. What opportunities exist?
+4. What would be the optimal next action?
+5. Give specific coordinates (0.0-1.0) for that action.""",
+
+    "general": "Describe this screenshot in detail. Identify key elements and their relative positions (0.0-1.0)."
+}
+
+
+async def analyze_screenshot(image_path: str, prompt_key_or_text: str = "general"):
+    """Analyze screenshot using VLM."""
+    prompt = PROMPTS.get(prompt_key_or_text, prompt_key_or_text)
+    
+    print(f"Analyzing: {image_path}")
+    print(f"Prompt: {prompt[:100]}...")
+
+    response = await understand_image(image_path, prompt)
+    
+    print("\n=== VLM Response ===")
+    print(response)
+    
+    coords = parse_coordinates(response)
+    if coords:
+        w, h = pyautogui.size()
+        print(f"\n=== Parsed Coordinates: {len(coords)} found ===")
+        for i, (x, y) in enumerate(coords):
+            abs_x, abs_y = int(x * w), int(y * h)
+            print(f"  {i+1}. Relative ({x:.3f}, {y:.3f}) -> Screen ({abs_x}, {abs_y})")
+    
+    return {"response": response, "coordinates": coords}
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Computer Use Tool - General desktop automation for AI agents",
@@ -415,7 +563,8 @@ Coordinate System:
     p.add_argument("-o", "--output", default=None, help="Output file (default: tmp/screenshot_YYYYMMDD_HHMMSS.png)")
     p.add_argument("--region", nargs=4, type=int, metavar=("LEFT", "TOP", "WIDTH", "HEIGHT"))
     p.add_argument("--resize", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"))
-    p.add_argument("--quality", type=int, default=85, help="JPEG quality 1-100")
+    p.add_argument("--quality", type=int, default=85, help="JPEG/WebP quality 1-100")
+    p.add_argument("--compact", action="store_true", help="Use high-efficiency compression (WebP) instead of PNG")
     p.add_argument("--frames", type=int, default=1, help="Number of frames to capture (for animations)")
     p.add_argument("--delay", type=float, default=0.5, help="Delay between frames in seconds")
 
@@ -520,6 +669,11 @@ Coordinate System:
     # info
     subparsers.add_parser("info", help="Screen and mouse info")
 
+    # analyze
+    p = subparsers.add_parser("analyze", help="Analyze screenshot using VLM (MiniMax)")
+    p.add_argument("image", help="Path to image file")
+    p.add_argument("prompt", nargs="?", default="general", help="Prompt key (game-state, ui, strategic, general) or custom text")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -528,23 +682,25 @@ Coordinate System:
     try:
         if args.command == "screenshot":
             resize = tuple(args.resize) if args.resize else None
-            screenshot(args.output, args.region, resize, args.quality, args.frames, args.delay)
+            screenshot(args.output, args.region, resize, args.quality, args.frames, args.delay, args.compact)
+        elif args.command == "analyze":
+            asyncio.run(analyze_screenshot(args.image, args.prompt))
         elif args.command == "click":
-            click(int(args.x), int(args.y), args.clicks, args.interval, args.button, args.duration)
+            click(args.x, args.y, args.clicks, args.interval, args.button, args.duration)
         elif args.command == "right-click":
             right_click(getattr(args, 'x', None), getattr(args, 'y', None))
         elif args.command == "middle-click":
             middle_click(getattr(args, 'x', None), getattr(args, 'y', None))
         elif args.command == "double-click":
-            double_click(int(args.x), int(args.y))
+            double_click(args.x, args.y)
         elif args.command == "triple-click":
-            triple_click(int(args.x), int(args.y))
+            triple_click(args.x, args.y)
         elif args.command == "move":
-            move(int(args.x), int(args.y), args.duration)
+            move(args.x, args.y, args.duration)
         elif args.command == "move-rel":
             move_rel(args.delta_x, args.delta_y, args.duration)
         elif args.command == "drag":
-            drag(int(args.x), int(args.y), args.duration, args.button)
+            drag(args.x, args.y, args.duration, args.button)
         elif args.command == "drag-rel":
             drag_rel(args.delta_x, args.delta_y, args.duration, args.button)
         elif args.command == "scroll":

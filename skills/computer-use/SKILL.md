@@ -132,8 +132,24 @@ python computer_tool.py screenshot --frames 4 --delay 0.5
 # Downscale for speed (use for vision analysis)
 python computer_tool.py screenshot --resize 800 450
 
-# Crop to region
-python computer_tool.py screenshot --region 0 0 800 450
+# Compact (WebP) for MiniMax Vision (Recommended)
+python computer_tool.py screenshot --compact
+
+# --- VLM Analysis (MiniMax) ---
+# Analyze general content
+python computer_tool.py analyze tmp/screenshot.webp
+
+# Analyze game state
+python computer_tool.py analyze tmp/screenshot.webp game-state
+
+# Extract UI elements with coordinates
+python computer_tool.py analyze tmp/screenshot.webp ui
+
+# Strategic decision making
+python computer_tool.py analyze tmp/screenshot.webp strategic
+
+# Custom prompt
+python computer_tool.py analyze tmp/screenshot.webp "What is the text on the red button?"
 
 python computer_tool.py info                                 # screen + mouse
 python computer_tool.py locate-on-screen button.png          # find template
