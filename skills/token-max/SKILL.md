@@ -1,192 +1,233 @@
 ---
 origin: local
 name: token-max
-description: Token optimization for maximum efficiency - caching, compression, streaming, and tracking
+description: Strategic token maxxing for productivity leverage and professional advantage
 ---
 
-# Token Maxxing Module
+# Token Maxxing - Strategic Edition
 
-Everything needed to maximize token efficiency. Caching, compression, streaming, and tracking.
+Token maxxing in 2026 is about **leverage** and **professional advantage**. It's not just optimization - it's a strategic tool for outperforming competitors.
 
-## Core Techniques
+## Two Tracks
 
-### 1. Semantic Cache
+### Track 1: Productivity Leverage (The Real Advantage)
 
-```python
-# Cache responses for similar queries
-from token_max import SemanticCache
+```
+Human time: $50-200/hr
+Tokens: $0.001-0.01/M
 
-cache = SemanticCache(threshold=0.85)  # 85% similarity threshold
-
-# First query - computes embedding, stores
-result = cache.get_or_compute("how do I fix the screenshot?", compute_fn)
-
-# Similar query - returns cached immediately (saves 90%+ tokens)
-result = cache.get_or_compute("screenshot not working how to fix", compute_fn)
+If you spend $50 in tokens to save 10 hours of your time:
+  $50 tokens vs $500-2000 human time = 10-40x leverage
 ```
 
-**Storage:** `tmp/token_cache/` (persisted to disk)
-**Similarity:** Uses embedding cosine similarity
+**Tokenmaxxers use this to:**
+- Run entire feature builds while they sleep
+- Parallel agent workflows (multiple agents working simultaneously)
+- Context stuffing with all relevant docs/code for "perfect information"
+- Automate repetitive tasks that would cost days of human time
 
-### 2. Context Compression
+### Track 2: Professional Signaling (The Hustle)
 
-```python
-from token_max import compress_context
-
-# Compress conversation history when it gets long
-messages = [...]
-compressed = compress_context(messages, max_tokens=4000)
-# Keeps recent messages, summarizes old ones into compact form
+```
+Token burn chart = new "hours worked" metric
+More tokens = more "AI-native" = more valuable employee
 ```
 
-**Strategy:**
-- Keep last N messages fully
-- Summarize older ones into compact facts
-- Reconstruct on-demand
+**Used to:**
+- Climb internal leaderboards (like "Claudeonomics" at Meta)
+- Signal to management that you're "leaning into AI"
+- Secure position during layoffs
+- Get promoted for "AI initiative leadership"
 
-### 3. Prompt Compression
+⚠️ **WARNING:** This track is "expensive theater" if done purely for show. But combined with real productivity gains, it can be effective.
 
-```python
-from token_max import compress_prompt
+## Strategic Token Maxxing
 
-# Remove redundancy, keep meaning
-long_prompt = "You are a helpful assistant. You should be helpful. Help the user."
-compressed = compress_prompt(long_prompt)
-# → "You are a helpful assistant."
-```
-
-### 4. Token Tracking
+### 1. Parallel Agent Workflows
 
 ```python
-from token_max import TokenTracker
+from token_max import ParallelAgents, AgentConfig
 
-tracker = TokenTracker()
+# Run multiple agents simultaneously
+agents = ParallelAgents([
+    AgentConfig(task="refactor auth module", priority=1),
+    AgentConfig(task="write tests for auth", priority=1),
+    AgentConfig(task="update docs", priority=2),  # run after #1
+], max_parallel=3)
 
-# Before API call
-tracker.before(messages)
-
-# After response
-tracker.after(response, cost_per_1k_tokens=0.01)
-
-# Stats
-print(tracker.stats())
-# {"total_tokens": 50000, "cost": 0.50, "cache_hit_rate": 0.7}
+# All run in parallel, saving 3x time
+results = await agents.run_all()
 ```
 
-### 5. Streaming
+### 2. Context Stuffing
 
 ```python
-from token_max import stream_tokens
+from token_max import stuff_context
 
-# Stream response as generated (perceived faster)
-for chunk in stream_tokens(model, prompt):
-    print(chunk, end="", flush=True)
-    # Tokens arrive as generated, no waiting
+# Put ALL relevant info in context for "perfect information"
+context = stuff_context([
+    "all_codebase_files",
+    "relevant_docs",
+    "past_issues_and_solutions",
+    "company_coding_standards",
+    "team_conventions"
+], max_tokens=100000)
+
+# AI has everything it needs = superior results
+response = await ai.analyze(context)
 ```
+
+### 3. Overnight Automation
+
+```python
+from token_max import schedule_workflow
+
+# Schedule complex work for off-hours
+workflow = Workflow(
+    name="build_feature_overnight",
+    steps=[
+        Step("research", agent=researcher),
+        Step("implement", agent=engineer),
+        Step("test", agent= tester),
+        Step("report", agent=reporter)
+    ],
+    run_during=["22:00", "07:00"]  # while master sleeps
+)
+
+workflow.execute_async()
+# Wake up to completed work
+```
+
+### 4. Leverage Calculator
+
+```python
+from token_max import LeverageCalculator
+
+calc = LeverageCalculator(hourly_rate=100)
+
+task = Task(
+    name="refactor legacy auth",
+    estimated_hours=20,
+    token_cost_estimate=200  # $200 in tokens
+)
+
+result = calc.calculate(task)
+# "Leverage: 10x. Save $1800, cost $200. Worth doing."
+
+# If you do this weekly:
+calc.weekly_savings(task)  # "$7200/week saved"
+```
+
+## Token Burn Metrics
+
+Track for professional signaling and personal optimization:
+
+```python
+from token_max import TokenBurnDashboard
+
+dashboard = TokenBurnDashboard()
+
+# Track your burn rate
+dashboard.track_session("feature_build", tokens=50000, cost=150)
+dashboard.track_session("code_review", tokens=5000, cost=15)
+
+# Get metrics
+print(dashboard.get_burn_rate())  # "50000 tokens/hr"
+print(dashboard.get_daily_total())  # "$450/day"
+print(dashboard.get_weekly_leaderboard_position())  # #3 on team
+```
+
+## Professional Token Strategy
+
+### Weekly Token Budget
+
+| Role | Weekly Token Budget | Purpose |
+|------|---------------------|---------|
+| Senior Engineer | $500-2000 | Major features, refactoring |
+| Research Engineer | $2000-5000 | Prototyping, experiments |
+| Tech Lead | $1000-3000 | Code review, architecture |
+| Junior Engineer | $200-500 | Learning, small tasks |
+
+### Optimization Priorities
+
+1. **High-leverage tasks** (spend more tokens here)
+   - Automating repetitive work
+   - Complex refactoring
+   - Research that saves days of exploration
+
+2. **Low-leverage tasks** (minimize tokens here)
+   - Quick questions (use cache)
+   - Simple edits
+   - Things that will be discarded anyway
+
+## Context Stuffing Template
+
+For maximum AI effectiveness:
+
+```python
+STUFF_CONTEXT_TEMPLATE = """
+# Objective: {objective}
+
+# Relevant Code:
+{code_files}
+
+# Documentation:
+{docs}
+
+# Past Context:
+{past_conversations}
+
+# Constraints:
+- {coding_standards}
+- {team_conventions}
+- {company_values}
+
+# Success Criteria:
+{acceptance_criteria}
+"""
+```
+
+This "stuff everything" approach gives AI "perfect information" for superior results.
+
+## Risks & Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| **Token bill too high** | Set weekly budget, track ROI |
+| **Lost in middle** | Put important info at start and end |
+| **Spaghetti code** | Always review AI output, don't just accept |
+| **Diminishing returns** | Only stuff context when genuinely needed |
+| **Metric gaming** | Focus on real productivity gains |
 
 ## Integration with Meow
 
-```python
-from token_max import optimize_interaction
-
-async def meow_think(message: str):
-    # Before: Check cache, compress context
-    cached = cache.get(message)
-    if cached:
-        return cached
-
-    # Compress history if needed
-    context = compress_context(recent_messages)
-
-    # Track tokens
-    tracker.before(context + [message])
-
-    # Generate with streaming
-    response = ""
-    for chunk in stream_tokens(model, context + [message]):
-        response += chunk
-        yield chunk  # Stream to user
-
-    # After: Track cost, store in cache
-    tracker.after(response)
-    cache.set(message, response)
-```
-
-## Token Budget Strategy
+Meow uses token maxxing strategically:
 
 ```python
-# Different strategies for different needs
-
-EFFICIENT = {
-    "max_context": 4000,
-    "cache_threshold": 0.85,
-    "compress_threshold": 6000,
-    "streaming": True
-}
-
-BALANCED = {
-    "max_context": 8000,
-    "cache_threshold": 0.8,
-    "compress_threshold": 10000,
-    "streaming": False
-}
-
-RICH = {
-    "max_context": 128000,
-    "cache_threshold": 0.7,
-    "compress_threshold": None,  # Don't compress
-    "streaming": False
-}
-```
-
-## Quick Setup
-
-```bash
-# Import token_max in meow.py or skill helpers
-from skills.token_max.token_max import (
-    SemanticCache,
-    compress_context,
-    TokenTracker,
-    stream_tokens,
-    optimize_interaction
-)
-```
-
-## Metrics to Track
-
-| Metric | Target | Why |
-|--------|--------|-----|
-| Cache hit rate | >60% | Saves tokens on repeated queries |
-| Compression ratio | >0.5 | 50%+ reduction in context size |
-| Cost per interaction | Low | Know where money goes |
-| Token efficiency | High | More output per input token |
-
-## Cache Storage
-
-```
-tmp/token_cache/
-  ├── embeddings/     # Vector embeddings for similarity
-  ├── responses/      # Cached responses
-  └── stats.json      # Hit/miss statistics
-```
-
-## Usage in Skills
-
-```python
-# In game_vision.py
-from token_max import cache_and_optimize
-
-@cache_and_optimize
-async def analyze_game(image_path, mode="state"):
-    ...
-
-# In meow.py
-from token_max import compress_context, TokenTracker
-
-tracker = TokenTracker()
-context = compress_context(conversation_history)
+# Meow knows when to spend tokens heavily
+if task_is_high_leverage:
+    meow.optimize_context()  # compress for efficiency
+    meow.run_parallel_agents()  # multiple agents
+    meow.track_for_dashboard()  # professional metrics
+elif task_is_quick:
+    meow.cache_aggressively()  # save tokens
+    meow.use_simple_prompt()  # minimal tokens
 ```
 
 ---
 
-*Token maxing: more value per token, less spent overall.*
+*"Human time is expensive; tokens are cheap. Spend tokens to save time."*
+
+---
+
+## Tools Overview
+
+| Tool | Purpose |
+|------|---------|
+| `ParallelAgents` | Run multiple agents simultaneously |
+| `stuff_context()` | Pack context with all relevant info |
+| `schedule_workflow()` | Overnight/off-hours automation |
+| `LeverageCalculator` | Calculate ROI of token spending |
+| `TokenBurnDashboard` | Professional metrics & leaderboards |
+| `SemanticCache` | Save tokens on repeated queries |
+| `compress_context()` | Context compression for efficiency |
