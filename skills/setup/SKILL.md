@@ -1,4 +1,5 @@
 ---
+origin: local
 name: setup
 description: System-wide setup for Meow's specialist tools (Claude Code, Aider, OpenCode)
 ---

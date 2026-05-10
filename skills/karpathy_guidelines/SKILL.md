@@ -1,4 +1,5 @@
 ---
+origin: local
 name: karpathy-guidelines
 description: Karpathy-inspired coding guidelines to reduce common LLM mistakes
 ---

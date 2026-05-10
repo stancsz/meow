@@ -1,11 +1,38 @@
 ---
+origin: ecosystem
 name: find-skills
-description: Search for and install skills from the open agent skills ecosystem at skills.sh
+description: Search for and install skills from the open agent skills ecosystem and our internal registry at github.com/meowju/skills
 ---
 
 # Find Skills
 
-This skill helps you discover and install skills from the open agent skills ecosystem.
+This skill helps you discover and install skills from:
+1. **Our internal registry** — [meowju/skills](https://github.com/meowju/skills) (local/proprietary skills we author)
+2. **The open ecosystem** — [skills.sh](https://skills.sh) and community skill repos
+
+## Search Order
+
+**Always check our internal registry first** for security tooling (skill-security-auditor) before searching the broader ecosystem. Document format skills (docx, pdf, pptx, xlsx) and skill-authoring guidance are available via the ecosystem.
+
+## Our Internal Registry
+
+Check [github.com/meowju/skills](https://github.com/meowju/skills) for our locally-authored skills before looking elsewhere.
+
+**Available local skills:**
+
+| Skill | Description | Source |
+|-------|-------------|--------|
+| `skill-security-auditor` | Scan for secrets, injection, auth issues | [meowju/skills](https://github.com/meowju/skills) |
+| `mano-p` | Desktop GUI automation (click, type, scroll, drag) via natural language | [meowju/skills](https://github.com/meowju/skills) |
+
+All other skills are available via the ecosystem at [github.com/openclaw/openclaw/tree/main/skills](https://github.com/openclaw/openclaw/tree/main/skills) or [anthropics/skills](https://github.com/anthropics/skills).
+
+**To install a local skill from our registry:**
+
+```bash
+git clone https://github.com/meowju/skills ~/.claude/skills/<name>
+# Or manually copy from the repo's source/<name>/ into your skills directory
+```
 
 ## When to Use This Skill
 
