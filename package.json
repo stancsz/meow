@@ -1,5 +1,5 @@
 {
-  "name": "meow",
+  "name": "meow-agent",
   "version": "0.1.0",
   "type": "module",
   "description": "Lightweight AI coding agent in your terminal",
@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint",
     "test": "vitest run",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "build": "tsup src/index.ts --out-dir dist --format esm --no-external-local",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@clack/prompts": "1.2.0",
