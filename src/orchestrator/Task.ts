@@ -54,3 +54,25 @@ export interface TaskEvents {
   onResult?: (taskId: string, result: TaskResult) => void;
   onFileConflict?: (taskId: string, conflicts: string[]) => void;
 }
+
+export interface HumanSignoff {
+  approved: boolean;
+  approver: string;
+  timestamp: number;
+  feedback?: string;
+}
+
+export interface TestResult {
+  suite: string;
+  passed: boolean;
+  coverage?: number;
+  failures?: string[];
+}
+
+export interface TaskSpec {
+  description: string;
+  passes: boolean;
+  qualityScore?: number;
+  selfReviewNotes?: string;
+  humanSignoff?: HumanSignoff;
+}

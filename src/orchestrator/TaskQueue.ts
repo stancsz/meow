@@ -92,10 +92,10 @@ export class TaskQueue {
     this.pending.sort((a, b) => order[a.priority] - order[b.priority]);
   }
 
-  getStatus(): { pending: number; running: number; completed: number; failed: number } {
+  getStatus(): { pending: Task[]; running: Task[]; completed: number; failed: number } {
     return {
-      pending: this.pending.length,
-      running: this.running.size,
+      pending: this.pending,
+      running: Array.from(this.running.values()),
       completed: this.completed.size,
       failed: this.failed.size,
     };

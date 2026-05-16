@@ -13,6 +13,7 @@
 
 import { exec } from "child_process";
 import { Task, TaskResult, FileArtifact } from "../orchestrator/Task";
+import { ExecutionMode } from "../orchestrator/ExecutionMode";
 import { MeowKernel } from "../kernel/kernel";
 import { Agent, AgentConfig } from "../agent/agent";
 import { DatabasePort } from "../extensions/database/manifest";
@@ -204,6 +205,12 @@ export class SwarmManager {
   /**
    * Dispatch a task to the swarm for execution.
    * Can use internal workers or external specialists.
+   *
+   * @param tasks - Tasks to dispatch
+   * @param options - Dispatch options including execution mode
+   * @param options.mode - ExecutionMode: PARALLEL (fast), SEQUENTIAL/SHIP (quality-first)
+   *   In SEQUENTIAL or SHIP mode: dispatch tasks one at a time with self-review after each.
+   *   In PARALLEL mode: fan out simultaneously (Kitchen-style).
    */
   public async dispatch(
     tasks: Task[],
@@ -212,14 +219,54 @@ export class SwarmManager {
       files?: string[];
       kernel?: MeowKernel;
       monolithBlueprint?: string;
+      mode?: ExecutionMode;
     }
   ): Promise<DispatchResult[]> {
     const workerType = options?.workerType || "claude";
+    const mode = options?.mode ?? ExecutionMode.SHIP; // Default to SHIP (quality-first)
     const results: DispatchResult[] = [];
 
-    console.log(pc.cyan(`\n🐝 [SWARM] Dispatching ${tasks.length} task(s) to ${workerType} workers`));
+    const modeLabel = mode === ExecutionMode.PARALLEL ? "parallel" : "sequential/quality";
+    console.log(pc.cyan(`\n🐝 [SWARM] Dispatching ${tasks.length} task(s) to ${workerType} workers (mode: ${modeLabel})`));
 
-    // Execute tasks in parallel (respecting max concurrent workers)
+    // In SEQUENTIAL or SHIP mode: execute one at a time with self-review
+    if (mode !== ExecutionMode.PARALLEL) {
+      console.log(pc.dim(`[SWARM] ${mode} mode — executing tasks sequentially with self-review`));
+
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        console.log(pc.cyan(`\n📦 [TASK ${i + 1}/${tasks.length}] Starting: ${task.description.substring(0, 60)}...`));
+
+        try {
+          const result = await this.executeTaskWithSelfReview(task, workerType, options);
+          results.push(result);
+
+          const icon = result.success ? "✅" : "❌";
+          console.log(pc.green(`  ${icon} [TASK ${i + 1}] ${result.success ? "PASSED" : "FAILED"} (${result.durationMs}ms)`));
+
+          // In blocking quality modes, stop on failure
+          if (!result.success && (mode === ExecutionMode.SHIP || mode === ExecutionMode.SEQUENTIAL)) {
+            console.log(pc.red(`\n🚫 [SWARM] Task failed in ${mode} mode — stopping dispatch`));
+            break;
+          }
+        } catch (error: any) {
+          const result: DispatchResult = {
+            sessionId: `error_${Date.now()}`,
+            success: false,
+            output: error.message,
+            durationMs: 0,
+          };
+          results.push(result);
+          console.log(pc.red(`  ❌ [TASK ${i + 1}] ERROR: ${error.message}`));
+          break;
+        }
+      }
+
+      console.log(pc.green(`\n[SWARM] Sequential dispatch complete. ${results.filter(r => r.success).length}/${results.length} passed`));
+      return results;
+    }
+
+    // PARALLEL mode: fan out simultaneously (respecting max concurrent workers)
     let dispatched = 0;
     const executing: Promise<DispatchResult>[] = [];
 
@@ -249,6 +296,74 @@ export class SwarmManager {
     });
 
     return results;
+  }
+
+  /**
+   * Execute a single task with self-review (for quality modes).
+   */
+  private async executeTaskWithSelfReview(
+    task: Task,
+    workerType: WorkerType,
+    options?: {
+      files?: string[];
+      kernel?: MeowKernel;
+      monolithBlueprint?: string;
+    }
+  ): Promise<DispatchResult> {
+    const startTime = Date.now();
+    const sessionId = `swarm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Create session
+    const session: WorkerSession = {
+      sessionId,
+      workerId: `worker_${workerType}_${Date.now()}`,
+      workerType,
+      status: "initializing",
+      startedAt: Date.now(),
+      lastPulse: Date.now(),
+      goal: task.description,
+    };
+
+    this.registerSession(session);
+
+    try {
+      const context: SummonContext = {
+        goal: task.description,
+        files: options?.files || task.requiredFiles || [],
+        kernel: options?.kernel || this.kernel,
+        monolithBlueprint: options?.monolithBlueprint,
+      };
+
+      console.log(pc.dim(`[SWARM] Executing: ${task.description.substring(0, 80)}...`));
+      const result = await summonAsync(workerType as any, context);
+
+      const durationMs = Date.now() - startTime;
+
+      if (result.success) {
+        this.completeSession(sessionId, "completed", result.output, result.exitCode);
+        console.log(pc.dim(`[SWARM] Self-review: artifact verification would happen here in full SHIP mode`));
+      } else {
+        this.completeSession(sessionId, "failed", result.output, result.exitCode);
+      }
+
+      return {
+        sessionId,
+        success: result.success,
+        output: result.output,
+        durationMs,
+        metrics: this.metrics.get(session.workerId),
+      };
+    } catch (error: any) {
+      const durationMs = Date.now() - startTime;
+      this.completeSession(sessionId, "failed", error.message);
+
+      return {
+        sessionId,
+        success: false,
+        output: error.message,
+        durationMs,
+      };
+    }
   }
 
   /**

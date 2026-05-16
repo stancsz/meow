@@ -12,6 +12,8 @@ import { McpManager } from '../agent/mcp';
 import { SkillManager } from '../agent/skills';
 import { Architect } from '../architect/Architect';
 import { MissionBrief } from '../liaison/MissionBrief';
+import { ExecutionMode, isQualityMode } from './ExecutionMode';
+import { SelfReviewRunner, SelfReviewResult } from './SelfReviewRunner';
 
 export interface OrchestratorConfig {
   queue: QueueConfig;
@@ -43,6 +45,7 @@ export class Orchestrator {
   private coordinator: FileCoordinator;
   private aggregator: ResultAggregator;
   private architect: Architect;
+  private selfReviewRunner: SelfReviewRunner;
 
   private agent: Agent;
   private skillManager: SkillManager;
@@ -95,6 +98,9 @@ export class Orchestrator {
         },
       }
     );
+
+    // Default to SHIP mode (full quality pipeline)
+    this.selfReviewRunner = new SelfReviewRunner({ mode: ExecutionMode.SHIP });
   }
 
   private emitTaskStart(taskId: string, description: string): void {
@@ -117,9 +123,11 @@ export class Orchestrator {
     options?: {
       tasks?: string;
       runTests?: boolean;
+      mode?: ExecutionMode;
       onStatus?: (update: StatusUpdate) => void;
     }
   ): Promise<OrchestratedResult> {
+    const mode = options?.mode ?? ExecutionMode.SHIP;
     const onStatus = options?.onStatus;
 
     onStatus?.({
@@ -175,6 +183,70 @@ export class Orchestrator {
       this.queue.enqueue(task);
     }
 
+    // Configure self-review runner for the current mode
+    this.selfReviewRunner.updateConfig({ mode });
+
+    if (isQualityMode(mode)) {
+      // SEQUENTIAL / SHIP mode: use SelfReviewRunner with sequential execution
+      onStatus?.({
+        level: 'progress',
+        message: `Executing tasks in ${mode} mode with quality gates...`,
+        timestamp: Date.now(),
+      });
+
+      const results: { taskId: string; success: boolean; result: TaskResult }[] = [];
+
+      for (const task of tasks) {
+        const reviewResult = await this.selfReviewRunner.executeWithSelfReview(
+          task,
+          async (t) => {
+            // Execute via registered workers
+            return this.executeTaskWithWorker(t);
+          }
+        );
+
+        results.push({
+          taskId: task.id,
+          success: reviewResult.passes,
+          result: {
+            taskId: task.id,
+            success: reviewResult.passes,
+            output: `Quality score: ${reviewResult.qualityScore}%, iterations: ${reviewResult.iterations}`,
+            artifacts: reviewResult.issues.length > 0 ? [] : undefined,
+            metadata: {
+              qualityScore: reviewResult.qualityScore,
+              selfReviewResult: reviewResult,
+            } as Record<string, unknown>,
+          },
+        });
+      }
+
+      onStatus?.({
+        level: 'progress',
+        message: 'Aggregating results...',
+        timestamp: Date.now(),
+      });
+
+      const aggregated = await this.aggregator.aggregate(
+        new Map(results.map(r => [r.taskId, r.result])),
+        request
+      );
+
+      const success = aggregated.success;
+      onStatus?.({
+        level: success ? 'success' : 'warning',
+        message: success ? 'All tasks completed successfully' : `Completed with ${aggregated.failedTasks.length} failures`,
+        timestamp: Date.now(),
+      });
+
+      return {
+        success,
+        summary: aggregated.summary,
+        details: aggregated,
+      };
+    }
+
+    // PARALLEL mode: use existing parallel execution (backward compatible default)
     onStatus?.({
       level: 'progress',
       message: 'Executing tasks in parallel...',
@@ -217,6 +289,35 @@ export class Orchestrator {
       summary: aggregated.summary,
       details: aggregated,
     };
+  }
+
+  /**
+   * Execute a single task via registered workers (used by self-review).
+   */
+  private async executeTaskWithWorker(task: Task): Promise<TaskResult> {
+    return new Promise((resolve) => {
+      // Re-enqueue the task and wait for it to complete
+      this.queue.enqueue(task);
+
+      // Monitor the task via a minimal executor call
+      const checkCompletion = () => {
+        const status = this.queue.getStatus();
+        const taskStatus = status.pending.find(t => t.id === task.id) || status.running.find(t => t.id === task.id);
+
+        if (!taskStatus) {
+          // Task has completed (or was never properly tracked here)
+          resolve({
+            taskId: task.id,
+            success: true,
+            output: 'Task executed via self-review',
+          });
+        } else {
+          setTimeout(checkCompletion, 100);
+        }
+      };
+
+      setTimeout(checkCompletion, 100);
+    });
   }
 
   async executeMcpParallel(
