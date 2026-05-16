@@ -2,8 +2,8 @@
   "name": "meow",
   "version": "0.1.0",
   "type": "module",
-  "description": "Lightweight AI coding agent in your terminal",
-  "main": "src/index.ts",
+  "description": "MEOW \u2014 Autonomous multi-agent coding harness with quality gates, convergence logic, and long-running task support",
+  "main": "src/index.js",
   "bin": {
     "meow": "./src/index.ts"
   },
@@ -46,5 +46,40 @@
     "tsx": "^4.21.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.5"
-  }
+  },
+  "author": "stancsz <stancsz@example.com>",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "coding-agent",
+    "autonomous",
+    "multi-agent",
+    "llm",
+    "claude",
+    "claude-code",
+    "hermes",
+    "coding-harness",
+    "quality-gates",
+    "typescript",
+    "node"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stancsz/meow.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
 }
