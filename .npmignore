@@ -1,25 +1,48 @@
+# Source and config
 src/
 *.ts
 *.map
 tsup.config.ts
 vitest.config.ts
+tsconfig.json
+
+# Git
 .git/
 .github/
+.husky/
+
+# Env and secrets
+.env
+.env.*
+*.log
+
+# Dev artifacts
+node_modules/
+dist/
+bun.lock
+bunfig.toml
+*.tgz
+
+# Docs and reports
+*.md
+LICENSE
+CLAUDE.md
+CONTRIBUTING.md
+SECURITY.md
+PUBLISH.md
+CHANGELOG.md
+docs/
+reports/
+evals/
+
+# Context and memory
 .context/
 memory/
+skills/
+.meow/
+
+# Temp files
 scratch/
 *.bak
 *.ts.bak
 *.ts.v2
-.env
-.env.*
-*.log
-README.md
-CHANGELOG.md
-CONTRIBUTING.md
-SECURITY.md
-PUBLISH.md
-CLAUDE.md
-LICENSE
-.meow/
-tests/
