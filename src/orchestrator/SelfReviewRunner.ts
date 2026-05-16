@@ -7,9 +7,6 @@ import { ExecutionMode, QualityGate, QualityGateResult, QualityTaskContext, Self
 import { QualityConvergenceChecker } from './QualityConvergenceChecker';
 import pc from 'picocolors';
 
-// Re-export SelfReviewResult so it can be imported from SelfReviewRunner
-export { SelfReviewResult } from './ExecutionMode';
-
 export interface SelfReviewConfig {
   mode: ExecutionMode;
   maxIterations: number;

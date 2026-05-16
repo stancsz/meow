@@ -12,8 +12,8 @@ import { McpManager } from '../agent/mcp';
 import { SkillManager } from '../agent/skills';
 import { Architect } from '../architect/Architect';
 import { MissionBrief } from '../liaison/MissionBrief';
-import { ExecutionMode, isQualityMode } from './ExecutionMode';
-import { SelfReviewRunner, SelfReviewResult } from './SelfReviewRunner';
+import { ExecutionMode, isQualityMode, SelfReviewResult } from './ExecutionMode';
+import { SelfReviewRunner } from './SelfReviewRunner';
 
 export interface OrchestratorConfig {
   queue: QueueConfig;
