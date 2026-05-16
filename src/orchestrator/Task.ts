@@ -17,6 +17,7 @@ export interface FileArtifact {
 
 export interface TaskResult {
   taskId: string;
+  taskLabel?: string; // human-readable label for TUI display
   success: boolean;
   output?: string;
   error?: string;
