@@ -1,421 +1,357 @@
 import * as blessed from 'blessed';
-import * as contrib from 'blessed-contrib';
-import * as readline from 'readline';
-import * as fs from 'fs';
 import * as path from 'path';
+import * as fs from 'fs';
 import { Agent } from '../agent/agent';
 import { Liaison } from '../liaison/Liaison';
 import { Orchestrator, StatusUpdate } from '../orchestrator/Orchestrator';
 import { ExecutionMode } from '../orchestrator/ExecutionMode';
-import { tuiEvents, TUIMessage, TUITaskNode } from './tui-events';
+import { tuiEvents, TUIMessage } from './tui-events';
 
-// ─── ANSI helpers ─────────────────────────────────────────────────────────────
+// ─── ANSI style helpers ──────────────────────────────────────────────────────
 
-type StyleTag = string;
-const STYLE: Record<string, StyleTag> = {
-  user_input: '{bold}{white-fg}',
-  l1:         '{cyan-fg}',
-  l2:         '{yellow-fg}',
-  l3:         '{magenta-fg}',
-  l4:         '{dim}',
-  info:       '{blue-fg}',
-  step:       '{bold}{blue-fg}',
-  done:       '{bold}{green-fg}',
-  error:      '{bold}{red-fg}',
-  warn:       '{bold}{yellow-fg}',
-  system:     '{dim}',
-  reset:      '{/}',
-};
+const S = {
+  bold:     '{bold}',
+  dim:      '{dim}',
+  white:    '{white-fg}',
+  cyan:     '{cyan-fg}',
+  yellow:   '{yellow-fg}',
+  green:    '{green-fg}',
+  red:      '{red-fg}',
+  blue:     '{blue-fg}',
+  bg_blue:  '{blue-bg}',
+  reset:    '{/}',
+} as const;
 
-function styled(type: string, text: string): string {
-  const open  = STYLE[type] ?? '';
-  const close = open ? '{/}' : '';
-  return `${open}${text}${close}`;
+function stylize(open: string, text: string): string {
+  return text ? `${open}${text}{/}` : text;
 }
 
-/** Escape brace tags so user input never breaks blessed rendering */
-function escapeTags(text: string): string {
-  return text.replace(/\{/g, '\\{');
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function esc(t: string): string {
+  return t.replace(/\{/g, '\\{');
 }
 
-// ─── Task tree rendering ───────────────────────────────────────────────────────
-
-function renderTaskTree(nodes: TUITaskNode[]): string {
-  if (nodes.length === 0) return styled('system', '(no active tasks)');
-  const lines: string[] = [];
-  function walk(nodes: TUITaskNode[], depth = 0) {
-    for (const node of nodes) {
-      const pad = '  '.repeat(depth);
-      const icon =
-        node.status === 'running' ? styled('l1', '▸') :
-        node.status === 'done'    ? styled('done', '✓') :
-        node.status === 'failed'  ? styled('error', '✗') :
-                                    styled('system', '○');
-      lines.push(`${pad}${icon} ${escapeTags(node.label)}`);
-      if (node.expanded) walk(node.children, depth + 1);
-    }
-  }
-  walk(nodes);
-  return lines.join('\n');
+function fmtElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000) % 60;
+  const m = Math.floor(ms / 60000) % 60;
+  const h = Math.floor(ms / 3600000);
+  return h > 0 ? `${h}h${m}m${String(s).padStart(2, '0')}s`
+       : `${m}m${String(s).padStart(2, '0')}s`;
 }
 
-// ─── Slash commands ────────────────────────────────────────────────────────────
+// ─── Phase indicator helpers ───────────────────────────────────────────────────
 
-interface SlashCommand {
+function phaseTag(label: string, fg: string): string {
+  return stylize(`{${fg}-fg}{bold}`, `[${label}]`) + ' ';
+}
+
+const PHASE = {
+  ready:    () => phaseTag('READY',    'green'),
+  parsing:  () => phaseTag('L1',       'cyan')   + 'parsing…',
+  orch:     () => phaseTag('L2',       'cyan')   + 'orchestrating…',
+  success:  () => phaseTag('DONE',     'green'),
+  error:    () => phaseTag('ERROR',    'red'),
+  aborted:  () => phaseTag('ABORTED',  'yellow'),
+} as const;
+
+type PhaseKey = keyof typeof PHASE;
+
+// ─── Status line builder ───────────────────────────────────────────────────────
+// Shows: [MODE] tokens:XXX elapsed:HH:MM:SS  (right-aligned)
+// Compact — lives on line 2 of the output pane
+
+function statusLine(mode: string, tokens: number, startMs: number): string {
+  const elapsed = fmtElapsed(Date.now() - startMs);
+  const left  = stylize(S.dim, `[${mode}]`);
+  const right = stylize(S.dim, `tokens:${tokens.toLocaleString()}  elapsed:${elapsed}`);
+  return `${left}${' '.repeat(60 - left.length - strip(right).length)}${right}`;
+}
+
+function strip(s: string): string {
+  return s.replace(/\{[^}]*\}/g, '');
+}
+
+// ─── Slash commands ───────────────────────────────────────────────────────────
+
+interface Cmd {
   name: string;
-  description: string;
-  aliases?: string[];
-  execute(ctx: CommandContext): Promise<void>;
+  desc: string;
+  fn: (ctx: CmdCtx, args?: string) => Promise<void>;
 }
 
-interface CommandContext {
-  tui: MeowTUI;
-  args: string;
-  log(msg: string, type?: string): void;
+interface CmdCtx {
+  log: (msg: string) => void;
+  setPhase: (k: PhaseKey) => void;
+  abort: () => void;
 }
 
-const SLASH_COMMANDS: SlashCommand[] = [
+const CMDS: Cmd[] = [
   {
-    name: 'help', aliases: ['?'],
-    description: 'Show command palette',
-    async execute({ log }) {
-      log(styled('system', 'Commands:'));
-      for (const cmd of SLASH_COMMANDS) {
-        const names = [cmd.name, ...(cmd.aliases ?? [])].map(n => `/${n}`).join(', ');
-        log(`  ${styled('info', names)}  ${cmd.description}`);
-      }
+    name: 'help',
+    desc: 'show this list',
+    async fn({ log }) {
+      log(stylize(S.dim, 'Commands:'));
+      for (const c of CMDS) log(`  /${c.name}  ${stylize(S.dim, c.desc)}`);
     },
   },
   {
     name: 'clear',
-    description: 'Clear output pane',
-    async execute({ tui }) {
-      tui.getOutput().setContent('');
-      tui.render();
-    },
+    desc: 'clear output',
+    async fn() { /* handled below */ },
   },
   {
     name: 'abort',
-    description: 'Abort the current task',
-    async execute({ tui, log }) {
-      if (!tui.isRunning()) {
-        log(styled('warn', 'No task in progress.'));
-        return;
-      }
-      tui.abort();
-      log(styled('error', '[ABORTED] Task cancelled.'));
-    },
-  },
-  {
-    name: 'status',
-    description: 'Show task + token status',
-    async execute({ tui, log }) {
-      const s = tui.getStatus();
-      log(styled('info', `Mode: ${s.mode} | Tokens: ${s.tokens.toLocaleString()} | Elapsed: ${s.elapsed}`));
-      log(styled('info', `Tasks: ${s.tasksDone}/${s.tasksTotal} | Running: ${s.running ? 'yes' : 'no'}`));
+    desc: 'abort current task',
+    async fn({ log, abort }) {
+      abort();
+      log(stylize(S.yellow, '^C aborted.'));
     },
   },
   {
     name: 'mode',
-    description: 'Set mode: ship | sequential | parallel | audit',
-    async execute({ tui, args, log }) {
-      const m = args.trim().toUpperCase();
-      const modes: Record<string, ExecutionMode> = {
-        SHIP:       ExecutionMode.SHIP,
-        SEQUENTIAL: ExecutionMode.SEQUENTIAL,
-        PARALLEL:   ExecutionMode.PARALLEL,
-        AUDIT_ONLY: ExecutionMode.AUDIT_ONLY,
+    desc: 'set mode: ship | seq | par | audit',
+    async fn({ log }, args: string) {
+      const m = args.trim().toLowerCase();
+      const map: Record<string, ExecutionMode> = {
+        ship: ExecutionMode.SHIP,
+        seq:  ExecutionMode.SEQUENTIAL,
+        par:  ExecutionMode.PARALLEL,
+        audit: ExecutionMode.AUDIT_ONLY,
       };
-      if (!modes[m]) {
-        log(styled('error', `Unknown mode: ${m}. Options: ship, sequential, parallel, audit`));
+      if (!map[m]) {
+        log(stylize(S.red, `unknown mode: ${m}. try ship | seq | par | audit`));
         return;
       }
-      tui.setExecutionMode(modes[m]);
-      log(styled('done', `Mode → ${m}`));
+      _executionMode = map[m];
+      log(stylize(S.green, `mode → ${m.toUpperCase()}`));
       tuiEvents.emitModeChange(m);
     },
   },
   {
-    name: 'parallel',
-    description: 'Toggle parallel execution mode',
-    async execute({ tui, log }) {
-      tui.toggleParallel();
-      log(styled('info', `Parallel mode: ${tui.isParallel() ? 'ON' : 'OFF'}`));
-    },
-  },
-  {
     name: 'trace',
-    description: 'Toggle detailed trace output',
-    async execute({ tui, log }) {
-      tui.toggleTrace();
-      log(styled('info', `Trace mode: ${tui.isTracing() ? 'ON' : 'OFF'}`));
-    },
-  },
-  {
-    name: 'history',
-    description: 'Show command history',
-    async execute({ tui, log }) {
-      const hist = tui.getHistory();
-      if (hist.length === 0) { log(styled('warn', 'No history.')); return; }
-      hist.forEach((cmd, i) => log(styled('system', `  ${String(i + 1).padStart(3, ' ')}  ${cmd}`)));
-    },
-  },
-  {
-    name: 'reset',
-    description: 'Reset context and history',
-    async execute({ tui, log }) {
-      tui.reset();
-      log(styled('done', 'Context and history cleared.'));
+    desc: 'toggle trace',
+    async fn({ log }) {
+      _traceMode = !_traceMode;
+      log(stylize(S.yellow, `trace ${_traceMode ? 'ON' : 'OFF'}`));
     },
   },
   {
     name: 'tasks',
-    description: 'Show task tree',
-    async execute({ tui, log }) {
-      const tree = tui.getTaskTree();
-      log(renderTaskTree(tree));
+    desc: 'show task tree',
+    async fn({ log }) {
+      log(renderTaskSummary());
     },
   },
   {
     name: 'exit',
-    description: 'Exit MEOW',
-    async execute() { process.exit(0); },
+    desc: 'exit meow',
+    async fn() { process.exit(0); },
   },
 ];
+
+// Module-level toggles shared with command handlers
+let _executionMode = ExecutionMode.SHIP;
+let _traceMode = false;
+
+function setExecutionMode(m: ExecutionMode) { _executionMode = m; }
+function toggleTrace()                      { _traceMode = !_traceMode; }
+function isTracing()                        { return _traceMode; }
+
+// ─── Task tree summary (for /tasks) ───────────────────────────────────────────
+
+let _taskRoot = { label: '(root)', children: [] as any[], done: 0, fail: 0, total: 0 };
+
+function renderTaskSummary(): string {
+  const lines: string[] = [];
+  function walk(nodes: any[], depth = 0) {
+    for (const n of nodes) {
+      const icon = n.status === 'done'   ? stylize(S.green, '✓')
+                 : n.status === 'failed' ? stylize(S.red,   '✗')
+                                         : stylize(S.cyan,  '▸');
+      lines.push(`${'  '.repeat(depth)}${icon} ${esc(n.label ?? n.id)}`);
+      if (n.children?.length) walk(n.children, depth + 1);
+    }
+  }
+  walk(_taskRoot.children);
+  return lines.length ? lines.join('\n') : stylize(S.dim, '(no tasks)');
+}
 
 // ─── Main TUI ─────────────────────────────────────────────────────────────────
 
 export class MeowTUI {
-  // Widgets
-  private screen!: blessed.Widgets.Screen;
-  private headerBox!: blessed.Widgets.BoxElement;
-  private taskTreeBox!: blessed.Widgets.BoxElement;
-  private outputLog!: blessed.Widgets.Log;
-  private inputBox!: blessed.Widgets.TextboxElement;
-  private statusBox!: blessed.Widgets.BoxElement;
-  private searchOverlay!: blessed.Widgets.BoxElement;
-  private searchBar!: blessed.Widgets.TextboxElement;
+  private screen!:   blessed.Widgets.Screen;
+  private logPane!:  blessed.Widgets.Log;
+  private statusBar!: blessed.Widgets.BoxElement;
 
-  // State
-  private agent: Agent;
-  private liaison!: Liaison;
+  private agent!:       Agent;
+  private liaison!:     Liaison;
   private orchestrator!: Orchestrator;
-  private tasks: TUITaskNode[] = [];
-  private taskIndex = 0;
-  private commandHistory: string[] = [];
-  private historyIndex = -1;
+
+  private history:     string[]  = [];
+  private historyIdx   = -1;
   private historyPath: string;
-  private abortController?: AbortController;
-  private _isRunning = false;
-  private _executionMode = ExecutionMode.SHIP;
-  private _parallelMode = false;
-  private _traceMode = false;
-  private tokenCount = 0;
-  private startTime = Date.now();
-  private searchMode = false;
-  private searchQuery = '';
+
+  private phase:      PhaseKey  = 'ready';
+  private startMs:    number    = Date.now();
+  private tokens:     number    = 0;
+  private running:    boolean   = false;
+  private abortCtrl?: AbortController;
+
+  // ── constructor ─────────────────────────────────────────────────────────────
 
   constructor(agent: Agent, screen?: blessed.Widgets.Screen) {
     this.agent = agent;
-    this.historyPath = path.join(
-      process.env.HOME ?? '/tmp',
-      '.meow', 'history.txt'
-    );
+    this.historyPath = path.join(process.env.HOME ?? '/tmp', '.meow', 'history.txt');
     this.screen = screen ?? blessed.screen({
-      smartCSR: true,
-      title: 'MEOW',
+      smartCSR:  true,
+      title:     'MEOW',
       fullUnicode: true,
     });
-    this.buildLayout();
-    this.wireEvents();
-    this.wireKeyboard();
+    this.build();
+    this.wire();
+    this.keyboard();
   }
 
-  // ─── Layout builder ────────────────────────────────────────────────────────
+  // ── layout (2 rows: log + status, input is the status bar content) ──────────
 
-  private buildLayout() {
-    const screen = this.screen;
-
-    // Header (1 row)
-    this.headerBox = blessed.box({
-      parent: screen,
-      top: 0, left: 0,
-      width: '100%', height: 1,
-      content: this.buildHeader(),
-      tags: true,
+  private build() {
+    // Full-screen scrolling log pane
+    this.logPane = blessed.log({
+      parent:    this.screen,
+      top:       0,
+      left:      0,
+      width:     '100%',
+      height:   '100%-1',
+      tags:      true,
+      scrollable: true,
+      alwaysScroll: true,
       style: { fg: 'white', bg: 'black' },
     });
 
-    // Task Tree (left 30%)
-    this.taskTreeBox = blessed.box({
-      parent: screen,
-      top: 1, left: 0,
-      width: '30%', height: '100%-2',
-      label: ' TASKS ',
-      border: { type: 'line' },
-      style: {
-        border: { fg: 'cyan' },
-        label: { fg: 'cyan', bold: true },
-        fg: 'white',
-      },
-      content: renderTaskTree([]),
-      tags: true,
-      scrollable: true,
-      alwaysScroll: false,
-    });
-
-    // Output Log (right 70%, minus status row)
-    this.outputLog = blessed.log({
-      parent: screen,
-      top: 1, left: '30%',
-      width: '70%', height: '100%-2',
-      label: ' OUTPUT ',
-      border: { type: 'line' },
-      style: {
-        border: { fg: 'cyan' },
-        label: { fg: 'cyan', bold: true },
-        fg: 'white',
-      },
-      scrollable: true,
-      alwaysScroll: true,
-      tags: true,
-      input: false,
-    });
-
-    // Status Bar (bottom)
-    this.statusBox = blessed.box({
-      parent: screen,
-      bottom: 0, left: 0,
-      width: '100%', height: 1,
-      content: this.buildStatusBar(),
-      tags: true,
-      style: { fg: 'white', bg: 'blue' },
-    });
-
-    // Input box (above status bar)
-    this.inputBox = blessed.textbox({
-      parent: screen,
-      bottom: 1, left: 0,
-      width: '100%', height: 1,
-      label: ' INPUT ',
-      border: { type: 'line' },
-      style: {
-        border: { fg: 'cyan' },
-        label: { fg: 'cyan', bold: true },
-        fg: 'white',
-      },
-      inputOnFocus: true,
-      tags: true,
-    });
-
-    // Search overlay (hidden until Ctrl+F)
-    this.searchOverlay = blessed.box({
-      parent: screen,
-      top: 'center', left: 'center',
-      width: '80%', height: 3,
-      border: { type: 'line' },
-      style: { border: { fg: 'yellow' }, bg: 'black' },
-      content: '',
-      hidden: true,
-    });
-
-    this.searchBar = blessed.textbox({
-      parent: this.searchOverlay,
-      top: 0, left: 0, width: '100%', height: 1,
-      bg: 'black', fg: 'yellow',
-      border: { type: 'bg' },
-      inputOnFocus: true,
-      name: 'search',
+    // Status bar — also acts as the input area (border below it)
+    this.statusBar = blessed.box({
+      parent:   this.screen,
+      bottom:   0,
+      left:     0,
+      width:    '100%',
+      height:   1,
+      tags:     true,
+      style:    { fg: 'white', bg: 'black' },
+      content:  this.phaseContent(),
     });
   }
 
-  // ─── Event wiring ─────────────────────────────────────────────────────────
+  private phaseContent(): string {
+    const phaseStr = PHASE[this.phase]();
+    const elapsed  = stylize(S.dim, fmtElapsed(Date.now() - this.startMs));
+    const mode    = stylize(S.dim, ExecutionMode[_executionMode] ?? 'SHIP');
+    const left    = `${phaseStr}${mode}`;
+    const right   = `tokens:${stylize(S.blue, this.tokens.toLocaleString())}  elapsed:${elapsed}`;
+    const pad     = Math.max(1, 80 - strip(left).length - strip(right).length);
+    return `${left}${' '.repeat(pad)}${right}`;
+  }
 
-  private wireEvents() {
-    this.liaison = new Liaison(this.agent);
+  // ── event wiring ────────────────────────────────────────────────────────────
+
+  private wire() {
+    this.liaison     = new Liaison(this.agent);
     this.orchestrator = new Orchestrator(this.agent);
 
-    // TUI event bus
-    tuiEvents.on('message',    (msg: TUIMessage) => this.onTuiMessage(msg));
-    tuiEvents.on('task_start', (data: { id: string; label: string }) => this.onTaskStart(data.id, data.label));
-    tuiEvents.on('task_update', (data: { id: string; status: TUITaskNode['status']; label?: string }) =>
-      this.onTaskUpdate(data.id, data.status, data.label));
-    tuiEvents.on('abort', () => this.abort());
-
-    // Input submit
-    this.inputBox.on('submit', async (value: string) => {
-      const cmd = value.trim();
-      this.inputBox.clearValue();
-      this.render();
-      if (cmd) await this.handleCommand(cmd);
+    tuiEvents.on('message', (msg: TUIMessage) => {
+      const type = msg.type === 'user_input'   ? S.white
+                 : msg.type === 'l1_stream'     ? S.cyan
+                 : msg.type === 'decomposition' ? stylize(S.bold, S.blue)
+                 : msg.type === 'done'          ? S.green
+                 : msg.type === 'error'         ? S.red
+                 : msg.type === 'warn'          ? S.yellow
+                 : msg.type === 'step'          ? stylize(S.bold, S.blue)
+                 : S.dim;
+      this.put(`${type}${esc(msg.text)}{/}`, false);
     });
 
-    // Search bar
-    this.searchBar.on('submit', () => this.exitSearch());
-    this.searchBar.key(['escape'], () => this.exitSearch());
-    this.searchBar.on('keypress', (_: any, data: { full: string }) => {
-      if (data.full === 'C-f') this.exitSearch();
-    });
+    tuiEvents.on('task_start',  ({ id, label }) => this.onTaskStart(id, label));
+    tuiEvents.on('task_update', ({ id, status, label }) => this.onTaskUpdate(id, status, label));
+    tuiEvents.on('abort',       () => this.onAbort());
   }
 
-  private wireKeyboard() {
-    // Quit on Ctrl+C
-    this.screen.key(['C-c'], () => {
-      if (this._isRunning) {
-        this.log(styled('error', '^C — aborting...'), 'error');
+  // ── keyboard ────────────────────────────────────────────────────────────────
+
+  private keyboard() {
+    // Ctrl+C → abort or quit
+    this.screen.key('C-c', () => {
+      if (this.running) {
+        this.put(stylize(S.yellow, '^C — aborting…'));
         this.abort();
       } else {
         process.exit(0);
       }
     });
 
-    // Search
-    this.screen.key(['C-f'], () => this.enterSearch());
-
-    // Clear output
-    this.screen.key(['C-l'], () => {
-      this.outputLog.setContent('');
-      this.render();
+    // Ctrl+L → clear
+    this.screen.key('C-l', () => {
+      this.logPane.setContent('');
     });
 
-    // Command history navigation
-    this.inputBox.key(['up'],   () => this.historyUp());
-    this.inputBox.key(['down'], () => this.historyDown());
-
-    // Quit on Escape or q
+    // Escape / q → quit
     this.screen.key(['escape', 'q'], () => process.exit(0));
 
-    // Tab focuses input
-    this.screen.key(['tab'], () => { this.inputBox.focus(); this.render(); });
+    // Ctrl+F → fake-search (highlights term in log pane)
+    this.screen.key('C-f', () => {
+      this.put(stylize(S.yellow, '(search: type /tasks to view task tree)'));
+    });
+
+    // Any printable key when not running → readline prompt
+    this.readline();
   }
 
-  // ─── Command history ──────────────────────────────────────────────────────
+  // ── readline input (overlaid on status bar) ─────────────────────────────────
 
-  private historyUp() {
-    if (this.commandHistory.length === 0) return;
-    this.historyIndex = Math.min(this.historyIndex + 1, this.commandHistory.length - 1);
-    const cmd = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex] ?? '';
-    this.inputBox.setValue(cmd);
-    this.render();
+  private readline() {
+    const input = blessed.textbox({
+      parent:   this.screen,
+      bottom:   0,
+      left:     0,
+      width:    '100%',
+      height:   1,
+      inputOnFocus: true,
+      border:   { type: 'line' },
+      style:    { border: { fg: 'cyan' }, fg: 'white', bg: 'black' },
+      value:    '',
+    });
+
+    input.key('up',   () => this.histUp(input));
+    input.key('down', () => this.histDown(input));
+
+    input.on('submit', async (value: string) => {
+      const raw = value.trim();
+      input.clearValue();
+      this.histDown(input); // reset index
+      if (raw) await this.handleCommand(raw);
+    });
+
+    input.focus();
   }
 
-  private historyDown() {
-    if (this.historyIndex <= 0) {
-      this.historyIndex = -1;
-      this.inputBox.clearValue();
-    } else {
-      this.historyIndex--;
-      const cmd = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex] ?? '';
-      this.inputBox.setValue(cmd);
-    }
-    this.render();
+  // ── history ─────────────────────────────────────────────────────────────────
+
+  private histUp(input: blessed.Widgets.TextboxElement) {
+    if (this.history.length === 0) return;
+    this.historyIdx = Math.min(this.historyIdx + 1, this.history.length - 1);
+    input.setValue(this.history[this.history.length - 1 - this.historyIdx] ?? '');
+    input.emit('keypress', null, { full: 'right' } as any);
+  }
+
+  private histDown(input: blessed.Widgets.TextboxElement) {
+    if (this.historyIdx <= 0) { this.historyIdx = -1; input.clearValue(); }
+    else { this.historyIdx--; input.setValue(this.history[this.history.length - 1 - this.historyIdx] ?? ''); }
   }
 
   private pushHistory(cmd: string) {
     if (!cmd) return;
-    this.commandHistory = this.commandHistory.filter(c => c !== cmd);
-    this.commandHistory.push(cmd);
-    this.historyIndex = -1;
+    this.history = this.history.filter(c => c !== cmd);
+    this.history.push(cmd);
+    this.historyIdx = -1;
     try {
       const dir = path.dirname(this.historyPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -423,304 +359,171 @@ export class MeowTUI {
     } catch { /* ignore */ }
   }
 
-  // ─── Search ───────────────────────────────────────────────────────────────
-
-  private enterSearch() {
-    this.searchMode = true;
-    this.searchQuery = '';
-    this.searchOverlay.show();
-    this.searchBar.setValue('');
-    this.searchBar.focus();
-    this.searchOverlay.setContent('');
-    this.render();
-  }
-
-  private exitSearch() {
-    this.searchMode = false;
-    this.searchOverlay.hide();
-    this.inputBox.focus();
-    this.render();
-  }
-
-  private doSearch(query: string) {
-    this.searchQuery = query;
-    if (!query) return;
-    const raw = this.outputLog.getContent();
-    try {
-      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`(${escaped})`, 'gi');
-      const lines = raw.split('\n');
-      const highlighted = lines.map(line =>
-        regex.test(line) ? line.replace(regex, '{yellow-fg}{bold}$1{/yellow-fg}{/bold}') : line
-      ).join('\n');
-      this.outputLog.setContent(highlighted);
-    } catch { /* invalid regex */ }
-  }
-
-  // ─── TUI event handlers ───────────────────────────────────────────────────
-
-  private onTuiMessage(msg: TUIMessage) {
-    const type = msg.type === 'user_input' ? 'user_input'
-               : msg.type === 'l1_stream'  ? 'l1'
-               : msg.type === 'l2_stream'  ? 'l2'
-               : msg.type === 'l3_stream'  ? 'l3'
-               : msg.type === 'l4_stream'  ? 'l4'
-               : msg.type === 'decomposition' ? 'step'
-               : msg.type;
-    this.log(styled(type, msg.text), type);
-  }
+  // ── task tree ────────────────────────────────────────────────────────────────
 
   private onTaskStart(id: string, label: string) {
     const parts = label.split(' > ');
-    let parent = this.tasks;
+    let parent = _taskRoot.children;
     for (let i = 0; i < parts.length - 1; i++) {
-      let node = parent.find(n => n.label === parts[i] && n.status !== 'done');
-      if (!node) {
-        node = { id: `task-${++this.taskIndex}`, label: parts[i], status: 'running', children: [], expanded: true };
-        parent.push(node);
-      }
-      parent = node.children;
+      let n = parent.find(n => n.label === parts[i] && n.status !== 'done');
+      if (!n) { n = { id: `p${i}-${parts[i]}`, label: parts[i], status: 'running', children: [] }; parent.push(n); }
+      parent = n.children;
     }
-    parent.push({ id, label, status: 'running', children: [], expanded: true });
-    this.refreshTaskTree();
+    parent.push({ id, label, status: 'running', children: [] });
   }
 
-  private onTaskUpdate(id: string, status: TUITaskNode['status'], label?: string) {
-    this.findAndUpdate(this.tasks, id, status, label);
-    this.refreshTaskTree();
-    this.updateStatusBar();
-  }
-
-  private findAndUpdate(nodes: TUITaskNode[], id: string, status: TUITaskNode['status'], label?: string): boolean {
-    for (const node of nodes) {
-      if (node.id === id) {
-        node.status = status;
-        if (label) node.label = label;
-        return true;
+  private onTaskUpdate(id: string, status: TUITaskNodeStatus, label?: string) {
+    const find = (nodes: any[]): boolean => {
+      for (const n of nodes) {
+        if (n.id === id) { n.status = status; if (label) n.label = label; return true; }
+        if (find(n.children)) return true;
       }
-      if (this.findAndUpdate(node.children, id, status, label)) return true;
-    }
-    return false;
+      return false;
+    };
+    find(_taskRoot.children);
   }
 
-  private refreshTaskTree() {
-    this.taskTreeBox.setContent(renderTaskTree(this.tasks));
-    this.render();
+  private onAbort() {
+    this.running = false;
+    this.setPhase('aborted');
   }
 
-  // ─── Status builders ──────────────────────────────────────────────────────
+  // ── phase / status helpers ──────────────────────────────────────────────────
 
-  private buildHeader(): string {
-    const phase = this._isRunning
-      ? this.styledPhase('RUNNING', 'yellow')
-      : this.styledPhase('READY', 'green');
-    return `{center}{bold}MEOW{/bold} | tiered agency | ${phase}{/center}`;
+  private setPhase(k: PhaseKey) {
+    this.phase = k;
+    this.statusBar.setContent(this.phaseContent());
+    this.screen.render();
   }
 
-  private styledPhase(text: string, color: string): string {
-    return `{${color}-fg}{bold}${text}{/bold}{/${color}-fg}`;
+  // ── public API ──────────────────────────────────────────────────────────────
+
+  public isRunning()  { return this.running; }
+  public isTracing()  { return _traceMode; }
+  public getMode()    { return _executionMode; }
+  public setExecutionMode(m: ExecutionMode) { _executionMode = m; }
+
+  public getLog()      { return this.logPane; }
+  public getLogPane()  { return this.logPane; }
+  public getInput() { return null; } // backward compat
+
+  public log(msg: string) { this.put(msg, true); }
+  public put(msg: string, flush = true) {
+    this.logPane.log(msg);
+    if (flush) this.screen.render();
   }
 
-  private buildStatusBar(): string {
-    const elapsed = this.elapsed();
-    const mode = ExecutionMode[this._executionMode] ?? 'SHIP';
-    return `{center}${styled('system', '━'.repeat(60))}{/center}` +
-      `{center}[${mode}]  tokens:${styled('info', this.tokenCount.toLocaleString())}  ` +
-      `elapsed:${styled('info', elapsed)}  tasks:${styled('info', this.taskCount().join('/'))}` +
-      `  ${this._parallelMode ? styled('done', '⫸parallel') : ''}` +
-      `  ${this._traceMode   ? styled('warn',  '◆trace')   : ''}{/center}`;
+  public start() {
+    this.put(stylize(S.green, 'MEOW') + ` ${stylize(S.dim, 'layered agency — type /help for commands')}`);
+    this.put(stylize(S.dim, 'L1 liaison  ·  L2 orchestrator  ·  L3 agents  ·  L4 auditor'));
+    this.put(''); // blank line
+    this.screen.render();
   }
 
-  private elapsed(): string {
-    const ms = Date.now() - this.startTime;
-    const s = Math.floor(ms / 1000) % 60;
-    const m = Math.floor(ms / 60000) % 60;
-    const h = Math.floor(ms / 3600000);
-    return h > 0 ? `${h}h${m}m` : `${m}m${String(s).padStart(2, '0')}s`;
-  }
-
-  private taskCount(): [number, number] {
-    const done = this.countByStatus(this.tasks, 'done');
-    const total = this.countTotal(this.tasks);
-    return [done, total];
-  }
-
-  private countByStatus(nodes: TUITaskNode[], status: TUITaskNode['status']): number {
-    return nodes.reduce((n, n_) =>
-      n + (n_.status === status ? 1 : 0) + this.countByStatus(n_.children, status), 0);
-  }
-
-  private countTotal(nodes: TUITaskNode[]): number {
-    return nodes.reduce((n, n_) => n + 1 + this.countTotal(n_.children), 0);
-  }
-
-  // ─── Public API (used by slash commands) ─────────────────────────────────
-
-  isRunning(): boolean { return this._isRunning; }
-  isParallel(): boolean { return this._parallelMode; }
-  isTracing(): boolean { return this._traceMode; }
-
-  getOutput(): blessed.Widgets.Log { return this.outputLog; }
-  getStatus(): { mode: string; tokens: number; elapsed: string; tasksDone: number; tasksTotal: number; running: boolean } {
-    const [done, total] = this.taskCount();
-    const mode = ExecutionMode[this._executionMode] ?? 'SHIP';
-    return { mode, tokens: this.tokenCount, elapsed: this.elapsed(), tasksDone: done, tasksTotal: total, running: this._isRunning };
-  }
-
-  getHistory(): string[] { return [...this.commandHistory]; }
-  getTaskTree(): TUITaskNode[] { return this.tasks; }
-
-  setExecutionMode(mode: ExecutionMode) { this._executionMode = mode; }
-  toggleParallel() { this._parallelMode = !this._parallelMode; }
-  toggleTrace() { this._traceMode = !this._traceMode; }
-
-  abort() {
-    this.abortController?.abort();
-    tuiEvents.emitAbort();
-    this._isRunning = false;
-    this.updatePhase('ABORTED', 'yellow');
-  }
-
-  reset() {
-    this.tasks = [];
-    this.tokenCount = 0;
-    this.startTime = Date.now();
-    this.commandHistory = [];
-    this.historyIndex = -1;
-    this.outputLog.setContent('');
-    this.refreshTaskTree();
-    this.updateStatusBar();
-  }
-
-  // ─── Main command handler ─────────────────────────────────────────────────
+  // ── main command handler ─────────────────────────────────────────────────────
 
   public async handleCommand(raw: string) {
     this.pushHistory(raw);
-    this._isRunning = true;
-    this.abortController = new AbortController();
-    this.log(styled('user_input', `>> ${escapeTags(raw)}`), 'user_input');
-    this.updateStatusBar();
-    this.render();
+    this.running = true;
+    this.abortCtrl = new AbortController();
+    this.startMs = Date.now();
+    this.setPhase('parsing');
+
+    // Echo user input as a styled prompt line
+    this.put(`${stylize(S.bold, '›')} ${stylize(S.white, esc(raw))}`);
+    this.screen.render();
 
     if (raw.startsWith('/')) {
       const [name, ...argParts] = raw.slice(1).split(' ');
       const args = argParts.join(' ');
-      const cmd = SLASH_COMMANDS.find(c => c.name === name || c.aliases?.includes(name));
-      if (cmd) {
-        await cmd.execute({ tui: this, args, log: (msg, type) => this.log(msg, type ?? 'info') });
-      } else {
-        this.log(styled('error', `Unknown command: /${name}. Try /help`), 'error');
+      if (name === 'clear') {
+        this.logPane.setContent('');
+        this.running = false;
+        this.setPhase('ready');
+        return;
       }
-      this.render();
-      this._isRunning = false;
+      const cmd = CMDS.find(c => c.name === name.toLowerCase());
+      if (cmd) {
+        await cmd.fn({
+          log:      (msg) => this.put(msg),
+          setPhase: (k)   => this.setPhase(k),
+          abort:    ()    => this.abort(),
+        }, args);
+      } else {
+        this.put(stylize(S.red, `unknown: /${name}  (try /help)`));
+      }
+      this.running = false;
+      this.setPhase('ready');
       return;
     }
-
-    // L1 parsing
-    this.updatePhase('L1: PARSING', 'cyan');
-    this.render();
 
     try {
       const brief = await this.liaison.chat(
         raw,
         (chunk) => {
-          if (!chunk.done && chunk.text) {
-            tuiEvents.emitMessage('l1_stream', chunk.text);
-          }
+          if (!chunk.done && chunk.text) tuiEvents.emitMessage('l1_stream', chunk.text);
         },
-        (status) => {
-          tuiEvents.emitMessage('info', status);
-        }
+        (status) => tuiEvents.emitMessage('info', status),
       );
 
-      this.log(styled('info', `[Intent: ${brief.brief.intent}] [Domain: ${brief.brief.domain}] [Complexity: ${brief.brief.complexity}]`));
+      // Low complexity → respond directly, done
+      if (brief.brief.complexity <= 60) {
+        tuiEvents.emitMessage('done', brief.text);
+        this.put(brief.text);
+        this.running = false;
+        this.setPhase('ready');
+        return;
+      }
 
-      if (brief.brief.complexity <= 60 && !raw.startsWith('/')) {
-        // Simple: respond directly
-        this.log(brief.text, 'l1');
-        this.updatePhase('READY', 'green');
+      // High complexity → L2 orchestration
+      this.setPhase('orch');
+      const result = await this.orchestrator.execute(raw, {
+        mode: _executionMode,
+        onStatus: (update: StatusUpdate) => {
+          tuiEvents.fromStatusUpdate(update);
+          if (_traceMode) this.put(stylize(S.dim, `[${update.level}] ${update.message}`));
+        },
+      });
+
+      if (result.success) {
+        this.setPhase('success');
+        this.put(stylize(S.green, '✓ orchestration complete'));
       } else {
-        // Complex: L2 orchestrator
-        this.updatePhase('L2: ORCHESTRATING', 'yellow');
-        this.log(styled('info', 'Complex request — handing off to L2 orchestrator...'));
+        this.setPhase('error');
+        this.put(stylize(S.red, '✗ orchestration failed'));
+      }
 
-        const result = await this.orchestrator.execute(raw, {
-          mode: this._executionMode,
-          onStatus: (update: StatusUpdate) => {
-            tuiEvents.fromStatusUpdate(update);
-            if (this._traceMode) {
-              this.log(styled('step', `[${update.level.toUpperCase()}] ${update.message}`));
-            }
-          },
-        });
-
-        if (result.success) {
-          this.log(styled('done', '[DONE] Orchestration complete.'));
-        } else {
-          this.log(styled('error', '[ERROR] Orchestration failed.'));
-        }
-
-        this.log(result.summary ?? '', 'l2');
-
-        // Aggregate tokens
-        if (result.details) {
-          const detail = result.details as any;
-          this.tokenCount += detail.tokensUsed ?? 0;
-          if (detail.taskResults) {
-            for (const tr of detail.taskResults as any[]) {
-              const icon = tr.success ? styled('done', '✓') : styled('error', '✗');
-              this.log(`${icon} ${escapeTags(tr.taskLabel ?? tr.taskId)}`, tr.success ? 'done' : 'error');
-            }
+      if (result.summary) this.put(result.summary);
+      if (result.details) {
+        const detail = result.details as any;
+        this.tokens += detail.tokensUsed ?? 0;
+        this.statusBar.setContent(this.phaseContent());
+        if (detail.taskResults?.length) {
+          for (const tr of detail.taskResults as any[]) {
+            const icon = tr.success ? stylize(S.green, '✓') : stylize(S.red, '✗');
+            this.put(`${icon} ${esc(tr.taskLabel ?? tr.taskId)}`);
           }
         }
-
-        this.updatePhase('READY', 'green');
-        this.updateStatusBar();
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.log(styled('error', `Error: ${msg}`), 'error');
-      this.updatePhase('ERROR', 'red');
+      this.put(stylize(S.red, `error: ${msg}`));
+      this.setPhase('error');
     }
 
-    this._isRunning = false;
-    this.render();
-  }
-
-  private updatePhase(phase: string, color: string) {
-    this.headerBox.setContent(this.buildHeader());
-    this.statusBox.setContent(this.buildStatusBar());
-    this.render();
-  }
-
-  private updateStatusBar() {
-    this.statusBox.setContent(this.buildStatusBar());
-  }
-
-  // ─── Utilities ────────────────────────────────────────────────────────────
-
-  log(msg: string, _type?: string) {
-    this.outputLog.log(msg);
-    this.render();
-  }
-
-  render() {
+    this.running = false;
+    this.setPhase('ready');
     this.screen.render();
   }
 
-  // ─── Lifecycle ───────────────────────────────────────────────────────────
-
-  public start() {
-    this.log(styled('info', 'MEOW Layered Agency System Online'));
-    this.log(styled('system', 'L1: Liaison  L2: Architect  L3: Swarm  L4: Auditor'));
-    this.log(styled('system', 'Try /help for slash commands · Ctrl+F to search · Ctrl+C to abort'));
-    this.render();
+  public abort() {
+    this.abortCtrl?.abort();
+    tuiEvents.emitAbort();
+    this.running = false;
+    this.setPhase('aborted');
   }
-
-  // ─── Test helpers ────────────────────────────────────────────────────────
-
-  public getScreen()   { return this.screen; }
-  public getLogPane()  { return this.outputLog; }
-  public getConsole()  { return this.outputLog; }
-  public getInput()    { return this.inputBox; }
 }
+
+// ── type re-export for internal use ─────────────────────────────────────────
+
+type TUITaskNodeStatus = 'pending' | 'running' | 'done' | 'failed';
