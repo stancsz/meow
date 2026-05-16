@@ -1,227 +1,208 @@
-# MEOW — Sovereign AI Coding Agent
+# MEOW — Multi-Agent Quality-First Harness
 
-> **IMPORTANT — READ FIRST**: Before working in this project, run `claude "Read .meow/skills/meow-setup/SKILL.md and remember how to use MEOW as an orchestrator" -p --dangerously-skip-permissions` to understand how MEOW works and how to set it up. For global installation, run `npm install -g .` from this directory (or `pip install uv && uv tool install .` if using uv).
+**ANGLE: Multi-agent long-running agent harness that stays on tasks and produces quality work**
 
-**MEOW** (Meta Orchestrator Operating on World) is a lightweight, terminal-native AI coding agent that acts as a **meta-orchestrator**: it doesn't write code directly, it coordinates specialist agents to get work done.
-
-Built on [Bun](https://bun.sh), TypeScript, and SQLite-vec for vector operations, MEOW brings real quantum circuit simulation to agent coordination — using Grover's algorithm for memory recall and Bell-state entanglement for swarm interference.
+Core thesis: Most agent frameworks optimize for speed. MEOW optimizes for quality — keeps working until the task is right, knows when to stop grinding tokens, never ships hallucinated code.
 
 ---
 
-## What's Different Here
+## What MEOW Is
 
-Most AI coding agents are workers: they receive a prompt, think, and produce output. MEOW is a **sovereign orchestrator** with three layers that set it apart:
-
-### 1. Quantum-Inspired Memory & Reasoning
-
-MEOW doesn't just "use a vector DB." It retrieves memories through a physical simulation of **Grover's Quantum Search Algorithm** — amplitude amplification over candidate embeddings, with a real quantum circuit (`quantum-circuit` library) computing the optimal candidate. This avoids the O(n) linear scan of classical nearest-neighbor search.
-
-```
-CANDIDATES (10 nearest vectors)
-  → Quantum Superposition (Hadamard gates)
-  → Oracle Phase Flip (semantic match predicate)
-  → Amplitude Amplification (Grover iterations)
-  → Wavefunction Collapse → Best Memory Match
-```
-
-For multi-agent swarms, MEOW uses **Spooky Action at a Distance** — entangled agent pairs share interference patterns that shift reasoning Hamiltonians, allowing coordinated agents to influence each other's reasoning quality without direct communication.
-
-### 2. Autonomous Mission Verification
-
-MEOW ships with a built-in **MissionReviewer** that runs after every specialist task. It scores results across seven criteria:
-
-| Criterion | Weight | What it checks |
-|-----------|--------|----------------|
-| `NO_MOCKS` | 30 | No `TODO`, `FIXME`, or placeholder code in diff |
-| `TYPE_CHECK` | 30 | `tsc --noEmit` passes |
-| `LINT_CLEAN` | 25 | ESLint reports 0 errors |
-| `REAL_TESTS` | 20 | Test files actually exist and aren't empty |
-| `NO_REFACTOR_BLOAT` | 15 | Diff doesn't touch unrelated files |
-| `MISSION_COMPLETE` | 40 | Goal keywords present in diff |
-| `SOP_COMPLIANCE` | 30 | Think-Plan-Verify loop evidence in diff/goal |
-
-The mission fails if the weighted score is below threshold, triggering automatic retry.
-
-### 3. ALWAYS DELEGATE — Orchestrator-Native Design
-
-MEOW's SOP explicitly forbids direct work. Every task flows through delegation:
-
-```
-USER → MEOW (orchestrates) → CLAUDE CODE (implements)
-                        or → AIDER (implements)
-                        or → BROWSEROS (verifies via screenshot)
-```
-
-PDF generation, research, file creation — everything is delegated and independently verified via screenshot.
+MEOW (Meta Orchestrator Operating on World) is a **meta-orchestrator** for long-running quality tasks. It runs locally in your terminal, coordinates specialist agents, and structural gates prevent hallucination from reaching output. Built on TypeScript and SQLite-vec.
 
 ---
 
-## Architecture
+## The Problem
+
+Most agent harnesses fan out and hope — specialists run, output gets assembled, but nobody verifies quality until a human notices. Long-running agents burn tokens on diminishing returns, grinding through the same task again and again without meaningful improvement. Hallucination slips through because there is no structural gate: no score, no threshold, no moment where the harness says "this is wrong" and retries. MEOW was built to close that gap.
+
+---
+
+## How It Works — Quality-First Loop
+
+```
+USER TASK
+    │
+    ▼
+L4 SPECIALIST (Claude Code / Aider) — implements
+    │
+    ▼
+MISSION REVIEWER — scores output across 7 criteria
+    │
+    ├── score >= threshold ──► COMMIT
+    │
+    └── score < threshold ──► RETRY (with review notes)
+                                   │
+                                   ▼
+                          L3 ORCHESTRATOR decides: retry, decompose, escalate
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+              CONVERGENCE CHECK             STAGNATION CHECK
+              ─ token budget?                ─ 2 iters no improvement?
+              ─ max iters hit?              ─ diminishing returns?
+                    │                             │
+                    ▼                             ▼
+               STOP / REPORT                   ADAPT / DECOMPOSE
+```
+
+Convergence logic is built into the loop. MEOW does not grind until the user kills it. It evaluates whether continued iteration is productive and stops when it is not.
+
+---
+
+## Quality Gates
+
+| Gate | What it checks | Fail action |
+|------|----------------|-------------|
+| `NO_MOCKS` | No `TODO`, `FIXME`, placeholder code in diff | Retry with note |
+| `TYPE_CHECK` | `tsc --noEmit` passes | Retry |
+| `LINT_CLEAN` | ESLint reports 0 errors | Retry |
+| `REAL_TESTS` | Test files exist and are non-empty | Warn (non-fatal) |
+| `NO_REFACTOR_BLOAT` | Diff does not touch unrelated files | Warn (non-fatal) |
+| `MISSION_COMPLETE` | Goal keywords present in output | Retry if missing |
+| `SOP_COMPLIANCE` | Think-Plan-Verify evidence in output | Retry if missing |
+
+Mission fails if weighted score is below threshold. Each retry passes review notes back to the specialist.
+
+---
+
+## Convergence Logic
+
+MEOW stops iterating when any of these conditions are true:
+
+- **Stagnation**: No score improvement for 2 consecutive iterations
+- **Token budget exceeded**: Cumulative token spend crosses threshold for this task
+- **Diminishing returns**: Score improvement between iterations falls below minimum delta
+
+Built into `SelfReviewRunner` and checked by the orchestrator at each loop exit.
+
+---
+
+## Execution Modes
+
+| Mode | Behavior |
+|------|----------|
+| `SEQUENTIAL` | One task at a time. Full review between each step. |
+| `SHIP` | Pass through all specialists with final review only. Used for trusted codebases. |
+| `PARALLEL` | Run independent tasks concurrently. Each task gets its own review. |
+| `AUDIT_ONLY` | No execution. Run MissionReviewer on existing output, report scores. |
+
+---
+
+## Multi-Agent Architecture
+
+```
+L1 LIAISON       — Human-facing layer. Receives tasks, escalates ambiguity, manages expectations.
+                  HumanSignoffManager: gates on low-confidence decisions.
+
+L2 ARCHITECT     — Mid-layer planner. Breaks tasks into subtasks, sequences dependencies.
+                  TaskDecomposer, FileCoordinator.
+
+L3 ORCHESTRATOR  — Execution coordinator. Manages TaskQueue, dispatches to L4 specialists,
+                  runs convergence checks. SelfReviewRunner.
+
+L4 SPECIALISTS   — Execute individual tasks. Claude Code subprocess, Aider subprocess.
+                  Each runs once per task; retry is a new invocation with review context.
+```
+
+---
+
+## File Tree
 
 ```
 src/
-├── index.ts          # CLI entry, accepts piped commands or interactive REPL
-├── kernel/
-│   ├── kernel.ts     # MeowKernel: heartbeat loop, watchdog, mission respawn
-│   └── database.ts   # SQLite-vec via bun:sqlite, WAL mode, multi-table schema
-├── agent/
-│   ├── agent.ts      # Agent class: LLM chat, system prompt builder (injects SOP/HONESTY at runtime)
-│   ├── skills.ts     # SkillManager: discovers .md skill files via YAML frontmatter
-│   ├── summoner.ts    # Specialist spawner (Claude Code / Aider subprocess)
-│   ├── evolve.ts      # Autonomous self-improvement via specialist review
-│   ├── mission_reviewer.ts  # Post-mission verification with 7-criterion scoring
-│   ├── quantum_memory.ts    # Grover-based memory recall over SQLite-vec
-│   ├── quantum_reasoning.ts # QuantumCircuit simulation for amplitude amplification
-│   └── mcp.ts        # MCP client for 40+ external service integrations
+├── index.ts                    # CLI entry, piped commands or REPL
+├── auditor/
+│   └── Auditor.ts              # Scores L4 output, gates on threshold
+├── liaison/
+│   ├── HumanSignoffManager.ts  # Escalation to human for low-confidence decisions
+│   └── HumanSignoffManager.test.ts
 ├── orchestrator/
-│   ├── orchestrator.ts   # Mission orchestration, conflict detection
-│   ├── task_decomposer.ts # Breaks complex goals into subtasks
-│   ├── task_queue.ts      # Priority queue with dependencies
-│   └── parallel_executor.ts # Concurrent specialist execution with TTL
-├── extensions/           # Tool definitions (read, write, run, grep, search...)
+│   ├── Orchestrator.ts         # L3 coordinator, convergence checks
+│   ├── ExecutionMode.ts        # SEQUENTIAL / SHIP / PARALLEL / AUDIT_ONLY
+│   ├── FileCoordinator.ts     # Coordinates file access across specialists
+│   ├── SelfReviewRunner.ts     # Runs convergence checks between iterations
+│   ├── TaskQueue.ts            # Priority queue with dependencies
+│   └── QualityConvergenceChecker.ts  # Diminishing returns / stagnation detection
+├── agent/
+│   ├── agent.ts                # LLM chat, system prompt builder
+│   ├── skills.ts               # SkillManager: discovers .md skill files
+│   ├── summoner.ts             # Spawns Claude Code / Aider as subprocesses
+│   ├── evolve.ts               # Self-improvement via specialist review
+│   ├── mission_reviewer.ts      # Post-mission verification, 7-criterion scoring
+│   ├── quantum_memory.ts       # Grover-based memory recall over SQLite-vec
+│   └── mcp.ts                  # MCP client for external service integrations
+├── kernel/
+│   ├── kernel.ts               # MeowKernel: heartbeat loop, watchdog, respawn
+│   └── database.ts             # SQLite-vec via bun:sqlite, WAL mode, multi-table schema
+├── extensions/                 # Tool definitions (read, write, run, grep, search...)
 ├── cli/
-│   └── repl.ts           # Interactive terminal REPL
+│   └── repl.ts                 # Interactive terminal REPL
 └── types/
-    └── tool.ts           # Tool definition schema, default tool registry
+    └── tool.ts                 # Tool definition schema, default tool registry
 
-.context/                 # Governance docs injected into every agent turn
-├── SOP.md               # Think-Plan-Verify, NO TRUST policy, Always Delegate
-├── HONESTY.md           # Definition of Done, Anti-Hallucination Contacts
-├── MISSION.md           # North star, core values
-├── ARCHITECTURE.md      # Directory layout, data flow
-├── ANTI_PATTERNS.md     # Known failure modes (zero-vector crash, sync I/O, etc.)
-├── ECOSYSTEM.md         # Mature agentic patterns and tool tracking
-└── QA_REVIEW.md         # Post-mortem retrospective on output verification failures
+.context/                       # Governance docs injected into every agent turn
+├── SOP.md                      # Think-Plan-Verify, NO TRUST policy, Always Delegate
+├── HONESTY.md                  # Definition of Done, Anti-Hallucination Contacts
+├── MISSION.md                 # North star, core values
+├── ARCHITECTURE.md             # Directory layout, data flow
+└── ANTI_PATTERNS.md            # Known failure modes
 
-REPORTS/
-├── QUANTUM_AUDIT.md     # v2 gate-level quantum simulation audit
-└── SELF_REVIEW.md      # Technical self-review of simulation fragility
-
-skills/                   # Markdown-based expert knowledge modules
-memory/                   # Persistent agent findings, karpathy guidelines
-scratch/                  # Task-specific workspace (git-ignored)
+memory/                         # Persistent agent findings
+scratch/                        # Task-specific workspace (git-ignored)
 ```
 
 ---
 
-## Key Technical Features
+## Comparison
 
-### Real Quantum Circuit Simulation
+**Factory.ai Kitchen**: Kitchen generates agent code and runs it in a sandbox. MEOW does not generate agents — it coordinates existing specialists and treats every output as suspect until verified. Kitchen's quality gates are post-hoc; MEOW's are structural.
 
-```typescript
-// quantum_reasoning.ts — actual gate-level simulation
-const numQubits = Math.ceil(Math.log2(candidates.length));
-const circuit = new QuantumCircuit(numQubits);
+**Anthropic Harness**: Harness provides a solid execution substrate. MEOW builds on that pattern but adds explicit convergence logic (stop when stagnant), multi-tier review (L3 Orchestrator + MissionReviewer), and human-in-the-loop escalation (L1 Liaison). Harness is a runner. MEOW is a quality-first harness.
 
-// Initialize superposition
-circuit.h(0); // Hadamard on first qubit
-// ... multi-qubit entanglement via CNOT
-// Grover iterations: Oracle → Amplification → Measure
-const winner = await this.reasoning.groverSearch(candidates, queryText);
-```
+---
 
-No mock. No metaphor. Actual quantum gate simulation via [`quantum-circuit`](https://www.npmjs.com/package/quantum-circuit).
+## Anti-Hallucination Design
 
-### Tiered Context Reservoir
+MEOW has four structural defenses against hallucination:
 
-Three-level memory hierarchy with reservoir sampling to bound L1 context:
-
-- **L1 (Working)**: 40k tokens — active agent context
-- **L2 (Episodic)**: Compressed diffs of recent missions
-- **L3 (Archive)**: SQLite-vec persistent vector store
-
-### Watchdog & Autonomous Respawn
-
-`MeowKernel` tracks agent heartbeats. If no pulse for 20 minutes, it:
-1. Marks the mission `failed_frozen`
-2. Spawns a replacement process
-3. Re-registers the new mission
-
-All events are logged to `.meow/logs/meow-YYYY-MM-DD.log`.
-
-### Fetch Timeouts
-
-All LLM API calls and web tools enforce timeouts:
-- LLM calls: **30s** hard timeout with `AbortController`
-- `browse` / `search`: **10s** timeout
+1. **Placeholder detection** (`NO_MOCKS` gate): Rejects any diff containing `TODO`, `FIXME`, or unfinished code before it can be committed.
+2. **MissionReviewer** (`SOP_COMPLIANCE` gate): Scores each output for Think-Plan-Verify evidence. Output that cannot show its reasoning fails.
+3. **Human sign-off** (`HumanSignoffManager`): Low-confidence decisions escalate to a human. Used for architectural choices, ambiguous requirements, and outputs that score below a confidence threshold.
+4. **SOP injection**: `.context/SOP.md` is injected into every agent turn at runtime. Agents cannot opt out of the protocol.
 
 ---
 
 ## Usage
 
 ```bash
-# Install globally (recommended — enables 'meow' command from anywhere)
-npm install -g .
-
 # Run in REPL mode (interactive)
 npx tsx src/index.ts
 
 # Run a single command
-npx tsx src/index.ts "your task here"
+npx tsx src/index.ts "fix the stalled REPL"
 
-# Or pipe directly
+# Pipe directly
 echo "fix the stalled REPL" | npx tsx src/index.ts
 
-# Check system health
+# Health check
 npx tsx src/index.ts "health check"
+
+# Audit mode — no execution, score existing output
+MEOW_MODE=AUDIT_ONLY npx tsx src/index.ts "audit output"
 ```
 
-### Configuration
-
-> **Note**: MEOW requires **Node.js + tsx**, not Bun. Bun does not support `better-sqlite3` (native C++ addons).
-
-Environment variables:
-
-| Variable | Description |
-|----------|-------------|
-| `LLM_API_KEY` or `ANTHROPIC_API_KEY` | API key for LLM calls |
-| `LLM_BASE_URL` or `ANTHROPIC_BASE_URL` | LLM endpoint (defaults to `http://localhost:11434` for Ollama) |
-| `ANTHROPIC_MODEL` or `MEOW_MODEL` | Model name (defaults to `claude-3-5-sonnet-latest`) |
-| `EMBEDDING_DIMENSION` | Vector embedding dimension (defaults to `1536`) |
-
 ---
 
-## Quality & Safety
+## Configuration
 
-- **Pre-commit hook**: `bun run check` (typecheck + lint) runs before every commit
-- **SOP enforcement**: Every agent turn receives `.context/SOP.md` and `.context/HONESTY.md` injected into its system prompt at runtime
-- **No self-verification**: Output quality is verified by a *different* agent (Claude Code via `summon`) with screenshot evidence
-- **Atomic commits only**: No WIP checkpoints, one logical change per commit
-- **157 ESLint warnings** (0 errors) — all pre-existing, no new violations introduced
-
----
-
-## Towards the 2028 Frontier (The Quantum-Agentic Convergence)
-
-MEOW is currently in **Phase 2 (Specialized Reasoning)**. Our trajectory is aligned with the 2027-2028 shift toward autonomous, goal-directed intelligence fabrics.
-
-### Roadmap to the 2028 Stack
-
-| Milestone | Capability | Status |
-| :--- | :--- | :--- |
-| **Hardware Integration** | Transition from `quantum-circuit` JS simulation to real QPU integration (IBM Cockatoo/Starling) | 🧪 Researching |
-| **Synchronized Agency** | Implementing a "Temporal Backbone" for decentralized agent synchronization via Bell-state measurements | 🏗️ Planning |
-| **QUBO Planning** | Moving `TaskDecomposer` to Quadratic Unconstrained Binary Optimization (QUBO) for multi-agent conflict resolution | 🏗️ Planning |
-| **Bounded Autonomy** | Identity-aware access controls and Post-Quantum Cryptography (PQC) for agent security | 🧪 Researching |
-| **Physical Agency** | Integration with VLA (Vision-Language-Action) models for robotic control and industrial sensing | 🗓️ 2027+ |
-
-### Critical Gaps We Are Bridging
-
-- **Simulation Era vs. Hardware Era**: We are moving from " Hilbert space simulation" on classical CPUs to real-time quantum error correction and mid-circuit measurements.
-- **Local Swarm vs. Decentralized Network**: We are evolving from a single local orchestrator to a decentralized, synchronized intelligence fabric.
-- **FinOps for Agents**: Implementing internal reward functions that embed cost-per-task logic, preventing expensive recursive loops while maximizing strategic outcomes.
-
----
-
-## Philosophy
-
-> MEOW is a **Sovereign AI Coding Agent** — designed to run locally in your terminal without excessive reliance on opaque cloud abstractions.
-
-From `.context/MISSION.md`:
-1. **Surgical Precision**: Touch only what is necessary. No cleanup churn.
-2. **Ground Truth Verification**: Never assume code works. Verify via `typecheck`, `lint`, tests.
-3. **Quantum-Inspired Orchestration**: Amplitude amplification for reasoning paths, grounded in classical software engineering rigor.
-4. **Local-First & Sovereign**: Empower the user's local environment.
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LLM_API_KEY` / `ANTHROPIC_API_KEY` | API key for LLM calls | (required) |
+| `LLM_BASE_URL` / `ANTHROPIC_BASE_URL` | LLM endpoint | `http://localhost:11434` (Ollama) |
+| `ANTHROPIC_MODEL` / `MEOW_MODEL` | Model name | `claude-3-5-sonnet-latest` |
+| `EMBEDDING_DIMENSION` | Vector embedding dimension | `1536` |
+| `MEOW_MODE` | Execution mode | `SEQUENTIAL` |
 
 ---
 
@@ -229,14 +210,14 @@ From `.context/MISSION.md`:
 
 | Package | Purpose |
 |---------|---------|
-| `node` + `tsx` | Runtime (Node.js only — Bun is NOT supported due to `better-sqlite3` native addons) |
+| `node` + `tsx` | Runtime (Node.js only — Bun does not support `better-sqlite3` native addons) |
 | `better-sqlite3` | SQLite database with WAL mode |
 | `sqlite-vec` | Vector similarity search |
-| `quantum-circuit` | Real quantum gate simulation |
+| `quantum-circuit` | Real quantum gate simulation (Grover search, Bell states) |
 | `@modelcontextprotocol/sdk` | MCP client (40+ integrations) |
 | `picocolors` | Terminal colors |
 | `diff-match-patch` | Text diffing |
-| `mathjs` | Matrix operations for quantum sim |
+| `mathjs` | Matrix operations for quantum simulation |
 
 ---
 

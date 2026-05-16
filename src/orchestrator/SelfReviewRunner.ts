@@ -4,7 +4,11 @@
 import { spawn } from 'child_process';
 import { Task, TaskResult, FileArtifact } from './Task';
 import { ExecutionMode, QualityGate, QualityGateResult, QualityTaskContext, SelfReviewResult, DEFAULT_QUALITY_GATES, isQualityMode } from './ExecutionMode';
+import { QualityConvergenceChecker } from './QualityConvergenceChecker';
 import pc from 'picocolors';
+
+// Re-export SelfReviewResult so it can be imported from SelfReviewRunner
+export { SelfReviewResult } from './ExecutionMode';
 
 export interface SelfReviewConfig {
   mode: ExecutionMode;
@@ -12,6 +16,8 @@ export interface SelfReviewConfig {
   qualityGates: QualityGate[];
   minQualityScore: number;
   allowHumanOverride: boolean;
+  tokenBudgetPerTask?: number;
+  enableConvergenceCheck?: boolean;
 }
 
 export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
@@ -20,13 +26,19 @@ export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   qualityGates: DEFAULT_QUALITY_GATES,
   minQualityScore: 80,
   allowHumanOverride: true,
+  tokenBudgetPerTask: 50000,
+  enableConvergenceCheck: true,
 };
 
 export class SelfReviewRunner {
   private config: SelfReviewConfig;
+  private convergenceChecker: QualityConvergenceChecker;
 
   constructor(config: Partial<SelfReviewConfig> = {}) {
     this.config = { ...DEFAULT_SELF_REVIEW_CONFIG, ...config };
+    this.convergenceChecker = new QualityConvergenceChecker({
+      tokenBudgetPerTask: this.config.tokenBudgetPerTask ?? 50000,
+    });
   }
 
   /**
@@ -62,6 +74,8 @@ export class SelfReviewRunner {
         issues: result.error ? [result.error] : [],
         warnings: [],
         gates: [],
+        gatesPassed: [],
+        gatesFailed: [],
         iterations: 1,
         timeSpentMs: Date.now() - startTime,
       };
@@ -99,6 +113,27 @@ export class SelfReviewRunner {
 
       console.log(pc.cyan(`\n📊 [ITERATION ${iteration}] Quality Score: ${qualityScore}% | Gates: ${gateResults.filter(g => g.passed).length}/${gateResults.length}`));
 
+      if (this.config.enableConvergenceCheck) {
+        const tokensThisIteration = this.estimateTokens(lastResult);
+        const gatesPassedCount = gateResults.filter(g => g.passed).length;
+        const decision = this.convergenceChecker.check(qualityScore, tokensThisIteration, gatesPassedCount, gateResults.length);
+        console.log(pc.dim('   ' + decision.message));
+        if (!decision.shouldContinue) {
+          console.log(pc.yellow('\n⚠️  [ITERATION ' + iteration + '] ' + decision.reason.toUpperCase() + ' — stopping quality loop'));
+          return {
+            passes: false,
+            qualityScore,
+            issues: [...issues, 'Convergence exit: ' + decision.reason],
+            warnings,
+            gates: gateResults,
+            iterations: iteration,
+            timeSpentMs: Date.now() - startTime,
+            gatesPassed: gateResults.filter(g => g.passed).map(g => g.details.split(':')[0].trim()),
+            gatesFailed: gateResults.filter(g => !g.passed).map(g => g.details.split(':')[0].trim()),
+          };
+        }
+      }
+
       // Check if all required gates passed
       const allRequiredPassed = gateResults
         .filter(g => g.passed || !this.config.qualityGates.find(qg => qg.name === g.details.split(':')[0])?.required)
@@ -117,6 +152,8 @@ export class SelfReviewRunner {
           issues,
           warnings,
           gates: gateResults,
+          gatesPassed: gateResults.filter(g => g.passed).map(g => g.details.split(':')[0].trim()),
+          gatesFailed: gateResults.filter(g => !g.passed).map(g => g.details.split(':')[0].trim()),
           iterations: iteration,
           timeSpentMs: Date.now() - startTime,
         };
@@ -140,6 +177,8 @@ export class SelfReviewRunner {
           issues,
           warnings,
           gates: gateResults,
+          gatesPassed: gateResults.filter(g => g.passed).map(g => g.details.split(':')[0].trim()),
+          gatesFailed: gateResults.filter(g => !g.passed).map(g => g.details.split(':')[0].trim()),
           iterations: iteration,
           timeSpentMs: Date.now() - startTime,
         };
@@ -162,6 +201,8 @@ export class SelfReviewRunner {
       issues: ['Max iterations exceeded'],
       warnings: [],
       gates: [],
+      gatesPassed: [],
+      gatesFailed: [],
       iterations: iteration,
       timeSpentMs: Date.now() - startTime,
     };
@@ -253,6 +294,8 @@ export class SelfReviewRunner {
       issues: gateResults.flatMap(g => g.issues || []),
       warnings: gateResults.flatMap(g => g.warnings || []),
       gates: gateResults,
+      gatesPassed: gateResults.filter(g => g.passed).map(g => g.details.split(':')[0].trim()),
+      gatesFailed: gateResults.filter(g => !g.passed).map(g => g.details.split(':')[0].trim()),
       iterations: 0,
       timeSpentMs: Date.now() - startTime,
     };
@@ -260,6 +303,12 @@ export class SelfReviewRunner {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private estimateTokens(result: TaskResult): number {
+    const outputLen = result.output?.length ?? 0;
+    const artifactsLen = (result.artifacts ?? []).reduce((sum, a) => sum + (a.content?.length ?? 0), 0);
+    return Math.round((outputLen + artifactsLen) / 4);
   }
 
   getConfig(): SelfReviewConfig {

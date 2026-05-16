@@ -12,7 +12,8 @@ import { McpManager } from '../agent/mcp';
 import { SkillManager } from '../agent/skills';
 import { Architect } from '../architect/Architect';
 import { MissionBrief } from '../liaison/MissionBrief';
-import { ExecutionMode, SelfReviewRunner, SelfReviewResult, isQualityMode } from './ExecutionMode';
+import { ExecutionMode, isQualityMode } from './ExecutionMode';
+import { SelfReviewRunner, SelfReviewResult } from './SelfReviewRunner';
 
 export interface OrchestratorConfig {
   queue: QueueConfig;
@@ -227,7 +228,7 @@ export class Orchestrator {
       });
 
       const aggregated = await this.aggregator.aggregate(
-        results.map(r => r.result),
+        new Map(results.map(r => [r.taskId, r.result])),
         request
       );
 

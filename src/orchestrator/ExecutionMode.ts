@@ -1,6 +1,16 @@
 // Quality-First Execution Modes
-// Meow's tagline: "Most long-running agents just ship garbage with speed.
-//  Meow takes things slow and likes quality and tastes."
+//
+// MEOW's SEQUENTIAL/SHIP modes implement the "Kitchen Pattern" from Factory.ai:
+//   - One task at a time with embedded self-review
+//   - Quality gates must pass before next task starts
+//   - Inspired by Anthropic's "Effective Harnesses for Long-Running Agents" (2024)
+//     which uses a 2-agent architecture (Initializer + Coding) with JSON feature lists
+//     and structured handoffs — if a task's "passes" list is incomplete, it cannot
+//     proceed to the next stage.
+//
+// The AUDIT_ONLY mode corresponds to Anthropic's "passes array" check: a structured
+// manifest of which quality gates the task passed. If the passes list is incomplete,
+// the task is blocked from proceeding.
 
 export enum ExecutionMode {
   /**
@@ -90,6 +100,10 @@ export interface SelfReviewResult {
   gates: QualityGateResult[];
   iterations: number;
   timeSpentMs: number;
+  /** Names of gates that passed this run */
+  gatesPassed: string[];
+  /** Names of gates that failed this run */
+  gatesFailed: string[];
 }
 
 export const DEFAULT_QUALITY_GATES: QualityGate[] = [
@@ -182,14 +196,47 @@ export const DEFAULT_QUALITY_GATES: QualityGate[] = [
         };
       }
 
-      const passed = ctx.humanSignoff.approved;
+      // Human sign-off AND visual QA must both be approved when visualQA is present
+      const visualApproved = !ctx.visualQA || ctx.visualQA.approved;
+      const passed = ctx.humanSignoff.approved && visualApproved;
+      const visualDetails = ctx.visualQA
+        ? ctx.visualQA.approved
+          ? ', visual QA passed'
+          : ', visual QA FAILED'
+        : '';
+
       return {
         passed,
         details: passed
-          ? `Approved by ${ctx.humanSignoff.approver} at ${new Date(ctx.humanSignoff.timestamp).toISOString()}`
-          : `Rejected by ${ctx.humanSignoff.approver}: ${ctx.humanSignoff.feedback || 'no feedback'}`,
+          ? `Approved by ${ctx.humanSignoff.approver}${visualDetails} at ${new Date(ctx.humanSignoff.timestamp).toISOString()}`
+          : `Rejected by ${ctx.humanSignoff.approver}: ${ctx.humanSignoff.feedback || 'no feedback'}${visualDetails}`,
         durationMs: Date.now() - start,
         issues: passed ? undefined : [`Human rejected: ${ctx.humanSignoff.feedback}`],
+      };
+    },
+  },
+  {
+    name: 'Visual Verification',
+    required: false, // opt-in per task via visualQA context
+    blocking: false,
+    check: async (ctx): Promise<QualityGateResult> => {
+      const start = Date.now();
+      // If no visual QA was requested, this gate passes trivially
+      if (!ctx.visualQA) {
+        return {
+          passed: true,
+          details: 'No visual QA requested — skipping',
+          durationMs: Date.now() - start,
+        };
+      }
+      const passed = ctx.visualQA.approved;
+      return {
+        passed,
+        details: passed
+          ? `Visual QA passed (${ctx.visualQA.screenshotsTaken.length} screenshots, diff score: ${ctx.visualQA.diffScore})`
+          : `Visual QA failed: ${ctx.visualQA.issues?.join(', ') ?? 'approval=false'}`,
+        durationMs: Date.now() - start,
+        issues: passed ? undefined : ctx.visualQA.issues,
       };
     },
   },
