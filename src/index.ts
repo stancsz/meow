@@ -44,6 +44,26 @@ async function main() {
     kernel
   });
 
+  // Support for -p (plan/non-interactive) mode — MEOW's primary headless interface
+  // Output goes to stdout, no TTY required. This is what Hermes calls.
+  const planMode = process.argv.includes("-p") || process.argv.includes("--plan");
+  if (planMode) {
+    const command = process.argv.filter(arg => !arg.startsWith("--") && arg !== "-p" && arg !== "--plan").slice(2).join(" ");
+    if (!command) {
+      console.error("Usage: meow -p \"<task description>\"");
+      process.exit(1);
+    }
+    console.log(`🤖 [MEOW] Plan mode: ${command}`);
+    const response = await agent.chat(command, false, undefined, (status) => {
+      process.stdout.write(`\r${status}`);
+    });
+    console.log("\n" + response);
+    console.log("\n✅ Command completed.");
+    await kernel.shutdown();
+    process.exit(0);
+    return;
+  }
+
   // Support for --tui flag
   if (process.argv.includes("--tui")) {
     const { MeowTUI } = await import("./cli/tui");
@@ -52,7 +72,7 @@ async function main() {
     return;
   }
 
-  // Support for non-interactive command mode
+  // Support for non-interactive command mode (legacy, kept for compatibility)
   const command = process.argv.filter(arg => !arg.startsWith("--")).slice(2).join(" ");
   if (command) {
     console.log(`🤖 [MEOW] Executing command: ${command}`);

@@ -104,7 +104,7 @@ export class Agent {
 
   async chat(
     userInput: string, 
-    runTests: boolean = false, 
+    runTests: boolean = false,
     testCmd?: string,
     onStatus?: (status: string) => void
   ): Promise<string> {
@@ -121,6 +121,8 @@ export class Agent {
     let attempt = 0;
     let turn = 0;
     const MAX_TURNS = 10;
+    // MEOW-3-RULE: reset attempt counter on new task, so each task gets fresh 3 tries
+    this.lintFixAttempts = 0;
     
     while (attempt < this.maxRetries && turn < MAX_TURNS) {
       turn++;
@@ -210,6 +212,8 @@ export class Agent {
         const passed = !testResult.includes("failed") && !testResult.includes("error");
         
         if (passed) {
+          // MEOW succeeded — record for metrics, reset failure counter
+          this.kernel.push({ type: "SET_STATE", key: `task:${userInput.substring(0, 50)}:success`, value: Date.now() });
           return response;
         } else {
           lastError = this.extractError(testResult);
@@ -220,28 +224,165 @@ export class Agent {
       return response;
     }
     
-    // Max retries reached - Summon external help
-    console.log(`⚠️ Meow hit a roadblock after ${this.maxRetries} attempts.`);
+    // MEOW-3-RULE: MEOW tried maxRetries times and failed.
+    // claude -p is NOT a fallback to finish the task.
+    // claude -p is ONLY called to FIX MEOW (patch the tool/prompt/logic that caused the failure).
+    // After patching, the task is marked needs_retry — USER re-invokes MEOW with the same task.
     
-    const escalationResult = await summon("aider", {
-      goal: userInput,
-      files: Array.from(this.files),
-      lastError: lastError || "Unknown issue",
-      attempt: attempt,
-      existingSkills: this.skillManager.getSkillNames(),
-      monolithBlueprint: this.MONOLITH_BLUEPRINT,
-      kernel: this.kernel
-    });
+    console.log(`⚠️ MEOW failed after ${this.maxRetries} attempts. Root cause analysis → claude -p (fix MEOW only, NOT task).`);
+    
+    const fixResult = await this.fixMeow({ userInput, lastError, attempt, runTests, testCmd });
+    
+    // Return the repair report, NOT the task result
+    return `🩹 MEOW Self-Repair Report\n${'─'.repeat(40)}\n${fixResult}\n${'─'.repeat(40)}\n\n📋 The task was NOT completed — MEOW was patched instead.\n   Please re-run the same task to let MEOW try again with the fix applied.`;
+  }
 
-    // POST-SUMMON AUDIT: Verify the specialist's work
-    const { MissionReviewer } = await import("./mission_reviewer");
-    const reviewer = new MissionReviewer(this);
-    const verification = await reviewer.verify(userInput, testCmd);
-    
-    if (verification.includes("MISSION COHERENT")) {
-      return `✅ Specialist successfully completed the mission.\n${escalationResult}`;
-    } else {
-      return `❌ Specialist CLAIMED to be done, but verification FAILED.\n${verification}\n\nSpecialist Output:\n${escalationResult}`;
+  /**
+   * MEOW-3-RULE: Fix MEOW (not the task).
+   * 
+   * Called when MEOW fails 3 times. Runs claude -p with a self-improvement prompt
+   * that diagnoses why MEOW failed, then patches MEOW's own code/tools/prompts.
+   * The task is NOT completed — it's marked needs_retry in the DB.
+   */
+  private async fixMeow(ctx: {
+    userInput: string;
+    lastError: string | null;
+    attempt: number;
+    runTests?: boolean;
+    testCmd?: string;
+  }): Promise<string> {
+    const files = Array.from(this.files);
+    const meowDir = process.cwd();
+
+    // Build the self-improvement prompt for claude -p
+    const fixPrompt = `
+MEOW FAILED 3 TIMES — ROOT CAUSE ANALYSIS & SELF-REPAIR
+
+## The Task That Failed
+${ctx.userInput}
+
+## What MEOW Tried (${ctx.attempt} attempts)
+${ctx.lastError || "Unknown — MEOW produced no usable output"}
+
+## Your Job: Fix MEOW, Not The Task
+
+MEOW is a coding agent built at ${meowDir}.
+It uses a custom tool-calling loop (TOOL: <name> | <args>) with these tools:
+  - ls, grep, read, write, run, browse, search, diff, summon, activate_extension, archive_context, verify_mission, use_skill
+
+The failure was likely caused by one of:
+  1. A broken tool (tool crashes, wrong args parsing, missing dependency)
+  2. A bad system prompt (MEOW doesn't understand what to do for this task type)
+  3. A missing skill/extension (MEOW should have used a skill but didn't know to)
+  4. A logic bug in agent.ts (the retry/escalation loop is wrong)
+  5. A misconfigured LLM endpoint (wrong model, wrong baseUrl, wrong apiKey)
+
+## Investigation Steps
+
+1. Read \`src/agent/agent.ts\` — understand the tool loop, retry logic, and escalation path
+2. Read \`src/types/tool.ts\` — understand how tools are registered and called
+3. Read \`src/liaison/Liaison.ts\` — understand how L1 routes to L2
+4. Check the LLM config in \`src/config/env.ts\` — is the model capable of the task?
+5. Look for skills in \`skills/\` and \`src/skills/\` that are relevant to the task domain
+6. Check if recent commits broke something: \`git log --oneline -10\`
+
+## Repair Actions (pick the right fix)
+
+- If a tool is broken: fix the tool code in \`src/tools/\` or wherever it lives
+- If the system prompt is wrong: patch \`buildSystemPrompt()\` in agent.ts
+- If a skill is missing: write a new skill in \`skills/<name>/SKILL.md\`
+- If the retry logic is wrong: patch the while loop in \`chat()\` in agent.ts
+- If the LLM is too weak: update the model in \`src/config/env.ts\`
+
+## Output Format
+
+After your investigation, output a SEARCH/REPLACE block for every file you changed,
+then run: \`npm run check 2>&1 | head -50\` to verify nothing is broken.
+
+If you couldn't find the root cause, output what you tried and what you suspect
+but couldn't verify.
+
+DO NOT attempt to complete the original task. Only fix MEOW's machinery.
+`.trim();
+
+    // Run claude -p to fix MEOW
+    try {
+      const { execSync } = await import("child_process");
+      const encoded = Buffer.from(fixPrompt).toString("base64");
+      const result = execSync(
+        `claude -p "$(echo '$encoded' | base64 -d)" --dangerously-skip-permissions --permission-mode bypassPermissions`,
+        {
+          cwd: meowDir,
+          encoding: "utf-8",
+          timeout: 180,
+          env: { ...process.env, CI: "true" },
+        }
+      );
+      
+      // Record the repair in kernel state so future runs know MEOW was patched
+      this.kernel.push({
+        type: "SET_STATE",
+        key: `meow:repair:${Date.now()}`,
+        value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError }
+      });
+
+      // If claude -p produced patches, suggest contributing to stancsz/meow
+      await this.suggestUpstreamContribution(result);
+
+      return result;
+    } catch (err: any) {
+      return `❌ claude -p self-repair failed: ${err.message}\nCheck MEOW manually at ${meowDir}`;
+    }
+  }
+
+  /**
+   * After a successful self-repair, check if the fix is worth contributing upstream.
+   * MEOW should share its evolution with the stancsz/meow community.
+   */
+  private async suggestUpstreamContribution(_fixResult: string): Promise<void> {
+    try {
+      const { execSync } = await import("child_process");
+      
+      // Check if there are uncommitted changes
+      const status = execSync("git status --porcelain", { cwd: process.cwd(), encoding: "utf-8" }).trim();
+      const hasUncommitted = status.length > 0 && !status.includes("?");
+
+      // Get the diff summary
+      const diff = hasUncommitted 
+        ? execSync("git diff --stat", { cwd: process.cwd(), encoding: "utf-8" })
+        : execSync("git diff --stat HEAD~1", { cwd: process.cwd(), encoding: "utf-8" });
+      
+      // Get the latest commit message
+      const lastCommit = execSync("git log -1 --oneline", { cwd: process.cwd(), encoding: "utf-8" }).trim();
+
+      // Get the branch name
+      const branch = execSync("git branch --show-current", { cwd: process.cwd(), encoding: "utf-8" }).trim();
+
+      // Only suggest if something meaningful was committed (last commit looks like a fix)
+      const isMEOWEvolution = lastCommit.includes("meow") || 
+                               lastCommit.includes("fix") || 
+                               lastCommit.includes("self-repair") ||
+                               lastCommit.includes("feat") ||
+                               lastCommit.includes("patch");
+
+      if (isMEOWEvolution && diff.includes("src/")) {
+        console.log("\n" + "─".repeat(52));
+        console.log("🌱 MEOW evolved! Share your fix with the community:");
+        console.log("");
+        console.log("  # Fork stancsz/meow and push your branch:");
+        console.log(`  git remote add upstream https://github.com/stancsz/meow`);
+        console.log(`  git checkout -b meow-evolution`);
+        console.log(`  git push upstream meow-evolution`);
+        console.log("");
+        console.log("  # Then open: https://github.com/stancsz/meow/pulls");
+        console.log(`     Branch: ${branch || 'current'}`);
+        console.log(`     Latest: ${lastCommit}`);
+        console.log("");
+        console.log("  Your variant helps everyone who hits the same bug!");
+        console.log("─".repeat(52) + "\n");
+      }
+    } catch {
+      // Non-fatal — don't block the flow if git commands fail
     }
   }
 
