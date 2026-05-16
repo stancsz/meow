@@ -111,8 +111,8 @@ const CMDS: Cmd[] = [
   {
     name: 'mode',
     desc: 'set mode: ship | seq | par | audit',
-    async fn({ log }, args: string) {
-      const m = args.trim().toLowerCase();
+    async fn({ log }, args?: string) {
+      const m = (args ?? '').trim().toLowerCase();
       const map: Record<string, ExecutionMode> = {
         ship: ExecutionMode.SHIP,
         seq:  ExecutionMode.SEQUENTIAL,
@@ -245,7 +245,7 @@ export class MeowTUI {
   private phaseContent(): string {
     const phaseStr = PHASE[this.phase]();
     const elapsed  = stylize(S.dim, fmtElapsed(Date.now() - this.startMs));
-    const mode    = stylize(S.dim, ExecutionMode[_executionMode] ?? 'SHIP');
+    const mode    = stylize(S.dim, String(_executionMode));
     const left    = `${phaseStr}${mode}`;
     const right   = `tokens:${stylize(S.blue, this.tokens.toLocaleString())}  elapsed:${elapsed}`;
     const pad     = Math.max(1, 80 - strip(left).length - strip(right).length);
