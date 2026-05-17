@@ -1,6 +1,6 @@
 {
   "name": "meow-swarm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "meow -p: Autonomous multi-agent coding harness. Run coding agents in background, checkpoint state, TUI dashboard.",
   "main": "dist/index.js",
@@ -33,7 +33,7 @@
     "js-yaml": "4.1.1",
     "mathjs": "^15.2.0",
     "picocolors": "1.1.1",
-    "quantum-circuit": "^0.9.247",
+    
     "sqlite-vec": "^0.1.9"
   },
   "devDependencies": {
