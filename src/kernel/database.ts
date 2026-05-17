@@ -90,27 +90,34 @@ export class MeowDatabase implements DatabasePort {
     // Priority 1: Reproducibility + Seed Management
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS mission_runs (
-        run_id       TEXT PRIMARY KEY,
-        mission_id   TEXT NOT NULL,
-        seed         INTEGER,
-        deterministic INTEGER DEFAULT 0,
-        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-        completed_at DATETIME,
-        status       TEXT DEFAULT 'running',
-        checkpoint_path TEXT
+        run_id         TEXT PRIMARY KEY,
+        mission_id     TEXT NOT NULL,
+        mission_type   TEXT NOT NULL DEFAULT 'mission',
+        status         TEXT DEFAULT 'running',
+        seed           INTEGER,
+        deterministic  INTEGER DEFAULT 0,
+        model          TEXT,
+        total_cost     REAL DEFAULT 0,
+        checkpoint_path TEXT,
+        parent_run_id  TEXT,
+        created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at   DATETIME
       );
+      CREATE INDEX IF NOT EXISTS idx_runs_status ON mission_runs(status);
+      CREATE INDEX IF NOT EXISTS idx_runs_created ON mission_runs(created_at);
     `);
 
     // Priority 1: Cost Tracking
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS mission_cost (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id       TEXT NOT NULL,
-        model        TEXT NOT NULL,
-        input_tokens INTEGER DEFAULT 0,
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id        TEXT NOT NULL,
+        model         TEXT NOT NULL,
+        input_tokens  INTEGER DEFAULT 0,
         output_tokens INTEGER DEFAULT 0,
-        cost_cents   REAL DEFAULT 0,
-        logged_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        cost_cents    REAL DEFAULT 0,
+        logged_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (run_id) REFERENCES mission_runs(run_id)
       );
       CREATE INDEX IF NOT EXISTS idx_cost_run_id ON mission_cost(run_id);
@@ -154,6 +161,24 @@ export class MeowDatabase implements DatabasePort {
         last_seen    DATETIME DEFAULT CURRENT_TIMESTAMP,
         status       TEXT DEFAULT 'available'
       );
+    `);
+
+    // Priority 3: Eval harness
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS benchmark_results (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id          TEXT UNIQUE NOT NULL,
+        suite           TEXT NOT NULL,
+        model           TEXT NOT NULL,
+        total_score     REAL NOT NULL,
+        pass_rate       REAL NOT NULL,
+        total_cost      REAL NOT NULL,
+        total_duration_ms INTEGER NOT NULL,
+        report_path     TEXT,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_bench_run_id ON benchmark_results(run_id);
+      CREATE INDEX IF NOT EXISTS idx_bench_suite ON benchmark_results(suite);
     `);
   }
 
@@ -223,19 +248,28 @@ export class MeowDatabase implements DatabasePort {
     return this.db;
   }
 
-  // ── Priority 1: Run / Cost helpers ──────────────────────────────────────
+  // ── Priority 1: Reproducibility + Cost helpers ────────────────────────────
 
-  startRun(runId: string, missionId: string, seed: number | undefined, deterministic: boolean): void {
+  startRun(runId: string, missionId: string, seed: number | undefined, deterministic: boolean, model?: string): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO mission_runs (run_id, mission_id, seed, deterministic, status)
-      VALUES (?, ?, ?, ?, 'running')
-    `).run(runId, missionId, seed ?? null, deterministic ? 1 : 0);
+      INSERT OR REPLACE INTO mission_runs (run_id, mission_id, seed, deterministic, status, model)
+      VALUES (?, ?, ?, ?, 'running', ?)
+    `).run(runId, missionId, seed ?? null, deterministic ? 1 : 0, model ?? null);
+  }
+
+  checkpoint(runId: string, name: string): void {
+    const path = `~/.meow/checkpoints/${runId}_${name}.json`;
+    this.db.prepare(`
+      UPDATE mission_runs SET checkpoint_path = ?, updated_at = CURRENT_TIMESTAMP WHERE run_id = ?
+    `).run(path, runId);
   }
 
   endRun(runId: string, status: string = "completed"): void {
+    const totalCost = this.getTotalCost(runId);
     this.db.prepare(`
-      UPDATE mission_runs SET completed_at = CURRENT_TIMESTAMP, status = ? WHERE run_id = ?
-    `).run(status, runId);
+      UPDATE mission_runs SET completed_at = CURRENT_TIMESTAMP, status = ?, total_cost = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE run_id = ?
+    `).run(status, totalCost, runId);
   }
 
   logCost(runId: string, model: string, inputTokens: number, outputTokens: number, costCents: number): void {
