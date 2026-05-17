@@ -1,5 +1,3 @@
-// Agent - Core chat logic with Ollama
-
 import type { Message } from "../types/message";
 import { readFile, writeFile } from "fs/promises";
 import { execSync } from "child_process";
@@ -9,16 +7,18 @@ import { SkillManager } from "./skills";
 import { McpManager } from "./mcp";
 import { DiscoveryModule } from "./discovery";
 import { resolve } from "path";
+import { v4 as uuidv4 } from "uuid";
 
 import { summon } from "./summoner";
 import { DEFAULT_TOOLS } from "../types/tool";
 import { ExtensionManager } from "../extensions/ExtensionManager";
 import { MeowKernel } from "../kernel/kernel";
-import { QuantumMemory, MemoryResult } from "./quantum_memory";
-import { QuantumReasoning } from "./quantum_reasoning";
+import { AgenticMemory, MemoryResult } from "./memory";
+import { ReasoningEngine } from "./reasoning";
 import { MeowDatabase } from "../kernel/database";
 import { config } from "../config/env";
 import { DatabasePort } from "../extensions/database/manifest";
+import { AuditLogger } from "../kernel/audit";
 import pc from "picocolors";
 
 export interface AgentConfig {
@@ -66,8 +66,8 @@ export class Agent {
   public mcpManager: McpManager;
   public discoveryModule: DiscoveryModule;
   public extensionManager: ExtensionManager;
-  public quantumMemory: QuantumMemory;
-  public quantumReasoning: QuantumReasoning;
+  public agenticMemory: AgenticMemory;
+  public reasoningEngine: ReasoningEngine;
   public kernel: MeowKernel;
   public db: MeowDatabase;
 
@@ -78,10 +78,16 @@ export class Agent {
 
   public MONOLITH_BLUEPRINT = `
 1. SINGLE WRITER PHYSICS: All state mutations (DB/Swarm) MUST go through MeowKernel. No direct writes.
-2. QUANTUM PRESERVATION: Do NOT modify 'quantum_*.ts' files unless explicitly asked.
+2. AGENTIC MEMORY PRESERVATION: Do NOT modify 'agentic_*.ts' files unless explicitly asked.
 3. SERIALIZED EXECUTION: Favor simple synchronous/serial patterns. Avoid complex parallel async logic.
 4. ROT RESISTANCE: Prefer Vanilla JS/TS over external dependencies. Match existing surgical style.
   `.trim();
+
+  // Priority 1: Reproducibility + Observability
+  public runId: string;
+  private auditLogger: AuditLogger;
+  private totalCostCents: number = 0;
+  private recentActions: string[] = []; // For loop detection
 
   constructor(config: AgentConfig) {
     this._model = config.model;
@@ -92,14 +98,31 @@ export class Agent {
       config.files.forEach(f => this.files.add(f));
     }
 
+    // Start a new run for this session
+    this.runId = uuidv4();
+    const meowDb = config.db as MeowDatabase;
+    meowDb.startRun(this.runId, "mission", config.seed, config.deterministic);
+    this.auditLogger = new AuditLogger(this.runId);
+
     this.skillManager = new SkillManager();
     this.mcpManager = new McpManager();
     this.discoveryModule = new DiscoveryModule();
     this.extensionManager = new ExtensionManager();
     this.kernel = config.kernel;
     this.db = config.db as any;
-    this.quantumReasoning = new QuantumReasoning();
-    this.quantumMemory = new QuantumMemory(config.db, config.kernel, this.quantumReasoning);
+    this.reasoningEngine = new ReasoningEngine();
+    this.agenticMemory = new AgenticMemory(config.db, config.kernel, this.reasoningEngine);
+  }
+
+  // ── Priority 1: Budget enforcement ──────────────────────────────────────
+  private checkBudget(): void {
+    const budget = config.budgetCents;
+    if (budget && this.totalCostCents >= budget) {
+      this.auditLogger.error("budget", `Budget exceeded: ${this.totalCostCents}¢ >= ${budget}¢`);
+      const meowDb = this.db as MeowDatabase;
+      meowDb.endRun(this.runId, "budget_exceeded");
+      throw new Error(`Budget exceeded: ${this.totalCostCents.toFixed(4)}¢ >= ${budget}¢. Checkpoint saved.`);
+    }
   }
 
   async chat(
@@ -113,7 +136,7 @@ export class Agent {
     
     // Tiered Context Management: High-Water Mark Detection
     if (this.currentL1Tokens > this.L1_TOKEN_LIMIT || this.messages.length > 15) {
-      onStatus?.("⚛️  High-Water Mark: Offloading context to L3...");
+      onStatus?.("→ [Memory] Offloading context to L3...");
       await this.compressAndOffload();
     }
     
@@ -181,8 +204,8 @@ export class Agent {
               }
             }
 
-            // Archive tool result in Quantum Memory for future recall
-            await this.quantumMemory.store(
+            // Archive tool result in Agentic Memory for future recall
+            await this.agenticMemory.store(
               `Tool [${toolName}] result for query [${userInput}]: ${result.substring(0, 500)}`,
               this.mockEmbedding(userInput),
               { tool: toolName, type: "tool_output" }
@@ -424,6 +447,26 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
   get apiKey(): string | undefined { return this._apiKey; }
 
   public async callLLM(systemPrompt: string, messages: Message[]): Promise<string> {
+    this.checkBudget();
+
+    // ── Loop detection: flag if agent repeats same action 3× in a row ──
+    const actionSig = JSON.stringify(messages.slice(-2));
+    this.recentActions.push(actionSig);
+    if (this.recentActions.length > 3) this.recentActions.shift();
+    const last3 = this.recentActions.slice(-3);
+    if (last3.length === 3 && last3.every(a => a === last3[0])) {
+      this.auditLogger.log({ level: "warn", actionType: "loop_detected", detail: "Agent repeated same action 3× — flagging for review" });
+      console.warn(pc.yellow("⚠️ [LOOP DETECTED] Repeating the same action. Consider pivoting strategy."));
+    }
+
+    const startTime = Date.now();
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let costCents = 0;
+    let success = false;
+
+    let text = "";
+
     // If we have an API key and the URL looks like an Anthropic-compatible endpoint, use that format
     if (this._apiKey && (this._baseUrl.includes("anthropic"))) {
       const url = this._baseUrl.endsWith("/v1/messages") ? this._baseUrl : `${this._baseUrl}/v1/messages`;
@@ -452,45 +495,73 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
       }
 
       const data = await response.json() as any;
-      
+
+      // Extract token usage from response
+      inputTokens = data.usage?.input_tokens ?? 0;
+      outputTokens = data.usage?.output_tokens ?? 0;
+
       // Find the first content block that contains text
       const textBlock = data.content?.find((c: any) => c.type === "text" && c.text);
-      const text = textBlock?.text || "";
-      
-      return text;
+      text = textBlock?.text || "";
+      success = true;
+    } else {
+      // Default to Ollama/OpenAI-compatible format
+      const fullMessages = [
+        { role: "system" as const, content: systemPrompt },
+        ...messages
+      ];
+
+      const url = this._baseUrl.includes("/api/chat") ? this._baseUrl : `${this._baseUrl}/api/chat`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(this._apiKey ? { "Authorization": `Bearer ${this._apiKey}` } : {})
+        },
+        body: JSON.stringify({
+          model: this._model,
+          messages: fullMessages,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`LLM error: ${response.status} - ${error}`);
+      }
+
+      const data = await response.json() as { message?: { content?: string }, choices?: { message?: { content?: string } }[] };
+      text = data.message?.content || data.choices?.[0]?.message?.content || "";
+      success = true;
     }
 
-    // Default to Ollama/OpenAI-compatible format
-    const fullMessages = [
-      { role: "system" as const, content: systemPrompt },
-      ...messages
-    ];
+    const durationMs = Date.now() - startTime;
 
-    const url = this._baseUrl.includes("/api/chat") ? this._baseUrl : `${this._baseUrl}/api/chat`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(this._apiKey ? { "Authorization": `Bearer ${this._apiKey}` } : {})
-      },
-      body: JSON.stringify({
-        model: this._model,
-        messages: fullMessages,
-        stream: false,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+    // ── Priority 1: Cost tracking ─────────────────────────────────────────
+    if (inputTokens > 0 || outputTokens > 0) {
+      // Estimate cost (Anthropic pricing approx, in cents)
+      // claude-3-5-sonnet: $3.00/M input tokens = 0.003¢, $15.00/M output tokens = 0.015¢
+      costCents = (inputTokens * 0.003 / 1_000_000) + (outputTokens * 0.015 / 1_000_000);
+      this.totalCostCents += costCents;
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`LLM error: ${response.status} - ${error}`);
+      const meowDb = this.db as MeowDatabase;
+      meowDb.logCost(this.runId, this._model, inputTokens, outputTokens, costCents);
+
+      this.auditLogger.llmCall(this._model, inputTokens, outputTokens, durationMs, costCents, success);
     }
 
-    const data = await response.json() as { message?: { content?: string }, choices?: { message?: { content?: string } }[] };
-    return data.message?.content || data.choices?.[0]?.message?.content || "";
+    // Print cost summary after each call if not silent
+    if (costCents > 0) {
+      const totalSoFar = this.totalCostCents;
+      const budgetInfo = config.budgetCents ? ` / ${config.budgetCents}¢ budget` : "";
+      process.stdout.write(pc.dim(`\n  💰 ${costCents.toFixed(4)}¢ (session total: ${totalSoFar.toFixed(4)}¢${budgetInfo})\n`));
+    }
+
+    return text;
   }
 
   private getBasePrompt(): string {
@@ -626,16 +697,16 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
       } catch (e2) {}
     }
 
-    // RECALLED QUANTUM CONTEXT (Transient Injection)
+    // RECALLED AGENTIC MEMORY (Transient Injection)
     // We fetch memories based on the most recent user messages to provide context
     // without bloating the permanent history.
     const lastUserMessage = this.messages.filter(m => m.role === "user").pop();
     let relevantMemories: MemoryResult[] = [];
     if (lastUserMessage && lastUserMessage.content.trim()) {
-      relevantMemories = await this.quantumMemory.recall(lastUserMessage.content, this.mockEmbedding(lastUserMessage.content));
+      relevantMemories = await this.agenticMemory.recall(lastUserMessage.content, this.mockEmbedding(lastUserMessage.content));
     }
     if (relevantMemories.length > 0) {
-      prompt += `\n\n# RECALLED QUANTUM CONTEXT (Associative Knowledge):\n`;
+      prompt += `\n\n# RECALLED AGENTIC MEMORY (Associative Knowledge):\n`;
       prompt += relevantMemories.map(m => `- ${m.content}`).join("\n");
       prompt += `\n(Note: These are historical snippets retrieved from the Knowledge Base.)\n`;
     }
@@ -679,7 +750,7 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
       arr[idx] += 1;
     });
 
-    // Ensure non-zero magnitude (Quantum Noise Floor)
+    // Ensure non-zero magnitude (Signal Floor)
     if (arr.every(v => v === 0)) {
       arr[0] = 0.0001; 
     }
@@ -1089,7 +1160,7 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
 
   /**
    * Tiered Offloading: Moves older context from L1 (Hot) to L3 (Cold Storage)
-   * by summarizing it and archiving the raw content into Quantum Memory.
+   * by summarizing it and archiving the raw content into Agentic Memory.
    */
   public async compressAndOffload(): Promise<void> {
     const offloadCount = Math.floor(this.messages.length / 2);
@@ -1103,7 +1174,7 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
     const summary = await this.callLLM("You are a context compression engine.", [{ role: "user", content: anchorPrompt }]);
 
     // Archive raw content and summary into L3
-    await this.quantumMemory.store(
+    await this.agenticMemory.store(
       `CONTEXT_ANCHOR: ${summary}`,
       this.mockEmbedding(summary),
       { type: "archived_context", original_length: rawContent.length }

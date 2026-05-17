@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// MEOW - Lightweight AI Coding Agent
+// meow-swarm — Autonomous multi-agent coding harness
 
 import { config } from "./config/env";
 import { Agent } from "./agent/agent";
@@ -7,10 +7,6 @@ import { createRepl } from "./cli/repl";
 import { MeowKernel } from "./kernel/kernel";
 import { DatabasePort } from "./extensions/database/manifest";
 
-/**
- * Detects whether we're running under Bun or Node.
- * Bun has a global `Bun` object; Node does not.
- */
 function isBun(): boolean {
   return typeof (globalThis as any).Bun !== "undefined";
 }
@@ -19,7 +15,6 @@ async function main() {
   let db: DatabasePort;
 
   if (isBun()) {
-    // Bun: load database as an out-of-process extension via Node
     const { DatabaseExtension } = await import("./extensions/database/extension");
     db = new DatabaseExtension({
       dbPath: "meow.db",
@@ -27,7 +22,6 @@ async function main() {
     });
     console.log("✓ Database: Bun + Node subprocess mode");
   } else {
-    // Node/tsx: use MeowDatabase directly
     const { MeowDatabase } = await import("./kernel/database");
     db = new MeowDatabase();
     console.log("✓ Database: Node.js direct mode");
@@ -35,6 +29,27 @@ async function main() {
 
   const kernel = new MeowKernel(db);
   kernel.start();
+
+  // ── Priority 2: --continue flag (cross-session replay) ─────────────────────
+  const continueMode = process.argv.includes("--continue") || process.argv.includes("-c");
+  if (continueMode) {
+    const { MeowDatabase } = await import("./kernel/database");
+    const meowDb = db as MeowDatabase;
+    // Find most recent incomplete run
+    const recent = meowDb.getRawDb().prepare(`
+      SELECT run_id FROM mission_runs
+      WHERE status = 'running'
+      ORDER BY created_at DESC LIMIT 1
+    `).get() as { run_id: string } | undefined;
+
+    if (recent) {
+      console.log(`↻ Continuing run: ${recent.run_id}`);
+      // Inject run_id into process.argv for agent to pick up
+      process.env.MEOW_RUN_ID = recent.run_id;
+    } else {
+      console.log("↻ No previous run found. Starting fresh.");
+    }
+  }
 
   const agent = new Agent({
     model: config.model,
@@ -44,8 +59,7 @@ async function main() {
     kernel
   });
 
-  // Support for -p (plan/non-interactive) mode — MEOW's primary headless interface
-  // Output goes to stdout, no TTY required. This is what Hermes calls.
+  // Support for -p (plan/non-interactive) mode — the primary headless interface
   const planMode = process.argv.includes("-p") || process.argv.includes("--plan");
   if (planMode) {
     const command = process.argv.filter(arg => !arg.startsWith("--") && arg !== "-p" && arg !== "--plan").slice(2).join(" ");
@@ -53,12 +67,30 @@ async function main() {
       console.error("Usage: meow -p \"<task description>\"");
       process.exit(1);
     }
-    console.log(`🤖 [MEOW] Plan mode: ${command}`);
+
+    // Print seed/budget info if set
+    if (config.deterministic || config.seed !== undefined) {
+      const seedInfo = config.seed !== undefined ? ` seed=${config.seed}` : " deterministic";
+      console.log(`🤖 [meow] Plan mode${seedInfo}: ${command}`);
+    } else {
+      console.log(`🤖 [meow] Plan mode: ${command}`);
+    }
+
     const response = await agent.chat(command, false, undefined, (status) => {
       process.stdout.write(`\r${status}`);
     });
     console.log("\n" + response);
-    console.log("\n✅ Command completed.");
+
+    // Print final cost report
+    const { MeowDatabase } = await import("./kernel/database");
+    const meowDb = db as MeowDatabase;
+    const totalCost = meowDb.getTotalCost(agent.runId);
+    if (totalCost > 0) {
+      const budgetInfo = config.budgetCents ? ` (budget: ${config.budgetCents}¢)` : "";
+      console.log(`\n💰 Total cost: ${totalCost.toFixed(4)}¢${budgetInfo}`);
+    }
+
+    meowDb.endRun(agent.runId, "completed");
     await kernel.shutdown();
     process.exit(0);
     return;
@@ -72,10 +104,10 @@ async function main() {
     return;
   }
 
-  // Support for non-interactive command mode (legacy, kept for compatibility)
+  // Non-interactive command mode (legacy)
   const command = process.argv.filter(arg => !arg.startsWith("--")).slice(2).join(" ");
   if (command) {
-    console.log(`🤖 [MEOW] Executing command: ${command}`);
+    console.log(`🤖 [meow] Executing command: ${command}`);
     const response = await agent.chat(command, false, undefined, (status) => {
       process.stdout.write(`\r${status}`);
     });

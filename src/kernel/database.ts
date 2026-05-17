@@ -2,6 +2,8 @@ import Database from "better-sqlite3";
 import { createRequire } from "module";
 import { config } from "../config/env";
 import { DatabasePort, DbExecuteResult } from "../extensions/database/manifest";
+import fs from "fs";
+import path from "path";
 
 const require = createRequire(import.meta.url);
 
@@ -10,12 +12,9 @@ export class MeowDatabase implements DatabasePort {
 
   constructor(dbPath: string = "meow.db") {
     this.db = new Database(dbPath);
-
-    // Physical Mandate: WAL mode for concurrent reads
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
 
-    // Load sqlite-vec extension for vector search (cross-platform)
     try {
       const vec = require("sqlite-vec");
       this.db.loadExtension(vec.getLoadablePath());
@@ -87,6 +86,75 @@ export class MeowDatabase implements DatabasePort {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Priority 1: Reproducibility + Seed Management
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS mission_runs (
+        run_id       TEXT PRIMARY KEY,
+        mission_id   TEXT NOT NULL,
+        seed         INTEGER,
+        deterministic INTEGER DEFAULT 0,
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME,
+        status       TEXT DEFAULT 'running',
+        checkpoint_path TEXT
+      );
+    `);
+
+    // Priority 1: Cost Tracking
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS mission_cost (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id       TEXT NOT NULL,
+        model        TEXT NOT NULL,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        cost_cents   REAL DEFAULT 0,
+        logged_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (run_id) REFERENCES mission_runs(run_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_cost_run_id ON mission_cost(run_id);
+    `);
+
+    // Priority 2: Verifiable Audit Trails
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id       TEXT,
+        timestamp    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        level        TEXT DEFAULT 'info',
+        action_type  TEXT NOT NULL,
+        detail       TEXT,
+        agent        TEXT,
+        mission_goal TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_run_id ON audit_log(run_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+    `);
+
+    // Priority 2: Cross-session memory
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS episodic_memory (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id   TEXT NOT NULL,
+        summary      TEXT NOT NULL,
+        raw_content  TEXT,
+        relevance    REAL DEFAULT 0.5,
+        reinforced   INTEGER DEFAULT 0,
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_episodic_session ON episodic_memory(session_id);
+    `);
+
+    // Priority 2: Agent capabilities registry
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_registry (
+        agent_name   TEXT PRIMARY KEY,
+        capabilities TEXT,
+        last_seen    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        status       TEXT DEFAULT 'available'
+      );
+    `);
   }
 
   // Implements DatabasePort
@@ -107,7 +175,6 @@ export class MeowDatabase implements DatabasePort {
   }
 
   async batch(actions: any[]): Promise<{ processed: number; errors: string[] }> {
-    // Synchronous batch for direct Node path — no IPC overhead
     const errors: string[] = [];
     const transaction = this.db.transaction((batch: any[]) => {
       for (const action of batch) {
@@ -154,5 +221,70 @@ export class MeowDatabase implements DatabasePort {
   // Legacy — for code that still uses getRawDb()
   public getRawDb(): Database.Database {
     return this.db;
+  }
+
+  // ── Priority 1: Run / Cost helpers ──────────────────────────────────────
+
+  startRun(runId: string, missionId: string, seed: number | undefined, deterministic: boolean): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO mission_runs (run_id, mission_id, seed, deterministic, status)
+      VALUES (?, ?, ?, ?, 'running')
+    `).run(runId, missionId, seed ?? null, deterministic ? 1 : 0);
+  }
+
+  endRun(runId: string, status: string = "completed"): void {
+    this.db.prepare(`
+      UPDATE mission_runs SET completed_at = CURRENT_TIMESTAMP, status = ? WHERE run_id = ?
+    `).run(status, runId);
+  }
+
+  logCost(runId: string, model: string, inputTokens: number, outputTokens: number, costCents: number): void {
+    this.db.prepare(`
+      INSERT INTO mission_cost (run_id, model, input_tokens, output_tokens, cost_cents)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(runId, model, inputTokens, outputTokens, costCents);
+  }
+
+  getTotalCost(runId: string): number {
+    const row = this.db.prepare(
+      "SELECT COALESCE(SUM(cost_cents), 0) as total FROM mission_cost WHERE run_id = ?"
+    ).get(runId) as { total: number } | undefined;
+    return row?.total ?? 0;
+  }
+
+  // ── Priority 2: Audit log ────────────────────────────────────────────────
+
+  audit(actionType: string, detail: string, level: string = "info", runId?: string, agent?: string, missionGoal?: string): void {
+    this.db.prepare(`
+      INSERT INTO audit_log (run_id, action_type, detail, level, agent, mission_goal)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(runId ?? null, actionType, detail, level, agent ?? null, missionGoal ?? null);
+  }
+
+  // ── Priority 2: Cross-session memory ─────────────────────────────────────
+
+  storeEpisodic(sessionId: string, summary: string, rawContent?: string, relevance: number = 0.5): void {
+    this.db.prepare(`
+      INSERT INTO episodic_memory (session_id, summary, raw_content, relevance)
+      VALUES (?, ?, ?, ?)
+    `).run(sessionId, summary, rawContent ?? null, relevance);
+  }
+
+  getRecentEpisodic(limit: number = 10): Array<{ session_id: string; summary: string; relevance: number; created_at: string }> {
+    return this.db.prepare(`
+      SELECT session_id, summary, relevance, created_at
+      FROM episodic_memory
+      ORDER BY created_at DESC, relevance DESC
+      LIMIT ?
+    `).all(limit) as Array<{ session_id: string; summary: string; relevance: number; created_at: string }>;
+  }
+
+  // ── Priority 2: Agent registry ────────────────────────────────────────────
+
+  registerAgent(name: string, capabilities: string[]): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO agent_registry (agent_name, capabilities, last_seen, status)
+      VALUES (?, ?, CURRENT_TIMESTAMP, 'available')
+    `).run(name, JSON.stringify(capabilities));
   }
 }
