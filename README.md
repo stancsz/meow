@@ -86,7 +86,7 @@ Every output is scored before it can be marked complete:
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `ANTHROPIC_API_KEY` | *(required)* | API key for LLM calls |
-| `ANTHROPIC_BASE_URL` | MiniMax gateway | Override for other providers |
+| `ANTHROPIC_BASE_URL` | *(not set)* | Override for custom LLM endpoints |
 | `ANTHROPIC_MODEL` | `claude-sonnet-4` | Model name |
 | `MEOW_DB` | `~/.meow/meow.db` | SQLite checkpoint store |
 | `MEOW_MODE` | `SEQUENTIAL` | `SEQUENTIAL` · `PARALLEL` · `SHIP` · `AUDIT_ONLY` |
