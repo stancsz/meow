@@ -1,174 +1,111 @@
 # meow-swarm
 
-![](https://img.shields.io/badge/npm-meow--swarm-blue?style=flat-square) ![](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=flat-square) ![](https://img.shields.io/badge/License-MIT-green?style=flat-square) ![](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square)
+**The problem:** You want an AI coding agent that runs autonomously — not a chat window you babysit, but a background worker that accepts a task, runs to completion, and reports back. While you sleep. While you work on something else. In CI.
 
-**`meow -p`** — the primary interface. Run autonomous coding agents in the background.
+**The solution:** `meow -p "task"` dispatches a self-healing, quality-gated coding agent into the background. It checkpoints every step to SQLite, retries on failure, stops when it's stuck, and surfaces everything in a TUI dashboard.
 
-```
+```bash
 npm install -g meow-swarm
-meow -p "fix the auth bug in src/auth.ts"
+meow -p "refactor auth into its own service"
 ```
-
-meow-swarm is a sovereign, stateful, multi-agent coding harness that runs locally in your terminal. It coordinates L1→L4 specialist agents, checkpoints every task state to SQLite, gates output quality before commit, and exposes a TUI dashboard. You fire it and come back later — it is not a synchronous chat partner.
 
 ---
 
-## Get Started
+## Install
+
+**Requires:** Node.js 18+ · `ANTHROPIC_API_KEY` env var set
 
 ```bash
-# Primary: headless mode (no TTY required) — this is meow -p
-meow -p "fix the stalled REPL in src/cli/repl.ts"
+npm install -g meow-swarm
+export ANTHROPIC_API_KEY=sk-ant-...   # or set in shell profile
+
+# Primary: headless (no TTY required) — designed for scripts, CI, or background dispatch
+meow -p "fix the race condition in src/queue.ts"
+
+# Interactive TUI dashboard
+meow --tui
 
 # Interactive REPL
 meow
-
-# Interactive TUI
-meow --tui
 ```
 
-**Requirements:** Node.js 18+, `ANTHROPIC_API_KEY` env var. Bun is not supported (better-sqlite3 requires Node.js native addons).
+Bun is not supported. `better-sqlite3` requires Node.js native addons.
 
 ---
 
-## What is meow-swarm?
-
-A background daemon harness for autonomous coding agents. Think `nohup ./worker.sh &` — you dispatch a task, it runs in the background, you check the TUI or state files later.
+## What it actually does
 
 ```
-Task arrives
-    │
-    ▼
-L4 SPECIALIST (Claude Code) — implements
-    │
-    ▼
-MISSION REVIEWER — scores output across 7 criteria
-    │
-    ├── score >= threshold ──► COMMIT
-    │
-    └── score < threshold ──► RETRY (with review notes)
-                                   │
-                    ┌──────────────┴──────────────┐
-                    ▼                             ▼
-              CONVERGENCE CHECK             STAGNATION CHECK
-              ─ token budget?                ─ 2 iters no improvement?
-              ─ max iters hit?              ─ diminishing returns?
-                    │                             │
-                    ▼                             ▼
-               STOP / REPORT                   ADAPT / DECOMPOSE
+you → meow -p "task" → background → checkpoint → quality gate → done
+                                    ↓ stuck?
+                              retry / adapt / stop + report
 ```
 
-meow-swarm does NOT grind until the user kills it. It evaluates whether continued iteration is productive and stops when it is not.
+1. **Receives a task** via `meow -p` (headless, no TTY) or `meow` (interactive REPL)
+2. **Dispatches to L4 specialist** (Claude Code subprocess)
+3. **Mission reviewer scores output** across 7 criteria
+4. **Quality gate** — if output fails, it retries with reviewer notes
+5. **Convergence check** — stops if stagnating, budget exceeded, or diminishing returns
+6. **Checkpoints state** to SQLite after every iteration — crash-safe
+7. **TUI dashboard** shows live task progress, queue, and history
 
 ---
 
-## Quality Gates
+## Self-healing: the MEOW-3-RULE
 
-Every output passes through structural gates before it can be committed:
+When `meow -p` fails 3 times, it doesn't just give up. It surfaces a diagnostic:
 
-| Gate | Checks | Fail action |
-|------|--------|-------------|
+```
+Task arrives → meow -p "task"   (3 retry attempts)
+  ↓ fails × 3
+claude -p "fix meow-swarm"       (repairs meow-swarm's own code, NOT the task)
+  ↓
+you re-run → meow -p "task"     (now succeeds)
+```
+
+`claude -p` only fires when meow-swarm's own code/prompts are broken. It fixes meow-swarm, then you re-dispatch the original task. This is the operator loop — you never fix tasks manually.
+
+---
+
+## Quality gates
+
+Every output is scored before it can be marked complete:
+
+| Gate | Checks | On fail |
+|------|--------|---------|
 | `NO_MOCKS` | No `TODO`, `FIXME`, placeholder code | Retry with note |
 | `TYPE_CHECK` | `tsc --noEmit` passes | Retry |
-| `LINT_CLEAN` | ESLint reports 0 errors | Retry |
-| `REAL_TESTS` | Test files exist and non-empty | Warn (non-fatal) |
-| `MISSION_COMPLETE` | Goal keywords in output | Retry if missing |
-| `SOP_COMPLIANCE` | Think-Plan-Verify in output | Retry if missing |
+| `LINT_CLEAN` | ESLint 0 errors | Retry |
+| `MISSION_COMPLETE` | Goal keywords present in output | Retry |
+| `SOP_COMPLIANCE` | Think-Plan-Verify pattern | Retry |
 
 ---
 
-## Convergence Logic
+## Configuration
 
-meow-swarm stops iterating when:
-
-- **Stagnation** — No score improvement for 2 consecutive iterations
-- **Token budget exceeded** — Cumulative spend crosses threshold
-- **Diminishing returns** — Score improvement falls below minimum delta
-
----
-
-## Execution Modes
-
-| Mode | Behavior |
-|------|----------|
-| `SEQUENTIAL` | One task at a time. Full review between each step. |
-| `SHIP` | Pass through all specialists with final review only. |
-| `PARALLEL` | Run independent tasks concurrently. |
-| `AUDIT_ONLY` | Score existing output without executing. |
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `ANTHROPIC_API_KEY` | *(required)* | API key for LLM calls |
+| `ANTHROPIC_BASE_URL` | MiniMax gateway | Override for other providers |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4` | Model name |
+| `MEOW_DB` | `~/.meow/meow.db` | SQLite checkpoint store |
+| `MEOW_MODE` | `SEQUENTIAL` | `SEQUENTIAL` · `PARALLEL` · `SHIP` · `AUDIT_ONLY` |
 
 ---
 
 ## Architecture
 
 ```
-L1 LIAISON       — Human-facing. Receives tasks, escalates ambiguity.
-L2 ARCHITECT     — Mid-layer planner. Breaks tasks, sequences dependencies.
-L3 ORCHESTRATOR  — Execution coordinator. TaskQueue, convergence checks.
-L4 SPECIALISTS   — Claude Code / Aider subprocesses.
+L1 LIAISON      — Receives tasks, escalates ambiguity to human
+L2 ARCHITECT     — Breaks tasks, sequences dependencies
+L3 ORCHESTRATOR  — Task queue, convergence checks, dispatch
+L4 SPECIALISTS   — Claude Code subprocesses (can be swapped)
 ```
 
-**Key files:**
-
-| File | Purpose |
-|------|---------|
-| `src/index.ts` | CLI entry: `meow -p` for headless, `meow` for REPL, `meow --tui` for TUI |
-| `src/agent/agent.ts` | MEOW-3-RULE: 3-retry loop + fixMeow() + suggestUpstreamContribution() |
-| `src/agent/summoner.ts` | Spawns specialist agents as subprocesses |
-| `src/agent/mission_reviewer.ts` | 7-criterion scoring, quality gates |
-| `src/orchestrator/Orchestrator.ts` | Convergence checks, task dispatch |
-| `src/kernel/kernel.ts` | Heartbeat loop, watchdog, respawn |
-| `src/db/database.ts` | SQLite + sqlite-vec for persistence + checkpointing |
-
----
-
-## meow -p (the primary interface)
-
-`meow -p` is the primary headless interface — no TTY required, designed for calling from scripts, CI, or other AI agents:
-
-```
-meow -p "your task description"
-```
-
-The `-p` / `--plan` flag activates non-interactive mode. Task output goes to stdout. Progress goes to the TTY if available, otherwise to `~/.meow/` state files.
-
----
-
-## MEOW-3-RULE
-
-meow-swarm's self-repair loop:
-
-```
-Task arrives → meow -p "task" (meow-swarm gets 3 retry attempts)
-  ↓ fails × 3
-claude -p "fix meow-swarm" (fixes meow-swarm's own code, NOT the task)
-  ↓
-User re-invokes same task → meow -p → succeeds
-```
-
-`claude -p` only runs when meow-swarm's own code/prompts/tools are broken. It patches meow-swarm, then meow-swarm retries and completes the task.
-
----
-
-## Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | API key for LLM calls | (required) |
-| `ANTHROPIC_BASE_URL` | LLM endpoint | MiniMax gateway |
-| `ANTHROPIC_MODEL` | Model name | `claude-sonnet-4` |
-| `MEOW_DB` | SQLite database path | `~/.meow/meow.db` |
-| `MEOW_MODE` | Execution mode | `SEQUENTIAL` |
-
----
-
-## npm
-
-```
-npm install -g meow-swarm
-https://www.npmjs.com/package/meow-swarm
-```
+State is checkpointed to SQLite after every operation. If the process dies, the next invocation resumes from the last checkpoint.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT
