@@ -20,9 +20,10 @@ export class MissionReviewer {
    */
   public async verify(goal: string, testCmd?: string): Promise<string> {
     console.log(pc.bold(pc.cyan("\n🧐 [QUANTUM REVIEW] Starting structural analysis...")));
-    
+
     // 1. Analyze Changes (Async)
     let diff = "";
+    let gitStatus = "";
     try {
       const { stdout } = await execAsync("git diff HEAD~1", { encoding: "utf-8" });
       diff = stdout;
@@ -31,8 +32,36 @@ export class MissionReviewer {
         const { stdout } = await execAsync("git diff", { encoding: "utf-8" });
         diff = stdout;
       } catch (e2) {
-        diff = "Unable to fetch diff.";
+        diff = "";
       }
+    }
+
+    // Issue #317 Fix 4: Verify actual files were changed before doing a SHADOW AUDIT.
+    // SHADOW AUDIT was scoring gap-analysis paragraphs as "100% complete" — the diff was empty/no-op.
+    try {
+      const { stdout } = await execAsync("git status --porcelain", { encoding: "utf-8" });
+      gitStatus = stdout.trim();
+    } catch (e) {
+      gitStatus = "";
+    }
+
+    if (!diff && !gitStatus) {
+      return `VERDICT: MISSION DECOHERED.
+No code changes detected. Either nothing was written, or there are no commits yet.
+SHADOW AUDIT cannot verify work that doesn't exist.
+ACTION: Implement the goal, commit, then run verify_mission again.`;
+    }
+
+    if (!diff) {
+      // Committed changes but no diff (possibly identical to parent)
+      console.log(pc.yellow("\n⚠️ [SHADOW AUDIT] No diff found — checking git status for modified files..."));
+      if (!gitStatus) {
+        return `VERDICT: MISSION DECOHERED.
+No uncommitted changes and git diff HEAD~1 returned nothing.
+SHADOW AUDIT cannot verify an empty diff.
+ACTION: Make actual code changes before running verify_mission.`;
+      }
+      console.log(pc.yellow(`Modified files:\n${gitStatus}`));
     }
 
     // 2. Logic & Consistency Audit (The "Liar Check")
@@ -80,7 +109,8 @@ export class MissionReviewer {
     ];
 
     const decisionSpace = [{ diff, goal }];
-    const auditResult = await this.agent.quantumReasoning.solve(decisionSpace, constraints, (msg) => {
+    // Issue #317 Fix 4: Use reasoningEngine (not the removed quantumReasoning) for audit
+    const auditResult = await this.agent.reasoningEngine.solve(decisionSpace, constraints, (msg) => {
       process.stdout.write(`\r${pc.dim("Running Logic Audit: " + msg)}`);
     });
     process.stdout.write("\n");

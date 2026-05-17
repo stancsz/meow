@@ -1,8 +1,29 @@
 import { exec } from "child_process";
 import { readFile, writeFile } from "fs/promises";
 import { promisify } from "util";
+import path from "path";
 
 const execAsync = promisify(exec);
+
+/**
+ * Sanitize a file path to prevent shell metacharacter injection.
+ * Strips any shell operators appended after the actual path.
+ * e.g. "/path/file.md | tail -300" → "/path/file.md"
+ */
+function sanitizePath(raw: string): string {
+  // Strip everything after shell metacharacters: | & $ ; < > ` \ and anything following
+  const cleaned = String(raw).replace(/[|&;$<>`\\].*$/, "").trim();
+  return path.normalize(cleaned);
+}
+
+/**
+ * Sanitize a directory argument — must be a plain path, no shell operators.
+ */
+function sanitizeDir(raw: string | undefined): string {
+  if (!raw) return ".";
+  const cleaned = String(raw).replace(/[|&;$<>`\\].*$/, "").trim();
+  return path.normalize(cleaned || ".");
+}
 
 export interface Tool {
   name: string;
@@ -14,17 +35,32 @@ export const DEFAULT_TOOLS: Tool[] = [
   {
     name: "read",
     description: "Read file contents",
-    execute: async (path: string) => {
-      return await readFile(path.trim(), "utf-8");
+    execute: async (pathArg: string) => {
+      const safePath = sanitizePath(pathArg);
+      try {
+        return await readFile(safePath, "utf-8");
+      } catch (e: any) {
+        if (e.code === "ENOENT") {
+          return `Error: File not found: ${safePath}. Check the path — shell operators (|, &, $, ;, etc.) are not allowed in file paths.`;
+        }
+        return `Error reading ${safePath}: ${e.message}`;
+      }
     },
   },
   {
     name: "write",
     description: "Write file contents",
     execute: async (args: string) => {
-      const [path, content] = args.split("|");
-      await writeFile(path.trim(), content);
-      return "Written successfully";
+      const idx = args.indexOf("|");
+      if (idx === -1) return "Error: write requires 'path|content' format";
+      const safePath = sanitizePath(args.slice(0, idx));
+      const content = args.slice(idx + 1);
+      try {
+        await writeFile(safePath, content);
+        return "Written successfully";
+      } catch (e: any) {
+        return `Error writing to ${safePath}: ${e.message}`;
+      }
     },
   },
   {
@@ -43,22 +79,25 @@ export const DEFAULT_TOOLS: Tool[] = [
     name: "grep",
     description: "Search in files (local)",
     execute: async (args: string) => {
-      const [pattern, dir] = args.split("|");
+      const [patternRaw, dirRaw] = args.split("|");
+      const pattern = (patternRaw || "").trim();
+      const dir = sanitizeDir(dirRaw);
+
+      if (!pattern) return "Error: grep requires a non-empty pattern.";
+
+      // Escape special regex chars in pattern to treat it as a literal string.
+      // The -F flag makes grep treat pattern as fixed string, avoiding injection risk.
       const isWin = process.platform === "win32";
-      const cmd = `git grep -n "${pattern}" ${dir || "."}`;
+      const cmd = isWin
+        ? `findstr /s /i /c:${JSON.stringify(pattern)} ${dir}\\*`
+        : `grep -rn -F ${JSON.stringify(pattern)} -- ${dir}`;
+
       try {
         const { stdout } = await execAsync(cmd, { encoding: "utf-8" });
-        return stdout;
-      } catch (e) {
-        const fallback = isWin 
-          ? `findstr /s /i /c:"${pattern}" ${dir || "."}\\*` 
-          : `grep -rn "${pattern}" ${dir || "."}`;
-        try {
-          const { stdout } = await execAsync(fallback, { encoding: "utf-8" });
-          return stdout;
-        } catch (e2) {
-          return "No matches found.";
-        }
+        return stdout || "No matches found.";
+      } catch (e: any) {
+        if (e.status === 1) return "No matches found."; // grep exit 1 = no match
+        return `Error running grep: ${e.message}`;
       }
     },
   },
