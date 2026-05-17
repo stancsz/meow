@@ -12,7 +12,13 @@ export interface SummonContext {
   existingSkills?: string[];
   monolithBlueprint?: string;
   kernel?: MeowKernel;
+  /** Current summon depth (Level 1 = initial call, Level 2 = sub-specialist). */
+  depth?: number;
+  /** Lock sub-specialist to this directory. Defaults to process.cwd(). */
+  targetDir?: string;
 }
+
+const MEOW_MAX_DEPTH = parseInt(process.env.MEOW_MAX_DEPTH || "2", 10);
 
 export interface ExternalAgent {
   name: string;
@@ -303,8 +309,21 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
   const agent = SPECIALISTS[agentName];
   if (!agent) throw new Error(`Unknown agent: ${agentName}`);
 
+  // Issue #317 Fix 1: Enforce MEOW_MAX_DEPTH to prevent unbounded sub-specialist spawning
+  const depth = (context.depth ?? 0) + 1;
+  if (depth > MEOW_MAX_DEPTH) {
+    console.log(`⚠️ [MEOW] summon depth ${depth} exceeds MEOW_MAX_DEPTH=${MEOW_MAX_DEPTH}. Blocking sub-specialist to prevent scope bleed.`);
+    return `❌ Cannot summon ${agent.name}: max depth (${MEOW_MAX_DEPTH}) reached. Try solving the goal directly or use verify_mission to check partial progress.`;
+  }
+
   console.log(`\n🔮 [META-ORCHESTRATOR] Summoning Specialist: ${agent.name}...`);
   console.log(`📝 Mission: ${context.goal}\n`);
+  console.log(`📏 Depth: ${depth}/${MEOW_MAX_DEPTH}`);
+
+  // Issue #317 Fix 1 (continued): Lock cwd to targetDir to prevent sub-specialists escaping scope
+  const safeCwd = context.targetDir
+    ? (context.targetDir.startsWith(process.cwd()) ? context.targetDir : process.cwd())
+    : process.cwd();
 
   const command = agent.getCommand(context);
 
@@ -314,7 +333,7 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
         execSync("aider --version", { stdio: "ignore" });
       } catch (e) {
         console.log("⚠️ Aider not found in PATH. Escalating to Claude Code...");
-        return summon("cc", context);
+        return summon("cc", { ...context, depth });
       }
     }
     if (agentName === "opencode") {
@@ -322,7 +341,7 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
         execSync("opencode --version", { stdio: "ignore" });
       } catch (e) {
         console.log("⚠️ OpenCode not found in PATH. Escalating to Claude Code...");
-        return summon("cc", context);
+        return summon("cc", { ...context, depth });
       }
     }
     if (agentName === "claude" || agentName === "cc") {
@@ -352,12 +371,13 @@ export async function summon(agentName: keyof typeof SPECIALISTS, context: Summo
       }
       console.log(`✓ BrowserOS ready at ${status.serverUrl} (CDP: ${status.cdpConnected ? "connected" : "disconnected"})`);
     }
-    execSync(command, { stdio: "inherit", cwd: process.cwd() });
+    // Issue #317 Fix 1: Spawn subprocess in locked cwd to prevent sub-specialist scope bleed
+    execSync(command, { stdio: "inherit", cwd: safeCwd });
     return `✅ ${agent.name} has completed the mission. MEOW is resuming control and analyzing changes.`;
   } catch (error: any) {
     if (agentName === "aider" || agentName === "opencode") {
       console.log(`⚠️ ${agent.name} failed. Escalating to Claude Code (Level 2 Specialist)...`);
-      return summon("cc", context);
+      return summon("cc", { ...context, depth });
     }
     return `❌ Escalation failed. ${agent.name} error: ${error instanceof Error ? error.message : String(error)}`;
   }
