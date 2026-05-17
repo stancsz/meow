@@ -1,23 +1,13 @@
-# MEOW — Autonomous Coding Agent
+# meow-swarm
 
-> **IMPORTANT**: Before working in this project, read `.meow/skills/meow-setup/SKILL.md` and remember how to use MEOW.
+> **IMPORTANT**: Before working in this project, read `.meow/skills/meow-setup/SKILL.md` and remember how to use meow-swarm.
 
-## MEOW-3-RULE (never violate this)
+## meow -p (the primary interface)
 
-```
-Task arrives → meow -p "task" (MEOW gets 3 retry attempts)
-  ↓ fails × 3
-claude -p "fix MEOW" (fixes MEOW's own code, NOT the task)
-  ↓
-User re-invokes same task → meow -p → succeeds
-```
-
-**claude -p is a MEOW mechanic.** It only runs when MEOW's own code/prompts/tools are broken. Never use it to complete the original task.
-
-## Quick Start
+`meow -p` is how you dispatch tasks to meow-swarm. It is a background daemon harness — you fire it and come back later.
 
 ```bash
-# Primary: headless mode (no TTY required)
+# Primary: headless mode (no TTY required) — use this
 meow -p "fix the auth bug in src/auth.ts"
 
 # Interactive REPL
@@ -27,22 +17,36 @@ meow
 meow --tui
 ```
 
-## How MEOW Works
+## MEOW-3-RULE (never violate this)
 
-MEOW is a **background daemon-style coding agent**. Think `nohup ./worker.sh &`:
-- You fire it → it works in background → you check back later
+```
+Task arrives → meow -p "task" (meow-swarm gets 3 retry attempts)
+  ↓ fails × 3
+claude -p "fix meow-swarm" (fixes meow-swarm's own code, NOT the task)
+  ↓
+User re-invokes same task → meow -p → succeeds
+```
+
+**claude -p is a meow-swarm mechanic.** It only runs when meow-swarm's own code/prompts/tools are broken. Never use it to complete the original task.
+
+## How meow-swarm Works
+
+meow-swarm is a **background daemon-style coding harness**. Think `nohup ./worker.sh &`:
+- You fire `meow -p` → it runs in background → check back later via TUI or state files
 - It is NOT a synchronous chat partner
 - Progress is written to `~/.meow/` state files
+- Checkpointing persists every task state to SQLite
 
 ## Requirements
 
-- Node.js + npm (Bun NOT supported — better-sqlite3 native addons)
+- Node.js 18+ (Bun NOT supported — better-sqlite3 native addons require Node.js)
 - `ANTHROPIC_API_KEY` env var
 
 ## Architecture
 
-- `src/index.ts` — CLI entry + `-p`/`--plan` headless mode
-- `src/agent/agent.ts` — MEOW-3-RULE: 3-retry loop + `fixMeow()` + `suggestUpstreamContribution()`
+- `src/index.ts` — CLI entry: `meow -p` headless, `meow` REPL, `meow --tui` TUI
+- `src/agent/agent.ts` — MEOW-3-RULE: 3-retry loop + fixMeow() + suggestUpstreamContribution()
 - `src/cli/tui.ts` — 4-panel blessed TUI
 - `src/orchestrator/Orchestrator.ts` — L1 task orchestration
-- `src/db/database.ts` — SQLite task persistence
+- `src/kernel/kernel.ts` — Heartbeat loop, watchdog, respawn
+- `src/db/database.ts` — SQLite + sqlite-vec for task persistence and checkpointing

@@ -1,14 +1,14 @@
 {
-  "name": "meow-agent",
+  "name": "meow-swarm",
   "version": "0.1.0",
   "type": "module",
-  "description": "Lightweight AI coding agent in your terminal",
-  "main": "src/index.ts",
+  "description": "meow -p: Autonomous multi-agent coding harness. Run coding agents in background, checkpoint state, TUI dashboard.",
+  "main": "dist/index.js",
   "bin": {
-    "meow": "./src/index.ts"
+    "meow": "./dist/index.js"
   },
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "tui": "tsx src/index.ts --tui",
     "lint": "eslint src/",
@@ -16,7 +16,7 @@
     "check": "npm run typecheck && npm run lint",
     "test": "vitest run",
     "prepare": "husky install",
-    "build": "tsup src/index.ts --out-dir dist --format esm --no-external-local",
+    "build": "tsup src/index.ts --out-dir dist --format esm --external bun",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -45,8 +45,31 @@
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.57.0",
     "husky": "^9.0.0",
+    "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.5"
+  },
+  "keywords": [
+    "meow-p",
+    "meow",
+    "swarm",
+    "coding",
+    "agent",
+    "autonomous",
+    "background",
+    "daemon",
+    "harness",
+    "orchestration",
+    "checkpoint",
+    "tui",
+    "claude"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "exports": {
+    "import": "./dist/index.js",
+    "require": "./dist/index.js"
   }
 }

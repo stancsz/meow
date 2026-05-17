@@ -1,22 +1,22 @@
-# MEOW — Autonomous Multi-Agent Coding Harness
+# meow-swarm
 
-![](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=flat-square) [![npm]](https://www.npmjs.com/package/meow-agent)
-![](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square)
+![](https://img.shields.io/badge/npm-meow--swarm-blue?style=flat-square) ![](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=flat-square) ![](https://img.shields.io/badge/License-MIT-green?style=flat-square) ![](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square)
 
-**MEOW** (Meta-Orchestrator Operating on World) is a sovereign coding harness that runs locally in your terminal, coordinates specialist agents, and structural quality gates prevent hallucination from reaching output. Built on TypeScript and SQLite-vec.
+**`meow -p`** — the primary interface. Run autonomous coding agents in the background.
 
-**Learn more at [github.com/stancsz/meow](https://github.com/stancsz/meow)**
+```
+npm install -g meow-swarm
+meow -p "fix the auth bug in src/auth.ts"
+```
+
+meow-swarm is a sovereign, stateful, multi-agent coding harness that runs locally in your terminal. It coordinates L1→L4 specialist agents, checkpoints every task state to SQLite, gates output quality before commit, and exposes a TUI dashboard. You fire it and come back later — it is not a synchronous chat partner.
 
 ---
 
 ## Get Started
 
 ```bash
-# Install
-npm install -g meow-agent
-
-# Run a task (headless — no TTY required)
+# Primary: headless mode (no TTY required) — this is meow -p
 meow -p "fix the stalled REPL in src/cli/repl.ts"
 
 # Interactive REPL
@@ -26,24 +26,19 @@ meow
 meow --tui
 ```
 
-Or clone and run:
-
-```bash
-git clone https://github.com/stancsz/meow.git
-cd meow
-npm install
-npx tsx src/index.ts "your task here"
-```
+**Requirements:** Node.js 18+, `ANTHROPIC_API_KEY` env var. Bun is not supported (better-sqlite3 requires Node.js native addons).
 
 ---
 
-## What MEOW Does
+## What is meow-swarm?
+
+A background daemon harness for autonomous coding agents. Think `nohup ./worker.sh &` — you dispatch a task, it runs in the background, you check the TUI or state files later.
 
 ```
 Task arrives
     │
     ▼
-L4 SPECIALIST (Claude Code / Aider) — implements
+L4 SPECIALIST (Claude Code) — implements
     │
     ▼
 MISSION REVIEWER — scores output across 7 criteria
@@ -62,7 +57,7 @@ MISSION REVIEWER — scores output across 7 criteria
                STOP / REPORT                   ADAPT / DECOMPOSE
 ```
 
-MEOW does NOT grind until the user kills it. It evaluates whether continued iteration is productive and stops when it is not.
+meow-swarm does NOT grind until the user kills it. It evaluates whether continued iteration is productive and stops when it is not.
 
 ---
 
@@ -83,7 +78,7 @@ Every output passes through structural gates before it can be committed:
 
 ## Convergence Logic
 
-MEOW stops iterating when:
+meow-swarm stops iterating when:
 
 - **Stagnation** — No score improvement for 2 consecutive iterations
 - **Token budget exceeded** — Cumulative spend crosses threshold
@@ -115,28 +110,41 @@ L4 SPECIALISTS   — Claude Code / Aider subprocesses.
 
 | File | Purpose |
 |------|---------|
-| `src/agent/agent.ts` | MEOW-3-RULE: 3-retry loop + fixMeow() |
+| `src/index.ts` | CLI entry: `meow -p` for headless, `meow` for REPL, `meow --tui` for TUI |
+| `src/agent/agent.ts` | MEOW-3-RULE: 3-retry loop + fixMeow() + suggestUpstreamContribution() |
 | `src/agent/summoner.ts` | Spawns specialist agents as subprocesses |
 | `src/agent/mission_reviewer.ts` | 7-criterion scoring, quality gates |
 | `src/orchestrator/Orchestrator.ts` | Convergence checks, task dispatch |
 | `src/kernel/kernel.ts` | Heartbeat loop, watchdog, respawn |
-| `src/db/database.ts` | SQLite + sqlite-vec for persistence |
+| `src/db/database.ts` | SQLite + sqlite-vec for persistence + checkpointing |
+
+---
+
+## meow -p (the primary interface)
+
+`meow -p` is the primary headless interface — no TTY required, designed for calling from scripts, CI, or other AI agents:
+
+```
+meow -p "your task description"
+```
+
+The `-p` / `--plan` flag activates non-interactive mode. Task output goes to stdout. Progress goes to the TTY if available, otherwise to `~/.meow/` state files.
 
 ---
 
 ## MEOW-3-RULE
 
-MEOW uses `meow -p` as the primary interface (not `claude -p`):
+meow-swarm's self-repair loop:
 
 ```
-Task arrives → meow -p "task" (MEOW gets 3 retry attempts)
+Task arrives → meow -p "task" (meow-swarm gets 3 retry attempts)
   ↓ fails × 3
-claude -p "fix MEOW" (fixes MEOW's own code, NOT the task)
+claude -p "fix meow-swarm" (fixes meow-swarm's own code, NOT the task)
   ↓
 User re-invokes same task → meow -p → succeeds
 ```
 
-`claude -p` only runs when MEOW's own code/prompts/tools are broken. It patches MEOW, then MEOW retries and completes the task.
+`claude -p` only runs when meow-swarm's own code/prompts/tools are broken. It patches meow-swarm, then meow-swarm retries and completes the task.
 
 ---
 
@@ -152,10 +160,12 @@ User re-invokes same task → meow -p → succeeds
 
 ---
 
-## Requirements
+## npm
 
-- Node.js 18+ (Bun is **NOT** supported — `better-sqlite3` native addons require Node)
-- TypeScript 5.0+
+```
+npm install -g meow-swarm
+https://www.npmjs.com/package/meow-swarm
+```
 
 ---
 
