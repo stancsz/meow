@@ -33,8 +33,7 @@ async function main() {
   // ── Priority 2: --continue flag (cross-session replay) ─────────────────────
   const continueMode = process.argv.includes("--continue") || process.argv.includes("-c");
   if (continueMode) {
-    const { MeowDatabase } = await import("./kernel/database");
-    const meowDb = db as MeowDatabase;
+    const meowDb = db as any;
     // Find most recent incomplete run
     const recent = meowDb.getRawDb().prepare(`
       SELECT run_id FROM mission_runs
@@ -81,16 +80,18 @@ async function main() {
     });
     console.log("\n" + response);
 
-    // Print final cost report
-    const { MeowDatabase } = await import("./kernel/database");
-    const meowDb = db as MeowDatabase;
-    const totalCost = meowDb.getTotalCost(agent.runId);
-    if (totalCost > 0) {
-      const budgetInfo = config.budgetCents ? ` (budget: ${config.budgetCents}¢)` : "";
-      console.log(`\n💰 Total cost: ${totalCost.toFixed(4)}¢${budgetInfo}`);
+    const meowDb = db as any;
+    if (meowDb && typeof meowDb.getTotalCost === "function") {
+      const totalCost = meowDb.getTotalCost(agent.runId);
+      if (totalCost > 0) {
+        const budgetInfo = config.budgetCents ? ` (budget: ${config.budgetCents}¢)` : "";
+        console.log(`\n💰 Total cost: ${totalCost.toFixed(4)}¢${budgetInfo}`);
+      }
     }
 
-    meowDb.endRun(agent.runId, "completed");
+    if (meowDb && typeof meowDb.endRun === "function") {
+      meowDb.endRun(agent.runId, "completed");
+    }
     await kernel.shutdown();
     process.exit(0);
     return;

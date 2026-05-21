@@ -1,4 +1,4 @@
-import { Task, TaskPriority, TaskDependency, FileArtifact } from "../../src/orchestrator/Task";
+import { Task, TaskPriority, TaskDependency, FileArtifact, ValidationContract } from "../../src/orchestrator/Task";
 
 export interface TaskOptions {
   id?: string;
@@ -14,6 +14,7 @@ export interface TaskOptions {
   status?: Task["status"];
   assignedWorker?: string;
   createdAt?: number;
+  validationContract?: ValidationContract;
 }
 
 let taskCounter = 0;
@@ -41,6 +42,7 @@ export function makeTask(options: TaskOptions = {}): Task {
     toolName: options.toolName,
     toolArgs: options.toolArgs,
     assignedWorker: options.assignedWorker,
+    validationContract: options.validationContract,
   };
 }
 

@@ -11,7 +11,7 @@ describe("Task Cancel Ignored", () => {
 
     // Cancel returns true for pending task
     expect(result).toBe(true);
-    expect(queue.getStatus().pending).toBe(0);
+    expect(queue.getStatus().pending.length).toBe(0);
   });
 
   it("should return false for running task (not in pending array)", () => {

@@ -234,7 +234,7 @@ export class MeowMcpServer {
             const { query, limit = 5 } = args as { query: string; limit?: number };
             const memories = this.db.getRecentEpisodic(limit);
             const relevant = memories.filter(m =>
-              m.content.toLowerCase().includes(query.toLowerCase())
+              m.summary.toLowerCase().includes(query.toLowerCase())
             );
 
             if (relevant.length === 0) {
@@ -242,7 +242,7 @@ export class MeowMcpServer {
             }
 
             const text = relevant.map(m =>
-              `[${new Date(m.createdAt).toISOString().slice(0, 10)}] ${m.content}`
+              `[${new Date(m.created_at).toISOString().slice(0, 10)}] ${m.summary}`
             ).join("\n\n");
 
             return { content: [{ type: "text", text }] };

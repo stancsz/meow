@@ -15,10 +15,17 @@ export interface FileArtifact {
   originalHash?: string;
 }
 
+export interface ValidationContract {
+  testSuite?: string;      // vitest/jest test suite name or filter
+  validationScript?: string; // custom script to run
+  expectedOutputs?: string[]; // expected string matches in file or output
+}
+
 export interface TaskResult {
   taskId: string;
   taskLabel?: string; // human-readable label for TUI display
   success: boolean;
+  passes?: boolean; // quality gate passed status
   output?: string;
   error?: string;
   artifacts?: FileArtifact[];
@@ -41,6 +48,8 @@ export interface Task {
   producedFiles?: FileArtifact[];
   toolName?: string;
   toolArgs?: string;
+  validationContract?: ValidationContract;
+  passes?: boolean; // TDD quality gate assertion
   agentConfig?: {
     model: string;
     baseUrl: string;

@@ -91,7 +91,51 @@ export class SwarmManager {
       enableEphemeralSessions: config?.enableEphemeralSessions ?? true,
     };
 
+    // Initialize task claims table
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS task_claims (
+          task_id TEXT PRIMARY KEY,
+          worker_id TEXT NOT NULL,
+          claimed_at INTEGER NOT NULL,
+          status TEXT DEFAULT 'claimed'
+        );
+      `);
+    } catch {}
+
     this.initializeAgentTemplates();
+  }
+
+  /**
+   * Atomically claims a task in the database using SQLite transaction-level locks.
+   */
+  public async claimTaskAtomically(taskId: string, workerId: string): Promise<boolean> {
+    try {
+      await this.db.execute("BEGIN IMMEDIATE");
+      
+      const existing = await this.db.query(
+        "SELECT worker_id FROM task_claims WHERE task_id = ?",
+        [taskId]
+      ) as { worker_id: string }[];
+
+      if (existing.length > 0) {
+        await this.db.execute("ROLLBACK");
+        return false;
+      }
+
+      await this.db.execute(
+        "INSERT INTO task_claims (task_id, worker_id, claimed_at, status) VALUES (?, ?, ?, 'claimed')",
+        [taskId, workerId, Date.now()]
+      );
+      
+      await this.db.execute("COMMIT");
+      return true;
+    } catch {
+      try {
+        await this.db.execute("ROLLBACK");
+      } catch {}
+      return false;
+    }
   }
 
   /**
@@ -310,13 +354,25 @@ export class SwarmManager {
       monolithBlueprint?: string;
     }
   ): Promise<DispatchResult> {
+    const workerId = `worker_${workerType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    
+    const claimed = await this.claimTaskAtomically(task.id, workerId);
+    if (!claimed) {
+      return {
+        sessionId: `skipped_${task.id}`,
+        success: false,
+        output: `Task ${task.id} was already claimed by another worker.`,
+        durationMs: 0
+      };
+    }
+
     const startTime = Date.now();
     const sessionId = `swarm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     // Create session
     const session: WorkerSession = {
       sessionId,
-      workerId: `worker_${workerType}_${Date.now()}`,
+      workerId,
       workerType,
       status: "initializing",
       startedAt: Date.now(),
@@ -378,13 +434,25 @@ export class SwarmManager {
       monolithBlueprint?: string;
     }
   ): Promise<DispatchResult> {
+    const workerId = `worker_${workerType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    
+    const claimed = await this.claimTaskAtomically(task.id, workerId);
+    if (!claimed) {
+      return {
+        sessionId: `skipped_${task.id}`,
+        success: false,
+        output: `Task ${task.id} was already claimed by another worker.`,
+        durationMs: 0
+      };
+    }
+
     const startTime = Date.now();
     const sessionId = `swarm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     // Create session
     const session: WorkerSession = {
       sessionId,
-      workerId: `worker_${workerType}_${Date.now()}`,
+      workerId,
       workerType,
       status: "initializing",
       startedAt: Date.now(),

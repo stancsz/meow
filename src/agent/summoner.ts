@@ -26,6 +26,28 @@ export interface ExternalAgent {
   getCommand: (ctx: SummonContext) => string;
 }
 
+export const DYNAMIC_SPECIALISTS: Record<string, ExternalAgent> = {};
+
+let manifestsLoaded = false;
+export async function ensureManifestsLoaded() {
+  if (manifestsLoaded) return;
+  try {
+    const { ManifestLoader } = await import("../extensions/plugins/ManifestLoader");
+    const loader = new ManifestLoader();
+    const dynamicAgents = await loader.loadManifests();
+    for (const [id, agent] of dynamicAgents.entries()) {
+      DYNAMIC_SPECIALISTS[id] = agent;
+    }
+  } catch (err) {
+    console.error("[summoner] Failed to load dynamic plugin manifests:", err);
+  }
+  manifestsLoaded = true;
+}
+
+export function registerDynamicSpecialist(name: string, agent: ExternalAgent): void {
+  DYNAMIC_SPECIALISTS[name] = agent;
+}
+
 export const SPECIALISTS: Record<string, ExternalAgent> = {
   cc: {
     name: "Claude Code",
@@ -225,10 +247,11 @@ export interface SummonResult {
 }
 
 export async function summonAsync(
-  agentName: keyof typeof SPECIALISTS,
+  agentName: string,
   context: SummonContext
 ): Promise<SummonResult> {
-  const agent = SPECIALISTS[agentName];
+  await ensureManifestsLoaded();
+  const agent = DYNAMIC_SPECIALISTS[agentName] || SPECIALISTS[agentName];
   if (!agent) throw new Error(`Unknown agent: ${agentName}`);
 
   console.log(`\n🔮 [MEOW] Non-blocking summon: ${agent.name}...`);
@@ -287,7 +310,8 @@ export async function summonAsync(
 }
 
 export async function summonParallel(agents: Array<{ name: string, context: SummonContext }>): Promise<SummonResult[]> {
-  const promises = agents.map(a => summonAsync(a.name as any, a.context));
+  await ensureManifestsLoaded();
+  const promises = agents.map(a => summonAsync(a.name, a.context));
   const results = await Promise.all(promises);
   
   // Spooky Action at a Distance: Entangle the PIDs of the swarm
@@ -305,8 +329,9 @@ export async function summonParallel(agents: Array<{ name: string, context: Summ
   return results;
 }
 
-export async function summon(agentName: keyof typeof SPECIALISTS, context: SummonContext): Promise<string> {
-  const agent = SPECIALISTS[agentName];
+export async function summon(agentName: string, context: SummonContext): Promise<string> {
+  await ensureManifestsLoaded();
+  const agent = DYNAMIC_SPECIALISTS[agentName] || SPECIALISTS[agentName];
   if (!agent) throw new Error(`Unknown agent: ${agentName}`);
 
   // Issue #317 Fix 1: Enforce MEOW_MAX_DEPTH to prevent unbounded sub-specialist spawning
