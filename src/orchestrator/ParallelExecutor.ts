@@ -82,6 +82,7 @@ export class ParallelExecutor {
           this.runResults?.set(task.id, result);
           clearTimeout(timeout);
           this.runningTasks.delete(task.id);
+          this.taskEvents?.onStatusChange?.(task.id, result.success ? 'completed' : 'failed');
           this.taskEvents?.onResult?.(task.id, result);
           this.activeTaskCount--;
           dispatch();
@@ -97,6 +98,7 @@ export class ParallelExecutor {
           this.runResults?.set(task.id, failedResult);
           clearTimeout(timeout);
           this.runningTasks.delete(task.id);
+          this.taskEvents?.onStatusChange?.(task.id, 'failed');
           this.taskEvents?.onResult?.(task.id, failedResult);
           this.activeTaskCount--;
           dispatch();
@@ -306,6 +308,7 @@ export class ParallelExecutor {
   private async executeAgentTask(task: Task, worker: WorkerConfig): Promise<TaskResult> {
     const agent = new Agent({
       ...worker.agentConfig,
+      ...task.agentConfig,
       kernel: worker.kernel,
       db: worker.db
     });
@@ -360,7 +363,15 @@ export class ParallelExecutor {
     const available = Array.from(this.workers.values());
     if (available.length === 0) return null;
 
-    const workerLoads = available.map(w => {
+    let eligible = available;
+    if (task.assignedWorker) {
+      const matched = available.filter(w => w.workerId === task.assignedWorker);
+      if (matched.length > 0) {
+        eligible = matched;
+      }
+    }
+
+    const workerLoads = eligible.map(w => {
       let count = 0;
       for (const exec of this.runningTasks.values()) {
         if (exec.workerId === w.workerId) count++;
@@ -386,6 +397,7 @@ export class ParallelExecutor {
 
     this.runResults?.set(taskId, timeoutResult);
     this.queue.complete(taskId, timeoutResult);
+    this.taskEvents?.onStatusChange?.(taskId, 'failed');
     this.taskEvents?.onResult?.(taskId, timeoutResult);
     this.runningTasks.delete(taskId);
     this.activeTaskCount--;

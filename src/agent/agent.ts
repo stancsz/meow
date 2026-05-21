@@ -87,7 +87,7 @@ export class Agent {
 
   // Priority 1: Reproducibility + Observability
   public runId: string;
-  private auditLogger: AuditLogger;
+  public auditLogger: AuditLogger;
   private totalCostCents: number = 0;
   private recentActions: string[] = []; // For loop detection
 

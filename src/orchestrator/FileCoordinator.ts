@@ -184,6 +184,15 @@ export class FileCoordinator {
       grantedLocks.push(lock);
     }
 
+    // Atomic: If there are ANY conflicts, do NOT persist any locks
+    if (conflicts.length > 0) {
+      return {
+        allowed: false,
+        conflicts,
+        grantedLocks: [],
+      };
+    }
+
     for (const lock of grantedLocks) {
       if (this.useSqlite && this.db) {
         try {
@@ -201,7 +210,7 @@ export class FileCoordinator {
     }
 
     return {
-      allowed: conflicts.length === 0,
+      allowed: true,
       conflicts,
       grantedLocks,
     };

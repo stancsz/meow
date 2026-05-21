@@ -14,6 +14,7 @@ import { Architect } from '../architect/Architect';
 import { MissionBrief } from '../liaison/MissionBrief';
 import { ExecutionMode, isQualityMode, SelfReviewResult } from './ExecutionMode';
 import { SelfReviewRunner } from './SelfReviewRunner';
+import { DelegationProtocol } from './DelegationProtocol';
 
 export interface OrchestratorConfig {
   queue: QueueConfig;
@@ -81,20 +82,22 @@ export class Orchestrator {
       this.config.executor,
       {
         onStatusChange: (taskId, status) => {
+          const task = this.queue.getTask(taskId);
+          const desc = task?.description ?? '';
           if (status === 'running') {
-            this.emitTaskStart(taskId, '');
+            this.emitTaskStart(taskId, desc);
           } else if (status === 'completed' || status === 'failed') {
             this.emitTaskComplete(taskId, status === 'completed');
           }
         },
         onProgress: (taskId, message) => {
-          // progress callbacks handled via onStatus in execute()
+          this.emitTaskProgress(taskId, message);
         },
         onResult: (taskId, result) => {
-          this.emitTaskComplete(taskId, result.success);
+          // Handled via onStatusChange 'completed'/'failed'
         },
         onFileConflict: (taskId, conflicts) => {
-          // file conflict handling
+          this.emitFileConflict(taskId, conflicts);
         },
       }
     );
@@ -104,11 +107,72 @@ export class Orchestrator {
   }
 
   private emitTaskStart(taskId: string, description: string): void {
-    // Stub for event callbacks
+    const task = this.queue.getTask(taskId);
+    const desc = task?.description || description;
+    const detail = `Task ${taskId} started: ${desc}`;
+    
+    // SQLite DB audit
+    const db = this.agent.db as any;
+    if (db && typeof db.audit === 'function') {
+      db.audit("task_start", detail, "info", this.agent.runId, task?.assignedWorker, desc);
+    }
+    // Structured audit ledger
+    this.agent.auditLogger?.log({ level: "info", actionType: "task_start", detail });
+    // Kernel log
+    if (this.agent.kernel && typeof this.agent.kernel.log === 'function') {
+      this.agent.kernel.log(detail, "ORCHESTRATOR");
+    }
   }
 
   private emitTaskComplete(taskId: string, success: boolean): void {
-    // Stub for event callbacks
+    const task = this.queue.getTask(taskId);
+    const detail = `Task ${taskId} finished with status: ${success ? 'SUCCESS' : 'FAILED'}`;
+    
+    // SQLite DB audit
+    const db = this.agent.db as any;
+    if (db && typeof db.audit === 'function') {
+      db.audit("task_complete", detail, success ? "info" : "error", this.agent.runId, task?.assignedWorker, task?.description);
+    }
+    // Structured audit ledger
+    this.agent.auditLogger?.log({ level: success ? "info" : "error", actionType: "task_complete", detail });
+    // Kernel log
+    if (this.agent.kernel && typeof this.agent.kernel.log === 'function') {
+      this.agent.kernel.log(detail, "ORCHESTRATOR");
+    }
+  }
+
+  private emitTaskProgress(taskId: string, message: string): void {
+    const task = this.queue.getTask(taskId);
+    const detail = `Task ${taskId} progress: ${message}`;
+    
+    // SQLite DB audit
+    const db = this.agent.db as any;
+    if (db && typeof db.audit === 'function') {
+      db.audit("task_progress", detail, "info", this.agent.runId, task?.assignedWorker, task?.description);
+    }
+    // Structured audit ledger
+    this.agent.auditLogger?.log({ level: "info", actionType: "task_progress", detail });
+    // Kernel log
+    if (this.agent.kernel && typeof this.agent.kernel.log === 'function') {
+      this.agent.kernel.log(detail, "ORCHESTRATOR");
+    }
+  }
+
+  private emitFileConflict(taskId: string, conflicts: string[]): void {
+    const task = this.queue.getTask(taskId);
+    const detail = `Task ${taskId} file conflict(s) detected: ${conflicts.join(', ')}`;
+    
+    // SQLite DB audit
+    const db = this.agent.db as any;
+    if (db && typeof db.audit === 'function') {
+      db.audit("file_conflict", detail, "warning", this.agent.runId, task?.assignedWorker, task?.description);
+    }
+    // Structured audit ledger
+    this.agent.auditLogger?.log({ level: "warning", actionType: "file_conflict", detail });
+    // Kernel log
+    if (this.agent.kernel && typeof this.agent.kernel.warn === 'function') {
+      this.agent.kernel.warn(detail, "ORCHESTRATOR");
+    }
   }
 
   registerWorkers(configs: WorkerConfig[]): void {
@@ -179,8 +243,30 @@ export class Orchestrator {
       }
     }
 
+    if (mode === ExecutionMode.ECOMODE) {
+      for (const task of tasks) {
+        task.agentConfig = {
+          model: 'gemini-2.0-flash',
+          baseUrl: this.agent.baseUrl,
+          apiKey: this.agent.apiKey || '',
+        };
+        task.maxRetries = 1;
+        task.timeoutMs = Math.min(task.timeoutMs || 30000, 30000);
+      }
+    } else if (mode === ExecutionMode.RALPH) {
+      this.selfReviewRunner.updateConfig({ maxIterations: 100 });
+      for (const task of tasks) {
+        task.maxRetries = 100;
+      }
+    }
+
     for (const task of tasks) {
-      this.queue.enqueue(task);
+      if (!task.assignedWorker) {
+        task.assignedWorker = DelegationProtocol.determineSpecialistForTask(task);
+      }
+      if (!isQualityMode(mode)) {
+        this.queue.enqueue(task);
+      }
     }
 
     // Configure self-review runner for the current mode
@@ -295,29 +381,37 @@ export class Orchestrator {
    * Execute a single task via registered workers (used by self-review).
    */
   private async executeTaskWithWorker(task: Task): Promise<TaskResult> {
-    return new Promise((resolve) => {
-      // Re-enqueue the task and wait for it to complete
+    if (this.workers.length === 0) {
+      this.registerWorkers([{
+        workerId: 'default',
+        agentConfig: {
+          model: this.agent.model,
+          baseUrl: this.agent.baseUrl,
+          apiKey: this.agent.apiKey,
+        } as any,
+        mcpManager: this.mcpManager,
+        skillManager: this.skillManager,
+        kernel: this.agent.kernel,
+        db: this.agent.db,
+      }]);
+    }
+
+    const status = this.queue.getStatus();
+    const isEnqueued = status.pending.some(t => t.id === task.id) || status.running.some(t => t.id === task.id);
+    if (!isEnqueued) {
       this.queue.enqueue(task);
+    }
 
-      // Monitor the task via a minimal executor call
-      const checkCompletion = () => {
-        const status = this.queue.getStatus();
-        const taskStatus = status.pending.find(t => t.id === task.id) || status.running.find(t => t.id === task.id);
-
-        if (!taskStatus) {
-          // Task has completed (or was never properly tracked here)
-          resolve({
-            taskId: task.id,
-            success: true,
-            output: 'Task executed via self-review',
-          });
-        } else {
-          setTimeout(checkCompletion, 100);
-        }
-      };
-
-      setTimeout(checkCompletion, 100);
-    });
+    const results = await this.executor.run();
+    const taskResult = results.get(task.id);
+    if (taskResult) {
+      return taskResult;
+    }
+    return {
+      taskId: task.id,
+      success: false,
+      output: 'Task execution failed or returned no result',
+    };
   }
 
   async executeMcpParallel(
