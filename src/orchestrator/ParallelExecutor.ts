@@ -32,6 +32,7 @@ export class ParallelExecutor {
   private executorConfig: ExecutorConfig;
   private taskEvents?: TaskEvents;
   private runningTasks: Map<string, { task: Task; workerId: string; timeout: NodeJS.Timeout }> = new Map();
+  private taskChildProcesses: Map<string, any[]> = new Map();
   private activeTaskCount: number = 0;
   private runResolve?: (value: Map<string, TaskResult>) => void;
   private runResults?: Map<string, TaskResult>;
@@ -222,12 +223,33 @@ export class ParallelExecutor {
       this.coordinator.release(task.id);
       this.queue.complete(task.id, failedResult);
       return failedResult;
+    } finally {
+      this.taskChildProcesses.delete(task.id);
     }
+  }
+
+  private isCommandUnsafe(cmd: string): boolean {
+    const unsafePatterns = [
+      /\brm\s+-(?:r[fd]|d?rf)\b/i,
+      /\bdel\b.*\b\/(?:f|q|s)\b/i,
+      /\brd\b.*\b\/s\b/i,
+      /\brmdir\b.*\b\/s\b/i,
+      /\bformat\b\s+[a-z]:/i,
+      /\b>:?\s*\/dev\/(?:null|sd[a-z]|hd[a-z]|console|zero)/i,
+      /\bmkfs\b/i,
+      /\bdd\b.*\bof=/i
+    ];
+    return unsafePatterns.some(pattern => pattern.test(cmd));
   }
 
   private async runValidationContract(task: Task): Promise<{ passes: boolean; output: string }> {
     const contract = task.validationContract;
     if (!contract) return { passes: true, output: 'No validation contract defined.' };
+
+    if (contract.validationScript && this.isCommandUnsafe(contract.validationScript)) {
+      console.error(`🚨 [Sandbox Gate] Unsafe command rejected: "${contract.validationScript}"`);
+      return { passes: false, output: `[Sandbox Gate Fail]: Validation script "${contract.validationScript}" was blocked as unsafe.` };
+    }
 
     let passes = true;
     let output = '';
@@ -236,13 +258,17 @@ export class ParallelExecutor {
 
     const runCmd = (cmd: string): Promise<{ success: boolean; stdout: string; stderr: string }> => {
       return new Promise((resolve) => {
-        exec(cmd, { cwd: process.cwd() }, (error, stdout, stderr) => {
+        const child = exec(cmd, { cwd: process.cwd() }, (error, stdout, stderr) => {
           resolve({
             success: !error,
             stdout,
             stderr
           });
         });
+        if (!this.taskChildProcesses.has(task.id)) {
+          this.taskChildProcesses.set(task.id, []);
+        }
+        this.taskChildProcesses.get(task.id)!.push(child);
       });
     };
 
@@ -372,13 +398,27 @@ export class ParallelExecutor {
   }
 
   private abortTask(taskId: string): void {
-    const execution = this.runningTasks.get(taskId);
-    if (!execution) return;
-
-    // If it's a specialist child process, try to kill it
-    // Note: We'd need the child process reference, which we don't have here.
-    // TODO: Store child process in runningTasks metadata
-    console.warn(`[ParallelExecutor] Aborting task ${taskId} (Cleanup pending)`);
+    const children = this.taskChildProcesses.get(taskId);
+    if (children && children.length > 0) {
+      console.log(`[ParallelExecutor] Aborting task ${taskId} - terminating ${children.length} spawned child processes recursively.`);
+      const { execSync } = require('child_process');
+      for (const child of children) {
+        if (child.pid) {
+          try {
+            if (process.platform === 'win32') {
+              execSync(`taskkill /pid ${child.pid} /f /t`, { stdio: 'ignore' });
+            } else {
+              process.kill(-child.pid, 'SIGKILL');
+            }
+          } catch (err) {
+            try {
+              child.kill('SIGKILL');
+            } catch {}
+          }
+        }
+      }
+      this.taskChildProcesses.delete(taskId);
+    }
   }
 
   private sleep(ms: number): Promise<void> {

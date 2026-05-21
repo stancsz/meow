@@ -35,19 +35,42 @@ async function main() {
   if (continueMode) {
     const meowDb = db as any;
     // Find most recent incomplete run
-    const recent = meowDb.getRawDb().prepare(`
-      SELECT run_id FROM mission_runs
-      WHERE status = 'running'
-      ORDER BY created_at DESC LIMIT 1
-    `).get() as { run_id: string } | undefined;
+    if (typeof meowDb.getRawDb === "function") {
+      const recent = meowDb.getRawDb().prepare(`
+        SELECT run_id FROM mission_runs
+        WHERE status = 'running'
+        ORDER BY created_at DESC LIMIT 1
+      `).get() as { run_id: string } | undefined;
 
-    if (recent) {
-      console.log(`↻ Continuing run: ${recent.run_id}`);
-      // Inject run_id into process.argv for agent to pick up
-      process.env.MEOW_RUN_ID = recent.run_id;
+      if (recent) {
+        console.log(`↻ Continuing run: ${recent.run_id}`);
+        // Inject run_id into process.argv for agent to pick up
+        process.env.MEOW_RUN_ID = recent.run_id;
+      } else {
+        console.log("↻ No previous run found. Starting fresh.");
+      }
     } else {
-      console.log("↻ No previous run found. Starting fresh.");
+      console.log("↻ Running in proxy mode. Continue mode will look up state from server.");
     }
+  }
+
+  // Stranded task/run reclamation startup sequence
+  try {
+    await db.exec(`
+      UPDATE task_claims 
+      SET status = 'failed' 
+      WHERE status = 'claimed' OR status = 'running';
+    `);
+    if (!continueMode) {
+      await db.exec(`
+        UPDATE mission_runs 
+        SET status = 'failed', completed_at = CURRENT_TIMESTAMP 
+        WHERE status = 'running';
+      `);
+    }
+    console.log("✓ Stranded task reclamation completed: all orphaned runs/claims set to failed.");
+  } catch (err) {
+    // Ignore error if database tables are not initialized yet
   }
 
   const agent = new Agent({

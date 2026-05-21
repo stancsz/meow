@@ -19,6 +19,7 @@ export class RaftConsensus {
   private nodes: Map<string, string> = new Map(); // nodeId -> publicKey
   private proposals: Map<string, Proposal> = new Map();
   private consensusThreshold: number; // e.g., 0.66 for Byzantine supermajority, or 0.5 for simple majority
+  private nodeLastHeartbeat: Map<string, number> = new Map();
 
   constructor(consensusThreshold = 0.66) {
     this.consensusThreshold = consensusThreshold;
@@ -29,6 +30,24 @@ export class RaftConsensus {
    */
   public registerNode(nodeId: string, publicKey: string): void {
     this.nodes.set(nodeId, publicKey);
+    this.nodeLastHeartbeat.set(nodeId, Date.now());
+  }
+
+  public updateNodeHeartbeat(nodeId: string): void {
+    if (this.nodes.has(nodeId)) {
+      this.nodeLastHeartbeat.set(nodeId, Date.now());
+    }
+  }
+
+  public pruneOfflineNodes(timeoutMs: number): void {
+    const now = Date.now();
+    for (const [nodeId, lastSeen] of this.nodeLastHeartbeat.entries()) {
+      if (now - lastSeen > timeoutMs) {
+        console.warn(`[RaftConsensus] Node ${nodeId} offline (last seen ${now - lastSeen}ms ago). Pruning from consensus.`);
+        this.nodes.delete(nodeId);
+        this.nodeLastHeartbeat.delete(nodeId);
+      }
+    }
   }
 
   /**
@@ -76,6 +95,8 @@ export class RaftConsensus {
     const proposal = this.proposals.get(proposalId);
     if (!proposal) return false;
     if (!this.nodes.has(voterId)) return false;
+
+    this.updateNodeHeartbeat(voterId);
 
     // Sign the proposal data (id + contentHash + approve)
     const signData = Buffer.from(`${proposal.id}:${proposal.contentHash}:${approve}`);

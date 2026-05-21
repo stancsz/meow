@@ -19,6 +19,7 @@ export class FedServer {
   private publicKeyPem: string;
   private authenticatedClients: Map<WebSocket, { publicKey: string; id: string }> = new Map();
   private taskHandler?: (task: Task) => Promise<TaskResult>;
+  private pingInterval: NodeJS.Timeout | null = null;
 
   constructor(port: number, keys: { publicKey: string; privateKey: crypto.KeyObject }) {
     this.port = port;
@@ -40,10 +41,26 @@ export class FedServer {
       this.wss.on('connection', (ws) => {
         this.handleConnection(ws);
       });
+
+      this.pingInterval = setInterval(() => {
+        this.wss?.clients.forEach((ws) => {
+          if ((ws as any).isAlive === false) {
+            console.warn(`[FedServer] Client connection lost (heartbeat timeout). Terminating connection.`);
+            return ws.terminate();
+          }
+          (ws as any).isAlive = false;
+          ws.ping();
+        });
+      }, 10000);
     });
   }
 
   private handleConnection(ws: WebSocket) {
+    (ws as any).isAlive = true;
+    ws.on('pong', () => {
+      (ws as any).isAlive = true;
+    });
+
     const challenge = crypto.randomBytes(32).toString('hex');
     let isAuthenticated = false;
 
@@ -146,6 +163,10 @@ export class FedServer {
   }
 
   async stop(): Promise<void> {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
     if (this.wss) {
       return new Promise((resolve) => {
         this.wss!.close(() => {
@@ -163,6 +184,10 @@ export class FedClient {
   private publicKeyPem: string;
   private resolveAuth?: (value: boolean) => void;
   private activeDelegations: Map<string, (result: TaskResult) => void> = new Map();
+  private delegationQueue: Array<{ task: Task; resolve: (result: TaskResult) => void; reject: (err: any) => void }> = [];
+  private isReconnecting = false;
+  private reconnectAttempts = 0;
+  private isClosedIntentionally = false;
 
   constructor(url: string, keys: { publicKey: string; privateKey: crypto.KeyObject }) {
     this.url = url;
@@ -171,8 +196,16 @@ export class FedClient {
   }
 
   connect(): Promise<boolean> {
+    this.isClosedIntentionally = false;
     return new Promise((resolve) => {
-      this.resolveAuth = resolve;
+      this.resolveAuth = (success) => {
+        if (success) {
+          this.reconnectAttempts = 0;
+          this.isReconnecting = false;
+          this.replayDelegations();
+        }
+        resolve(success);
+      };
       this.ws = new WebSocket(this.url);
 
       this.ws.on('open', () => {
@@ -185,14 +218,47 @@ export class FedClient {
 
       this.ws.on('error', (err) => {
         console.error(`[FedClient] Connection error:`, err);
-        resolve(false);
+        if (!this.isReconnecting) {
+          resolve(false);
+        }
       });
 
       this.ws.on('close', () => {
         console.log(`🔌 [FedClient] Connection closed.`);
-        resolve(false);
+        if (!this.isReconnecting) {
+          resolve(false);
+        }
+        if (!this.isClosedIntentionally) {
+          this.triggerReconnection();
+        }
       });
     });
+  }
+
+  private triggerReconnection() {
+    if (this.isReconnecting) return;
+    this.isReconnecting = true;
+    const delay = Math.min(100 * Math.pow(2, this.reconnectAttempts), 5000);
+    this.reconnectAttempts++;
+    console.log(`🛰️ [FedClient] Attempting auto-reconnection in ${delay}ms (attempt ${this.reconnectAttempts})...`);
+    setTimeout(() => {
+      this.connect().then((success) => {
+        if (!success) {
+          this.isReconnecting = false;
+          this.triggerReconnection();
+        }
+      });
+    }, delay);
+  }
+
+  private replayDelegations() {
+    if (this.delegationQueue.length === 0) return;
+    console.log(`🛰️ [FedClient] Replaying ${this.delegationQueue.length} pending task delegations...`);
+    const queueToProcess = [...this.delegationQueue];
+    this.delegationQueue = [];
+    for (const item of queueToProcess) {
+      this.delegateTask(item.task).then(item.resolve).catch(item.reject);
+    }
   }
 
   private handleMessage(data: any) {
@@ -249,7 +315,12 @@ export class FedClient {
   delegateTask(task: Task): Promise<TaskResult> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        return reject(new Error('WebSocket connection is not open'));
+        console.log(`🛰️ [FedClient] Connection offline. Queueing delegation for task: ${task.id}`);
+        this.delegationQueue.push({ task, resolve, reject });
+        if (!this.isClosedIntentionally) {
+          this.triggerReconnection();
+        }
+        return;
       }
 
       this.activeDelegations.set(task.id, resolve);
@@ -258,6 +329,7 @@ export class FedClient {
   }
 
   disconnect() {
+    this.isClosedIntentionally = true;
     this.ws?.close();
   }
 }
