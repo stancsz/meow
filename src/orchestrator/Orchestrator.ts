@@ -246,7 +246,7 @@ export class Orchestrator {
     if (mode === ExecutionMode.ECOMODE) {
       for (const task of tasks) {
         task.agentConfig = {
-          model: 'gemini-2.0-flash',
+          model: 'minimax',
           baseUrl: this.agent.baseUrl,
           apiKey: this.agent.apiKey || '',
         };

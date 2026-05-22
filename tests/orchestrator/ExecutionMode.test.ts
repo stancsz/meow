@@ -118,7 +118,7 @@ describe("ExecutionMode", () => {
       const allTasks = [...status.queue.pending, ...status.queue.running];
       
       for (const t of allTasks) {
-        expect(t.agentConfig?.model).toBe("gemini-2.0-flash");
+        expect(t.agentConfig?.model).toBe("gemini-3.5-flash");
         expect(t.maxRetries).toBe(1);
         expect(t.timeoutMs).toBeLessThanOrEqual(30000);
       }

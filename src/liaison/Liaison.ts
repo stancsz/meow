@@ -63,8 +63,8 @@ export class Liaison {
   constructor(agent: Agent, config: LiaisonConfig = {}) {
     this.agent = agent;
     this.config = {
-      fastModel: config.fastModel || "gemini-2.0-flash",
-      fastModelBaseUrl: config.fastModelBaseUrl || "https://api.google.ai/completion",
+      fastModel: config.fastModel || "minimax",
+      fastModelBaseUrl: config.fastModelBaseUrl || "https://api.minimax.chat/v1",
       fastModelApiKey: config.fastModelApiKey || "",
       initialResponseTimeoutMs: config.initialResponseTimeoutMs || 500,
       enableStreaming: config.enableStreaming ?? true,
