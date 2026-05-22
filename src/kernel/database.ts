@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { createRequire } from "module";
 import { config } from "../config/env";
 import { DatabasePort, DbExecuteResult } from "../extensions/database/manifest";
+import { HNSWIndex } from "../extensions/database/hnsw";
 import fs from "fs";
 import path from "path";
 
@@ -9,6 +10,7 @@ const require = createRequire(import.meta.url);
 
 export class MeowDatabase implements DatabasePort {
   private db: Database.Database;
+  private hnsw = new HNSWIndex();
 
   constructor(dbPath: string = "meow.db") {
     this.db = new Database(dbPath);
@@ -24,6 +26,41 @@ export class MeowDatabase implements DatabasePort {
     }
 
     this.initializeSchema();
+    this.loadHNSWIndex();
+  }
+
+  private loadHNSWIndex() {
+    try {
+      const rows = this.db.prepare(`
+        SELECT d.id, v.embedding
+        FROM vector_memory_data d
+        JOIN vec_memory v ON d.id = v.rowid
+      `).all() as { id: number; embedding: Buffer | Float32Array | number[] }[];
+      
+      for (const row of rows) {
+        let embeddingArray: number[] = [];
+        if (row.embedding) {
+          if (row.embedding instanceof Buffer) {
+            const float32 = new Float32Array(
+              row.embedding.buffer,
+              row.embedding.byteOffset,
+              row.embedding.byteLength / 4
+            );
+            embeddingArray = Array.from(float32);
+          } else if (row.embedding instanceof Float32Array) {
+            embeddingArray = Array.from(row.embedding);
+          } else if (Array.isArray(row.embedding)) {
+            embeddingArray = row.embedding;
+          }
+        }
+        if (embeddingArray.length > 0) {
+          this.hnsw.insert(row.id, embeddingArray);
+        }
+      }
+      console.log(`✓ Loaded HNSW index with ${rows.length} vector embeddings.`);
+    } catch (e) {
+      console.warn("⚠️ Failed to pre-load HNSW vector index:", e);
+    }
   }
 
   private initializeSchema() {
@@ -184,6 +221,78 @@ export class MeowDatabase implements DatabasePort {
 
   // Implements DatabasePort
   async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+    if (/FROM\s+vec_memory/i.test(sql)) {
+      try {
+        let embedding: number[] = [];
+        if (params && params.length > 0) {
+          const rawEmbedding = params[0];
+          if (rawEmbedding instanceof Float32Array) {
+            embedding = Array.from(rawEmbedding);
+          } else if (rawEmbedding instanceof Buffer) {
+            const float32 = new Float32Array(
+              rawEmbedding.buffer,
+              rawEmbedding.byteOffset,
+              rawEmbedding.byteLength / 4
+            );
+            embedding = Array.from(float32);
+          } else if (Array.isArray(rawEmbedding)) {
+            embedding = rawEmbedding;
+          }
+        }
+
+        if (embedding.length > 0) {
+          // Parse limit (k)
+          let limit = 10;
+          const kMatch = sql.match(/k\s*=\s*(\d+)/i);
+          if (kMatch) {
+            limit = parseInt(kMatch[1]);
+          }
+
+          // Parse NOT IN clause
+          const notInSet = new Set<number>();
+          const notInMatch = sql.match(/NOT IN\s*\(([^)]+)\)/i);
+          if (notInMatch) {
+            const ids = notInMatch[1].split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+            for (const id of ids) {
+              notInSet.add(id);
+            }
+          }
+
+          // Perform HNSW search!
+          const nearestIds = this.hnsw.search(embedding, limit + notInSet.size);
+          const filteredIds = nearestIds.filter(id => !notInSet.has(id)).slice(0, limit);
+
+          if (filteredIds.length > 0) {
+            // Retrieve actual details from database
+            const placeholders = filteredIds.map(() => "?").join(",");
+            const rows = this.db.prepare(`
+              SELECT id as rowid, content, metadata
+              FROM vector_memory_data
+              WHERE id IN (${placeholders})
+            `).all(...filteredIds) as { rowid: number; content: string; metadata: string }[];
+
+            // Map distances and sort according to distance
+            const results = rows.map(row => {
+              const node = this.hnsw.getNode(row.rowid);
+              const distance = node ? 1.0 - this.hnsw.similarity(embedding, node.vector) : 0.5;
+              return {
+                rowid: row.rowid,
+                content: row.content,
+                metadata: row.metadata,
+                distance: distance
+              };
+            });
+
+            results.sort((a, b) => a.distance - b.distance);
+            return results as T[];
+          }
+          return [];
+        }
+      } catch (err) {
+        console.warn("⚠️ HNSW query intercept failed, falling back to SQLite:", err);
+      }
+    }
+
     const stmt = this.db.prepare(sql);
     return stmt.all(...(params ?? [])) as T[];
   }
@@ -191,6 +300,33 @@ export class MeowDatabase implements DatabasePort {
   async execute(sql: string, params?: any[]): Promise<DbExecuteResult> {
     const stmt = this.db.prepare(sql);
     const result = stmt.run(...(params ?? []));
+
+    // Intercept vector insert
+    if (/INSERT INTO vec_memory/i.test(sql) && params && params.length >= 2) {
+      try {
+        const rowid = Number(params[0]);
+        let embedding: number[] = [];
+        const rawEmbedding = params[1];
+        if (rawEmbedding instanceof Float32Array) {
+          embedding = Array.from(rawEmbedding);
+        } else if (rawEmbedding instanceof Buffer) {
+          const float32 = new Float32Array(
+            rawEmbedding.buffer,
+            rawEmbedding.byteOffset,
+            rawEmbedding.byteLength / 4
+          );
+          embedding = Array.from(float32);
+        } else if (Array.isArray(rawEmbedding)) {
+          embedding = rawEmbedding;
+        }
+        if (embedding.length > 0) {
+          this.hnsw.insert(rowid, embedding);
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to index embedding in HNSW during execute():", err);
+      }
+    }
+
     return { changes: result.changes, lastInsertRowid: Number(result.lastInsertRowid) };
   }
 
@@ -223,6 +359,9 @@ export class MeowDatabase implements DatabasePort {
               this.db.prepare(
                 "INSERT INTO vec_memory (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)"
               ).run(lastId, new Float32Array(action.embedding));
+
+              // Symmetrically update the HNSW graph
+              this.hnsw.insert(Number(lastId), Array.from(action.embedding));
               break;
             }
           }

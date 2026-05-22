@@ -32,9 +32,11 @@ export class ParallelExecutor {
   private executorConfig: ExecutorConfig;
   private taskEvents?: TaskEvents;
   private runningTasks: Map<string, { task: Task; workerId: string; timeout: NodeJS.Timeout }> = new Map();
+  private taskChildProcesses: Map<string, any[]> = new Map();
   private activeTaskCount: number = 0;
   private runResolve?: (value: Map<string, TaskResult>) => void;
   private runResults?: Map<string, TaskResult>;
+  private backoffCounts: Map<string, number> = new Map();
 
   constructor(
     queue: TaskQueue,
@@ -65,6 +67,7 @@ export class ParallelExecutor {
       };
 
       const startTask = (task: Task, worker: WorkerConfig) => {
+        this.backoffCounts.delete(task.id);
         this.activeTaskCount++;
         const timeout = setTimeout(() => {
           this.handleTaskTimeout(task.id);
@@ -79,6 +82,7 @@ export class ParallelExecutor {
           this.runResults?.set(task.id, result);
           clearTimeout(timeout);
           this.runningTasks.delete(task.id);
+          this.taskEvents?.onStatusChange?.(task.id, result.success ? 'completed' : 'failed');
           this.taskEvents?.onResult?.(task.id, result);
           this.activeTaskCount--;
           dispatch();
@@ -94,6 +98,7 @@ export class ParallelExecutor {
           this.runResults?.set(task.id, failedResult);
           clearTimeout(timeout);
           this.runningTasks.delete(task.id);
+          this.taskEvents?.onStatusChange?.(task.id, 'failed');
           this.taskEvents?.onResult?.(task.id, failedResult);
           this.activeTaskCount--;
           dispatch();
@@ -109,9 +114,47 @@ export class ParallelExecutor {
           const task = this.queue.dequeue();
           if (!task) break;
 
+          // Convert required/produced files to FileArtifact format for lock checking
+          const taskArtifacts: any[] = [];
+          if (task.requiredFiles) {
+            for (const path of task.requiredFiles) {
+              taskArtifacts.push({ path, operation: 'update' });
+            }
+          }
+          if (task.producedFiles) {
+            for (const artifact of task.producedFiles) {
+              taskArtifacts.push(artifact);
+            }
+          }
+
+          // Check if there's any conflicting active lock
+          const conflicts = this.coordinator.wouldConflict(task.id, taskArtifacts);
+          if (conflicts.length > 0) {
+            // Trigger conflict event
+            this.taskEvents?.onFileConflict?.(task.id, conflicts);
+
+            const currentBackoff = this.backoffCounts.get(task.id) || 0;
+            const delay = Math.min(50 * Math.pow(2, currentBackoff), 1000);
+            this.backoffCounts.set(task.id, currentBackoff + 1);
+
+            // Re-enqueue the task to let others proceed
+            task.status = 'pending';
+            (this.queue as any).running.delete(task.id);
+            this.queue.enqueue(task);
+
+            // Schedule a dispatch check after the backoff delay
+            setTimeout(() => {
+              dispatch();
+            }, delay);
+
+            break;
+          }
+
           const worker = this.selectWorker(task);
           if (!worker) {
             // No worker can accept this task - re-enqueue and stop this dispatch round
+            task.status = 'pending';
+            (this.queue as any).running.delete(task.id);
             this.queue.enqueue(task);
             noWorkerAvailableCount++;
             // If multiple tasks in a row can't find workers, stop dispatching
@@ -121,6 +164,10 @@ export class ParallelExecutor {
           }
 
           noWorkerAvailableCount = 0; // Reset on successful dispatch
+
+          // Acquire the lock atomically before starting
+          this.coordinator.requestAccess(task.id, taskArtifacts);
+
           startTask(task, worker);
 
           // If we just started a task, there may be more work to do
@@ -152,6 +199,18 @@ export class ParallelExecutor {
         result = await this.executeAgentTask(task, worker);
       }
 
+      if (task.validationContract) {
+        const validation = await this.runValidationContract(task);
+        result.passes = validation.passes;
+        task.passes = validation.passes;
+        if (!validation.passes) {
+          result.success = false;
+          result.error = (result.error ? result.error + '\n' : '') + `Validation contract failed:\n${validation.output}`;
+        } else {
+          result.output = (result.output ? result.output + '\n' : '') + `Validation contract passed:\n${validation.output}`;
+        }
+      }
+
       this.coordinator.release(task.id);
       this.queue.complete(task.id, result);
       return result;
@@ -166,12 +225,90 @@ export class ParallelExecutor {
       this.coordinator.release(task.id);
       this.queue.complete(task.id, failedResult);
       return failedResult;
+    } finally {
+      this.taskChildProcesses.delete(task.id);
     }
+  }
+
+  private isCommandUnsafe(cmd: string): boolean {
+    const unsafePatterns = [
+      /\brm\s+-(?:r[fd]|d?rf)\b/i,
+      /\bdel\b.*\b\/(?:f|q|s)\b/i,
+      /\brd\b.*\b\/s\b/i,
+      /\brmdir\b.*\b\/s\b/i,
+      /\bformat\b\s+[a-z]:/i,
+      /\b>:?\s*\/dev\/(?:null|sd[a-z]|hd[a-z]|console|zero)/i,
+      /\bmkfs\b/i,
+      /\bdd\b.*\bof=/i
+    ];
+    return unsafePatterns.some(pattern => pattern.test(cmd));
+  }
+
+  private async runValidationContract(task: Task): Promise<{ passes: boolean; output: string }> {
+    const contract = task.validationContract;
+    if (!contract) return { passes: true, output: 'No validation contract defined.' };
+
+    if (contract.validationScript && this.isCommandUnsafe(contract.validationScript)) {
+      console.error(`🚨 [Sandbox Gate] Unsafe command rejected: "${contract.validationScript}"`);
+      return { passes: false, output: `[Sandbox Gate Fail]: Validation script "${contract.validationScript}" was blocked as unsafe.` };
+    }
+
+    let passes = true;
+    let output = '';
+
+    const { exec } = await import('child_process');
+
+    const runCmd = (cmd: string): Promise<{ success: boolean; stdout: string; stderr: string }> => {
+      return new Promise((resolve) => {
+        const child = exec(cmd, { cwd: process.cwd() }, (error, stdout, stderr) => {
+          resolve({
+            success: !error,
+            stdout,
+            stderr
+          });
+        });
+        if (!this.taskChildProcesses.has(task.id)) {
+          this.taskChildProcesses.set(task.id, []);
+        }
+        this.taskChildProcesses.get(task.id)!.push(child);
+      });
+    };
+
+    if (contract.validationScript) {
+      console.log(`🧪 [Validation] Running custom validation script: ${contract.validationScript}`);
+      const res = await runCmd(contract.validationScript);
+      output += `[Script stdout]:\n${res.stdout}\n[Script stderr]:\n${res.stderr}\n`;
+      if (!res.success) {
+        passes = false;
+      }
+    }
+
+    if (contract.testSuite) {
+      console.log(`🧪 [Validation] Running test suite: ${contract.testSuite}`);
+      const res = await runCmd(`npx vitest run ${contract.testSuite}`);
+      output += `[Test suite stdout]:\n${res.stdout}\n[Test suite stderr]:\n${res.stderr}\n`;
+      if (!res.success) {
+        passes = false;
+      }
+    }
+
+    if (contract.expectedOutputs) {
+      console.log(`🧪 [Validation] Asserting expected outputs...`);
+      for (const expected of contract.expectedOutputs) {
+        if (!output.includes(expected)) {
+          passes = false;
+          output += `[Assertion Fail]: Expected string "${expected}" was not found in outputs.\n`;
+        }
+      }
+    }
+
+    return { passes, output };
   }
 
   private async executeAgentTask(task: Task, worker: WorkerConfig): Promise<TaskResult> {
     const agent = new Agent({
       ...worker.agentConfig,
+      ...task.agentConfig,
       kernel: worker.kernel,
       db: worker.db
     });
@@ -226,7 +363,15 @@ export class ParallelExecutor {
     const available = Array.from(this.workers.values());
     if (available.length === 0) return null;
 
-    const workerLoads = available.map(w => {
+    let eligible = available;
+    if (task.assignedWorker) {
+      const matched = available.filter(w => w.workerId === task.assignedWorker);
+      if (matched.length > 0) {
+        eligible = matched;
+      }
+    }
+
+    const workerLoads = eligible.map(w => {
       let count = 0;
       for (const exec of this.runningTasks.values()) {
         if (exec.workerId === w.workerId) count++;
@@ -252,6 +397,7 @@ export class ParallelExecutor {
 
     this.runResults?.set(taskId, timeoutResult);
     this.queue.complete(taskId, timeoutResult);
+    this.taskEvents?.onStatusChange?.(taskId, 'failed');
     this.taskEvents?.onResult?.(taskId, timeoutResult);
     this.runningTasks.delete(taskId);
     this.activeTaskCount--;
@@ -264,13 +410,27 @@ export class ParallelExecutor {
   }
 
   private abortTask(taskId: string): void {
-    const execution = this.runningTasks.get(taskId);
-    if (!execution) return;
-
-    // If it's a specialist child process, try to kill it
-    // Note: We'd need the child process reference, which we don't have here.
-    // TODO: Store child process in runningTasks metadata
-    console.warn(`[ParallelExecutor] Aborting task ${taskId} (Cleanup pending)`);
+    const children = this.taskChildProcesses.get(taskId);
+    if (children && children.length > 0) {
+      console.log(`[ParallelExecutor] Aborting task ${taskId} - terminating ${children.length} spawned child processes recursively.`);
+      const { execSync } = require('child_process');
+      for (const child of children) {
+        if (child.pid) {
+          try {
+            if (process.platform === 'win32') {
+              execSync(`taskkill /pid ${child.pid} /f /t`, { stdio: 'ignore' });
+            } else {
+              process.kill(-child.pid, 'SIGKILL');
+            }
+          } catch (err) {
+            try {
+              child.kill('SIGKILL');
+            } catch {}
+          }
+        }
+      }
+      this.taskChildProcesses.delete(taskId);
+    }
   }
 
   private sleep(ms: number): Promise<void> {

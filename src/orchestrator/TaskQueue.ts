@@ -100,4 +100,8 @@ export class TaskQueue {
       failed: this.failed.size,
     };
   }
+
+  getTask(taskId: string): Task | undefined {
+    return this.running.get(taskId) || this.completed.get(taskId) || this.failed.get(taskId) || this.pending.find(t => t.id === taskId);
+  }
 }

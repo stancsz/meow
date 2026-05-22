@@ -16,6 +16,7 @@
 
 import Database from "better-sqlite3";
 import { createRequire } from "module";
+import { HNSWIndex } from "./hnsw";
 
 // Kernel action types (duplicated from kernel.ts to avoid ESM module resolution issues)
 type KernelAction =
@@ -46,6 +47,7 @@ class DbServer {
   private db: Database.Database;
   private id = 0;
   private pending = new Map<number, (val: any) => void>();
+  private hnsw = new HNSWIndex();
 
   constructor(dbPath: string = "meow.db") {
     this.db = new Database(dbPath);
@@ -62,7 +64,42 @@ class DbServer {
     }
 
     this.initializeSchema();
+    this.loadHNSWIndex();
     this.startListening();
+  }
+
+  private loadHNSWIndex() {
+    try {
+      const rows = this.db.prepare(`
+        SELECT d.id, v.embedding
+        FROM vector_memory_data d
+        JOIN vec_memory v ON d.id = v.rowid
+      `).all() as { id: number; embedding: Buffer | Float32Array | number[] }[];
+      
+      for (const row of rows) {
+        let embeddingArray: number[] = [];
+        if (row.embedding) {
+          if (row.embedding instanceof Buffer) {
+            const float32 = new Float32Array(
+              row.embedding.buffer,
+              row.embedding.byteOffset,
+              row.embedding.byteLength / 4
+            );
+            embeddingArray = Array.from(float32);
+          } else if (row.embedding instanceof Float32Array) {
+            embeddingArray = Array.from(row.embedding);
+          } else if (Array.isArray(row.embedding)) {
+            embeddingArray = row.embedding;
+          }
+        }
+        if (embeddingArray.length > 0) {
+          this.hnsw.insert(row.id, embeddingArray);
+        }
+      }
+      console.error(`✓ db-server: Loaded HNSW index with ${rows.length} vector embeddings.`);
+    } catch (e: any) {
+      console.error("⚠️ db-server: Failed to pre-load HNSW vector index:", e.message);
+    }
   }
 
   private initializeSchema() {
@@ -139,8 +176,87 @@ class DbServer {
         case "query": {
           const [sql, args] = params ?? [];
           const callArgs = this.deserializeParams(args);
-          const stmt = this.db.prepare(sql);
-          result = callArgs ? stmt.all(...callArgs) : stmt.all();
+          
+          let intercepted = false;
+          if (/FROM\s+vec_memory/i.test(sql)) {
+            try {
+              let embedding: number[] = [];
+              if (callArgs && callArgs.length > 0) {
+                const rawEmbedding = callArgs[0];
+                if (rawEmbedding instanceof Float32Array) {
+                  embedding = Array.from(rawEmbedding);
+                } else if (rawEmbedding instanceof Buffer) {
+                  const float32 = new Float32Array(
+                    rawEmbedding.buffer,
+                    rawEmbedding.byteOffset,
+                    rawEmbedding.byteLength / 4
+                  );
+                  embedding = Array.from(float32);
+                } else if (Array.isArray(rawEmbedding)) {
+                  embedding = rawEmbedding;
+                }
+              }
+
+              if (embedding.length > 0) {
+                // Parse limit (k)
+                let limit = 10;
+                const kMatch = sql.match(/k\s*=\s*(\d+)/i);
+                if (kMatch) {
+                  limit = parseInt(kMatch[1]);
+                }
+
+                // Parse NOT IN clause
+                const notInSet = new Set<number>();
+                const notInMatch = sql.match(/NOT IN\s*\(([^)]+)\)/i);
+                if (notInMatch) {
+                  const ids = notInMatch[1].split(",").map((s: string) => parseInt(s.trim())).filter((n: number) => !isNaN(n));
+                  for (const id of ids) {
+                    notInSet.add(id);
+                  }
+                }
+
+                // Perform HNSW search!
+                const nearestIds = this.hnsw.search(embedding, limit + notInSet.size);
+                const filteredIds = nearestIds.filter(id => !notInSet.has(id)).slice(0, limit);
+
+                if (filteredIds.length > 0) {
+                  // Retrieve actual details from database
+                  const placeholders = filteredIds.map(() => "?").join(",");
+                  const rows = this.db.prepare(`
+                    SELECT id as rowid, content, metadata
+                    FROM vector_memory_data
+                    WHERE id IN (${placeholders})
+                  `).all(...filteredIds) as { rowid: number; content: string; metadata: string }[];
+
+                  // Map distances and sort according to distance
+                  const results = rows.map(row => {
+                    const node = this.hnsw.getNode(row.rowid);
+                    const distance = node ? 1.0 - this.hnsw.similarity(embedding, node.vector) : 0.5;
+                    return {
+                      rowid: row.rowid,
+                      content: row.content,
+                      metadata: row.metadata,
+                      distance: distance
+                    };
+                  });
+
+                  results.sort((a, b) => a.distance - b.distance);
+                  result = results;
+                  intercepted = true;
+                } else {
+                  result = [];
+                  intercepted = true;
+                }
+              }
+            } catch (err: any) {
+              console.error("⚠️ db-server: HNSW query intercept failed:", err.message);
+            }
+          }
+
+          if (!intercepted) {
+            const stmt = this.db.prepare(sql);
+            result = callArgs ? stmt.all(...callArgs) : stmt.all();
+          }
           break;
         }
         case "execute": {
@@ -152,6 +268,32 @@ class DbServer {
             changes: runResult.changes,
             lastInsertRowid: Number(runResult.lastInsertRowid),
           };
+
+          // Intercept vector insert
+          if (/INSERT INTO vec_memory/i.test(sql) && callArgs && callArgs.length >= 2) {
+            try {
+              const rowid = Number(callArgs[0]);
+              let embedding: number[] = [];
+              const rawEmbedding = callArgs[1];
+              if (rawEmbedding instanceof Float32Array) {
+                embedding = Array.from(rawEmbedding);
+              } else if (rawEmbedding instanceof Buffer) {
+                const float32 = new Float32Array(
+                  rawEmbedding.buffer,
+                  rawEmbedding.byteOffset,
+                  rawEmbedding.byteLength / 4
+                );
+                embedding = Array.from(float32);
+              } else if (Array.isArray(rawEmbedding)) {
+                embedding = rawEmbedding;
+              }
+              if (embedding.length > 0) {
+                this.hnsw.insert(rowid, embedding);
+              }
+            } catch (err: any) {
+              console.error("⚠️ db-server: Failed to index embedding in HNSW during execute():", err.message);
+            }
+          }
           break;
         }
         case "exec": {
@@ -218,6 +360,9 @@ class DbServer {
               this.db
                 .prepare("INSERT INTO vec_memory (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)")
                 .run(lastId, new Float32Array(action.embedding));
+
+              // Symmetrically update the HNSW graph
+              this.hnsw.insert(Number(lastId), Array.from(action.embedding));
               break;
             }
           }

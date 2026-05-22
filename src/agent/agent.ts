@@ -29,6 +29,8 @@ export interface AgentConfig {
   files?: string[];
   kernel: MeowKernel;
   db: DatabasePort | MeowDatabase;
+  seed?: number;
+  deterministic?: boolean;
 }
 
 export interface EditBlock {
@@ -85,7 +87,7 @@ export class Agent {
 
   // Priority 1: Reproducibility + Observability
   public runId: string;
-  private auditLogger: AuditLogger;
+  public auditLogger: AuditLogger;
   private totalCostCents: number = 0;
   private recentActions: string[] = []; // For loop detection
 
@@ -100,8 +102,10 @@ export class Agent {
 
     // Start a new run for this session
     this.runId = uuidv4();
-    const meowDb = config.db as MeowDatabase;
-    meowDb.startRun(this.runId, "mission", config.seed, config.deterministic);
+    const meowDb = config.db as any;
+    if (meowDb && typeof meowDb.startRun === "function") {
+      meowDb.startRun(this.runId, "mission", config.seed, config.deterministic);
+    }
     this.auditLogger = new AuditLogger(this.runId);
 
     this.skillManager = new SkillManager();
@@ -119,8 +123,10 @@ export class Agent {
     const budget = config.budgetCents;
     if (budget && this.totalCostCents >= budget) {
       this.auditLogger.error("budget", `Budget exceeded: ${this.totalCostCents}¢ >= ${budget}¢`);
-      const meowDb = this.db as MeowDatabase;
-      meowDb.endRun(this.runId, "budget_exceeded");
+      const meowDb = this.db as any;
+      if (meowDb && typeof meowDb.endRun === "function") {
+        meowDb.endRun(this.runId, "budget_exceeded");
+      }
       throw new Error(`Budget exceeded: ${this.totalCostCents.toFixed(4)}¢ >= ${budget}¢. Checkpoint saved.`);
     }
   }
@@ -207,8 +213,8 @@ export class Agent {
             // Archive tool result in Agentic Memory for future recall
             await this.agenticMemory.store(
               `Tool [${toolName}] result for query [${userInput}]: ${result.substring(0, 500)}`,
-              this.mockEmbedding(userInput),
-              { tool: toolName, type: "tool_output" }
+              { tool: toolName, type: "tool_output" },
+              this.mockEmbedding(userInput)
             );
 
             this.messages.push({ role: "assistant", content: response });
@@ -548,8 +554,10 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
       costCents = (inputTokens * 0.003 / 1_000_000) + (outputTokens * 0.015 / 1_000_000);
       this.totalCostCents += costCents;
 
-      const meowDb = this.db as MeowDatabase;
-      meowDb.logCost(this.runId, this._model, inputTokens, outputTokens, costCents);
+      const meowDb = this.db as any;
+      if (meowDb && typeof meowDb.logCost === "function") {
+        meowDb.logCost(this.runId, this._model, inputTokens, outputTokens, costCents);
+      }
 
       this.auditLogger.llmCall(this._model, inputTokens, outputTokens, durationMs, costCents, success);
     }
@@ -1176,8 +1184,8 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
     // Archive raw content and summary into L3
     await this.agenticMemory.store(
       `CONTEXT_ANCHOR: ${summary}`,
-      this.mockEmbedding(summary),
-      { type: "archived_context", original_length: rawContent.length }
+      { type: "archived_context", original_length: rawContent.length },
+      this.mockEmbedding(summary)
     );
 
     // Inject the anchor back into L1 to maintain semantic continuity

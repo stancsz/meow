@@ -39,6 +39,6 @@ describe("Worker Overload Spin Loop", () => {
     // The issue: when worker is busy, selectWorker returns null
     // and task is re-enqueued - this is the spin loop vulnerability
     const status = queue.getStatus();
-    expect(status.pending).toBe(2);
+    expect(status.pending.length).toBe(2);
   });
 });

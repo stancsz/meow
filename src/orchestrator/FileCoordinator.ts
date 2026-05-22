@@ -20,6 +20,51 @@ export class FileCoordinator {
   private inMemoryLocks: Map<string, FileLock> = new Map();
   private useSqlite = true;
 
+  public get locks(): {
+    set(key: string, value: FileLock): void;
+    has(key: string): boolean;
+    get(key: string): FileLock | undefined;
+  } {
+    const self = this;
+    return {
+      set(key: string, value: FileLock) {
+        if (!self.useSqlite || !self.db) {
+          self.inMemoryLocks.set(key, value);
+          return;
+        }
+        try {
+          self.db.prepare(
+            "INSERT OR REPLACE INTO file_locks (path, task_id, acquired_at) VALUES (?, ?, ?)"
+          ).run(key, value.taskId, value.acquiredAt);
+        } catch {
+          self.inMemoryLocks.set(key, value);
+        }
+      },
+      has(key: string): boolean {
+        return self.getLocks().has(key);
+      },
+      get(key: string): FileLock | undefined {
+        const lock = self.getLocks().get(key);
+        if (!lock) return undefined;
+        return new Proxy(lock, {
+          set(target, prop, val) {
+            (target as any)[prop] = val;
+            if (self.useSqlite && self.db) {
+              try {
+                self.db.prepare(
+                  "INSERT OR REPLACE INTO file_locks (path, task_id, acquired_at) VALUES (?, ?, ?)"
+                ).run(target.path, target.taskId, target.acquiredAt);
+              } catch {}
+            } else {
+              self.inMemoryLocks.set(target.path, target);
+            }
+            return true;
+          }
+        });
+      }
+    };
+  }
+
   constructor(dbPath?: string) {
     try {
       this.db = new Database(dbPath || ":memory:");
@@ -139,6 +184,15 @@ export class FileCoordinator {
       grantedLocks.push(lock);
     }
 
+    // Atomic: If there are ANY conflicts, do NOT persist any locks
+    if (conflicts.length > 0) {
+      return {
+        allowed: false,
+        conflicts,
+        grantedLocks: [],
+      };
+    }
+
     for (const lock of grantedLocks) {
       if (this.useSqlite && this.db) {
         try {
@@ -156,7 +210,7 @@ export class FileCoordinator {
     }
 
     return {
-      allowed: conflicts.length === 0,
+      allowed: true,
       conflicts,
       grantedLocks,
     };

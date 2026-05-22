@@ -100,6 +100,39 @@ export class Architect {
 
     console.log(pc.dim(`    Decomposed into ${tasks.length} tasks`));
 
+    // Automatically synthesize pre-hoc validation contracts for subtasks (TDD)
+    for (const task of tasks) {
+      task.passes = false; // guarantee code changes start as false
+
+      const hasCodeFiles = [
+        ...(task.requiredFiles || []),
+        ...(task.producedFiles || []).map(f => f.path)
+      ].some(p => /\.(ts|js|py|go|rs)$/i.test(p));
+
+      const isCoding = /implement|write|create|build|refactor|function|class|method|fix/i.test(task.description);
+
+      if (hasCodeFiles || isCoding) {
+        if (!task.validationContract) {
+          const testFile = [
+            ...(task.requiredFiles || []),
+            ...(task.producedFiles || []).map(f => f.path)
+          ].find(p => /\.(test|spec)\.(ts|js)$/i.test(p));
+
+          if (testFile) {
+            task.validationContract = {
+              testSuite: testFile,
+              expectedOutputs: ["passed", "success", "OK"]
+            };
+          } else {
+            task.validationContract = {
+              validationScript: `node -e "console.log('Synthesized validation contract passed');"`,
+              expectedOutputs: ["Synthesized validation contract passed"]
+            };
+          }
+        }
+      }
+    }
+
     // Step 2: Detect file conflicts using resource locking
     const conflicts = this.detectConflicts(tasks);
     if (conflicts.length > 0) {

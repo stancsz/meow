@@ -13,30 +13,18 @@
 // the task is blocked from proceeding.
 
 export enum ExecutionMode {
-  /**
-   * PARALLEL: Kitchen's approach — fan out tasks simultaneously, fast but unverified.
-   * Use when speed matters more than correctness (e.g., quick research tasks).
-   */
   PARALLEL = 'parallel',
-
-  /**
-   * SEQUENTIAL: Quality-first — one task at a time with embedded self-review.
-   * Task must pass all quality gates before next task starts.
-   * Use when correctness matters more than speed (e.g., production code changes).
-   */
   SEQUENTIAL = 'sequential',
-
-  /**
-   * AUDIT_ONLY: Verify work without executing (dry-run mode).
-   * Useful for checking if existing code meets quality standards.
-   */
   AUDIT_ONLY = 'audit_only',
-
-  /**
-   * SHIP: Full quality pipeline — verify + polish + audit + human sign-off.
-   * Default mode. Nothing ships without passing all gates and human approval.
-   */
   SHIP = 'ship',
+  AUTOPILOT = 'autopilot',
+  RALPH = 'ralph',
+  ECOMODE = 'ecomode',
+  PIPELINE = 'pipeline',
+  SWARM = 'swarm',
+  ULTRAWORK = 'ultrawork',
+  ULTRAPILOT = 'ultrapilot',
+  SWARM_TEAM = 'swarm_team',
 }
 
 export interface QualityGate {
@@ -243,9 +231,23 @@ export const DEFAULT_QUALITY_GATES: QualityGate[] = [
 ];
 
 export function isQualityMode(mode: ExecutionMode): boolean {
-  return mode === ExecutionMode.SEQUENTIAL || mode === ExecutionMode.SHIP;
+  return (
+    mode === ExecutionMode.SEQUENTIAL ||
+    mode === ExecutionMode.SHIP ||
+    mode === ExecutionMode.RALPH ||
+    mode === ExecutionMode.AUTOPILOT ||
+    mode === ExecutionMode.PIPELINE ||
+    mode === ExecutionMode.ULTRAWORK ||
+    mode === ExecutionMode.ULTRAPILOT
+  );
 }
 
 export function isBlockingMode(mode: ExecutionMode): boolean {
-  return mode !== ExecutionMode.PARALLEL && mode !== ExecutionMode.AUDIT_ONLY;
+  return (
+    mode !== ExecutionMode.PARALLEL &&
+    mode !== ExecutionMode.AUDIT_ONLY &&
+    mode !== ExecutionMode.SWARM &&
+    mode !== ExecutionMode.SWARM_TEAM &&
+    mode !== ExecutionMode.ECOMODE
+  );
 }

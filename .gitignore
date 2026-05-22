@@ -35,7 +35,9 @@ build/
 
 # Logs
 *.log
-npm-debug.log**.db*
+npm-debug.log
+logs/
+.meow/
 *.db*
 
 # Installer
