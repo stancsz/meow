@@ -8,6 +8,7 @@ import { Agent } from "./agent/agent";
 import { createRepl } from "./cli/repl";
 import { MeowKernel } from "./kernel/kernel";
 import { DatabasePort } from "./extensions/database/manifest";
+import { MeowDatabase } from "./kernel/database";
 
 /**
  * Resolve a prompt string that may be a file reference.
@@ -148,6 +149,29 @@ async function main() {
     const tui = new MeowTUI(agent);
     tui.start();
     return;
+  }
+
+  // AI-Native Phase 2.4: Monitoring agent mode
+  if (process.argv.includes("--monitor")) {
+    const { MonitoringAgent } = await import("./agent/monitor");
+    const monitor = new MonitoringAgent(db as MeowDatabase);
+    const report = await monitor.run();
+    console.log("\n📊 Monitoring Report:");
+    console.log(`  Clusters found:  ${report.clusters.length}`);
+    console.log(`  Patches generated: ${report.patches.length}`);
+    console.log(`  Deployed:        ${report.deploys.length}`);
+    console.log(`  Flagged for review: ${report.flaggedForReview.length}`);
+    await kernel.shutdown();
+    process.exit(0);
+  }
+
+  // AI-Native Phase 3.1: Knowledge synthesis mode
+  if (process.argv.includes("--synthesize")) {
+    const { KnowledgeSynthesizer } = await import("./agent/synthesizer");
+    const synthesizer = new KnowledgeSynthesizer(db as MeowDatabase);
+    await synthesizer.synthesize();
+    await kernel.shutdown();
+    process.exit(0);
   }
 
   // Non-interactive command mode (legacy)
