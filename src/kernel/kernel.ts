@@ -239,8 +239,9 @@ export class MeowKernel {
 
     const newPid = spawn(spawnCmd, spawnArgs, {
       cwd: process.cwd(),
-      detached: true,
-      stdio: 'inherit'
+      detached: false,
+      shell: true,
+      stdio: 'pipe'
     }).pid;
 
     // Register new mission

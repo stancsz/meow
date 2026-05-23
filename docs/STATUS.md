@@ -91,6 +91,7 @@ Don't read these proactively. Look them up when the task requires it.
 | Self-improvement plan (all phases done) | `docs/rfc/ai-native-meow-plan.md` |
 | Token efficiency implementation | `docs/rfc/token-optimization.md` |
 | npm publishing guide | `docs/rfc/publish-guide.md` |
+| Agentic SDLC gap analysis (vs mid-2026 state of the art) | `docs/rfc/agentic-sdlc-gap-analysis.md` |
 
 ---
 

@@ -400,8 +400,8 @@ export class MeowDatabase implements DatabasePort {
               ).run(action.content, JSON.stringify(action.metadata));
               const lastId = result.lastInsertRowid;
               this.db.prepare(
-                "INSERT INTO vec_memory (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)"
-              ).run(lastId, new Float32Array(action.embedding));
+                "SELECT vec0_insert('vec_memory', ?)"
+              ).run(new Float32Array(action.embedding));
 
               // Symmetrically update the HNSW graph
               this.hnsw.insert(Number(lastId), Array.from(action.embedding));

@@ -101,8 +101,8 @@ export class AgenticMemory {
       const rowId = rowResult?.lastInsertRowid;
       if (rowId && embedding.length > 1) {
         await this.db.execute(
-          `INSERT INTO vec_memory (rowid, embedding) VALUES (?, ?)`,
-          [rowId, new Float32Array(embedding)]
+          `SELECT vec0_insert('vec_memory', ?)`,
+          [new Float32Array(embedding)]
         );
       }
     } catch (e) {
