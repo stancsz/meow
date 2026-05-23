@@ -340,29 +340,50 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
     // Run claude -p to fix MEOW
     try {
-      const { execSync } = await import("child_process");
-      const encoded = Buffer.from(fixPrompt).toString("base64");
-      const result = execSync(
-        `claude -p "$(echo '$encoded' | base64 -d)" --dangerously-skip-permissions --permission-mode bypassPermissions`,
-        {
+      const { spawn } = await import("child_process");
+      // Use single-command-string spawn (not array args) — array args cause
+      // ETIMEDOUT with shell:true for unknown Node.js/Windows reason.
+      // Single string works correctly on both Windows and Unix.
+      const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const fullCmd = `${claudeBin} -p "${fixPrompt.replace(/"/g, '\\"')}" --dangerously-skip-permissions --permission-mode bypassPermissions`;
+
+      return await new Promise<string>((resolve) => {
+        const child = spawn(fullCmd, [], {
           cwd: meowDir,
-          encoding: "utf-8",
-          timeout: 180,
+          shell: true,
           env: { ...process.env, CI: "true" },
-        }
-      );
-      
-      // Record the repair in kernel state so future runs know MEOW was patched
-      this.kernel.push({
-        type: "SET_STATE",
-        key: `meow:repair:${Date.now()}`,
-        value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError }
+        });
+
+        let stdout = "";
+        let stderr = "";
+        child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
+        child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+        const timer = setTimeout(() => {
+          child.kill();
+          resolve(`❌ claude -p timed out after 180s\nSTDERR: ${stderr.substring(0, 500)}`);
+        }, 180_000);
+
+        child.on("close", (code: number | null) => {
+          clearTimeout(timer);
+          if (code === 0 || stdout.includes("SEARCH")) {
+            this.kernel.push({
+              type: "SET_STATE",
+              key: `meow:repair:${Date.now()}`,
+              value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError },
+            });
+            this.suggestUpstreamContribution(stdout).catch(() => {});
+            resolve(stdout);
+          } else {
+            resolve(`❌ claude -p exited ${code}\nSTDERR: ${stderr.substring(0, 500)}\nSTDOUT: ${stdout.substring(0, 500)}`);
+          }
+        });
+
+        child.on("error", (err: Error) => {
+          clearTimeout(timer);
+          resolve(`❌ claude -p spawn error: ${err.message}`);
+        });
       });
-
-      // If claude -p produced patches, suggest contributing to stancsz/meow
-      await this.suggestUpstreamContribution(result);
-
-      return result;
     } catch (err: any) {
       return `❌ claude -p self-repair failed: ${err.message}\nCheck MEOW manually at ${meowDir}`;
     }
@@ -1227,6 +1248,13 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
         result,
         failureReason: failureReason ?? null,
       });
+
+      // Phase 3.2: Update skill effectiveness with task result
+      if (meowDb && typeof meowDb.updateSkillEffectivenessByRunId === "function") {
+        try {
+          meowDb.updateSkillEffectivenessByRunId(this.runId, result);
+        } catch {}
+      }
     } catch (err) {
       // Non-fatal — task outcome tracking must never break the agent
       console.warn("[Agent] recordTaskOutcome failed:", err);

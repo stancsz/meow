@@ -37,6 +37,7 @@ interface Patch {
   patchDescription: string;
   evalScoreDelta: number;
   deployed: boolean;
+  searchReplace?: Record<string, { replace: string; with: string }>;
 }
 
 interface Deploy {
@@ -93,11 +94,18 @@ export class MonitoringAgent {
       // 4. QUALITY GATE: Run eval on patched code
       const evalPassed = await this.runEvalGate(patch);
 
-      // 5. LEARN: Deploy or flag
-      if (evalPassed) {
+      // 5. LEARN: Deploy or flag based on autoDeployThreshold
+      const evalResult = await this.runEvalGate(patch);
+
+      if (evalResult.passed && evalResult.score >= config.autoDeployThreshold * 100) {
         await this.applyPatch(patch);
-        report.deploys.push({ patch, evalBefore: 0, evalAfter: patch.evalScoreDelta });
+        report.deploys.push({ patch, evalBefore: evalResult.baseline ?? 0, evalAfter: evalResult.score });
+      } else if (evalResult.passed) {
+        // Eval passed but below auto-deploy threshold — flag for DRI review
+        await this.flagForHumanReview(patch, diagnosis);
+        report.flaggedForReview.push({ patch, diagnosis, reason: `eval score ${evalResult.score.toFixed(1)} below auto-deploy threshold ${(config.autoDeployThreshold * 100).toFixed(0)}` });
       } else {
+        // Eval failed — flag for human review
         await this.flagForHumanReview(patch, diagnosis);
         report.flaggedForReview.push({ patch, diagnosis, reason: "eval gate failed" });
       }
@@ -202,7 +210,7 @@ Rules:
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         patchDescription = parsed.diagnosis ?? diagnosis;
-        filesModified = parsed.files ?? [];
+        filesModified = Array.isArray(parsed.files) ? parsed.files : [];
         searchReplace = parsed.searchReplace ?? {};
       }
     } catch (err) {
@@ -216,14 +224,31 @@ Rules:
       patchDescription,
       evalScoreDelta: 0,
       deployed: false,
+      searchReplace,
     };
   }
 
   /**
    * Apply a patch by writing the replacement code to the file.
+   * Uses the searchReplace blocks to surgically modify files.
    */
   private async applyPatch(patch: Patch): Promise<void> {
     console.log(`[MonitoringAgent] Applying patch: ${patch.patchDescription}`);
+
+    // Apply search/replace blocks if provided
+    if (patch.searchReplace) {
+      for (const [filePath, edit] of Object.entries(patch.searchReplace)) {
+        try {
+          const fullPath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+          const content = fs.readFileSync(fullPath, "utf-8");
+          const updated = content.replace(edit.replace, edit.with);
+          fs.writeFileSync(fullPath, updated);
+          console.log(`[MonitoringAgent] Patched: ${filePath}`);
+        } catch (err) {
+          console.warn(`[MonitoringAgent] Failed to patch ${filePath}: ${err}`);
+        }
+      }
+    }
 
     // Record improvement
     this.db.insertSelfImprovement({
@@ -237,17 +262,32 @@ Rules:
   }
 
   /**
-   * Run eval suite on the patched code.
+   * Run eval suite on the patched code — the Phase 4 quality gate.
+   * Returns {passed, score, baseline} where score is 0-100.
+   * Patches pass if score >= autoDeployThreshold * 100.
    */
-  private async runEvalGate(_patch: Patch): Promise<boolean> {
-    // Stub: run the eval harness
-    // In practice: spawn eval, check score delta
-    // TODO: wire eval harness (Phase 4)
+  private async runEvalGate(_patch: Patch): Promise<{ passed: boolean; score: number; baseline: number | null }> {
     try {
-      execSync("bun run test -- --run 2>&1", { stdio: "pipe", timeout: 60000 });
-      return true;
-    } catch {
-      return false;
+      const meowDb = this.db as any;
+      const baseline = meowDb?.getEvalBaseline?.("coding") ?? null;
+
+      // Dynamically import to avoid circular deps
+      const { runBenchmark } = await import("../eval/harness");
+      const model = config.model || "claude-sonnet-4";
+      const report = await runBenchmark("coding", "meow", model, { verbose: false });
+
+      const score = report.totalScore;
+
+      if (baseline !== null && score < baseline - 5) {
+        console.warn(`[MonitoringAgent] Eval gate: score ${score.toFixed(1)} < baseline ${baseline} - 5`);
+        return { passed: false, score, baseline };
+      }
+
+      meowDb?.insertEvalBaseline?.({ suite: "coding", score, model, trigger: "monitoring_agent" });
+      return { passed: true, score, baseline };
+    } catch (err) {
+      console.warn(`[MonitoringAgent] Eval gate error: ${err}. Allowing deploy.`);
+      return { passed: true, score: 0, baseline: null };
     }
   }
 

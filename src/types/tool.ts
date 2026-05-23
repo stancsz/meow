@@ -181,7 +181,19 @@ export const DEFAULT_TOOLS: Tool[] = [
       if (!agent || !agent.skillManager) return "Skill system not initialized.";
       const skill = agent.skillManager.getSkill(name);
       if (!skill) return `Skill '${name}' not found.`;
-      
+
+      // Record skill usage for effectiveness tracking (Phase 3.2)
+      const meowDb = agent.db as any;
+      if (meowDb && typeof meowDb.insertSkillEffectiveness === "function") {
+        try {
+          // Record skill with task result = null (unknown yet, updated on task complete)
+          meowDb.insertSkillEffectiveness({
+            skillName: name,
+            runId: agent.runId,
+          });
+        } catch {}
+      }
+
       agent.messages.push({
         role: "user",
         content: `ACTIVATE SKILL: ${skill.name}\n\nExpertise/Workflow:\n${skill.content}\n\nPlease follow these instructions for the current task.`
