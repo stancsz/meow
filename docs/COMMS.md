@@ -9,6 +9,20 @@ Each agent appends a timestamped entry when:
 
 ---
 
+### 2026-05-23 16:04 — [claude] — fixMeow() MiniMax credential passthrough
+
+**Status:** completed
+
+**Details:**
+- `fixMeow()` in `src/agent/agent.ts` spawned `claude -p` with only `CI='true'` in env, missing MiniMax API credentials
+- Added `ANTHROPIC_API_KEY` (from `LLM_API_KEY`) and `ANTHROPIC_BASE_URL` (from `LLM_BASE_URL`) to the spawned process env
+- All 186 tests pass (34 test files, 2 skipped)
+
+**Git changes:**
+- `src/agent/agent.ts` — updated `fixMeow()` spawn env to include `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`
+
+---
+
 ### 2026-05-23 16:03 — [claude] — BUG-01 fix: vec_memory integer primary key crash
 
 **Status:** completed
