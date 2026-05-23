@@ -23,6 +23,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "dotenv": "^16.5.0",
     "@clack/prompts": "1.2.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@types/blessed": "^0.1.27",

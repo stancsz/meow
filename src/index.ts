@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // meow-swarm — Autonomous multi-agent coding harness
+import "dotenv/config";
 
 import * as fs from "fs";
 import * as path from "path";
