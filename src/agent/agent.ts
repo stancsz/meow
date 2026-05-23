@@ -341,11 +341,17 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
     // Run claude -p to fix MEOW
     try {
       const { spawn } = await import("child_process");
-      // Use single-command-string spawn (not array args) — array args cause
-      // ETIMEDOUT with shell:true for unknown Node.js/Windows reason.
-      // Single string works correctly on both Windows and Unix.
+      const { writeFile, rm } = await import("fs/promises");
+      const { tmpdir } = await import("os");
+      const path = await import("path");
+
+      // Write prompt to temp file — avoids stdin heredoc issues on Windows cmd.exe
+      // Use @file syntax so claude reads from file instead of stdin
+      const tmpFile = path.join(tmpdir(), `meow_fix_${Date.now()}.txt`);
+      await writeFile(tmpFile, fixPrompt, "utf-8");
+
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
-      const fullCmd = `${claudeBin} -p "${fixPrompt.replace(/"/g, '\\"')}" --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      const fullCmd = `${claudeBin} -p @${tmpFile} --dangerously-skip-permissions --permission-mode bypassPermissions`;
 
       return await new Promise<string>((resolve) => {
         const child = spawn(fullCmd, [], {
@@ -361,13 +367,13 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
         const timer = setTimeout(() => {
           child.kill();
+          rm(tmpFile).catch(() => {});
           resolve(`❌ claude -p timed out after 300s\nSTDERR: ${stderr.substring(0, 500)}`);
         }, 300_000);
 
-        child.stdin?.end();
-
-        child.on("close", (code: number | null) => {
+        child.on("close", async (code: number | null) => {
           clearTimeout(timer);
+          await rm(tmpFile).catch(() => {});
           if (code === 0 || stdout.includes("SEARCH")) {
             this.kernel.push({
               type: "SET_STATE",
@@ -381,8 +387,9 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           }
         });
 
-        child.on("error", (err: Error) => {
+        child.on("error", async (err: Error) => {
           clearTimeout(timer);
+          await rm(tmpFile).catch(() => {});
           resolve(`❌ claude -p spawn error: ${err.message}`);
         });
       });
