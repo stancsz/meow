@@ -17,3 +17,22 @@ Remaining open items from AI_NATIVE_MEOW_PLAN.md:
 - Phase 5.2: MEOW_AUTO_DEPLOY_THRESHOLD config
 - Phase 2.2: meow_self_improvements table already done
 - Phase 3.1: KnowledgeSynthesizer already exists (synthesizer.ts)
+
+2026-05-23 — working on: Phase 5.2 MEOW_AUTO_DEPLOY_THRESHOLD
+- Added autoDeployThreshold to MeowConfig in env.ts (default 0.80)
+- MonitoringAgent.runEvalGate() now returns {passed, score, baseline}
+- Deploy decision: score >= autoDeployThreshold*100 → auto-deploy, else flag for DRI
+- All tests pass (180 passed)
+- Committed: 8b63ef3 feat: Phase 5.2 — MEOW_AUTO_DEPLOY_THRESHOLD config + wired to MonitoringAgent
+
+ALL PHASES FROM AI_NATIVE_MEOW_PLAN.md NOW COMPLETE:
+- Phase 1.1+1.2+1.3: task_outcomes table, instrumentation, real embeddings ✅
+- Phase 2.1: MonitoringAgent with real diagnose/generatePatch/applyPatch ✅
+- Phase 2.2: meow_self_improvements table ✅
+- Phase 2.3: fixMeow() eval-gated with regression revert ✅
+- Phase 2.4: monitoring agent auto-trigger in kernel supervisor loop ✅
+- Phase 3.1: KnowledgeSynthesizer exists (synthesizer.ts) ✅
+- Phase 3.2: skill_effectiveness tracking with use_skill instrumentation ✅
+- Phase 4.1+4.2: eval auto-run post-repair, eval_baselines table ✅
+- Phase 5.1: TUI review panel (Ctrl+R) ✅
+- Phase 5.2: MEOW_AUTO_DEPLOY_THRESHOLD config ✅
