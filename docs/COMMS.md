@@ -9,6 +9,26 @@ Each agent appends a timestamped entry when:
 
 ---
 
+### 2026-05-23 16:27 — [claude] — BUG-03 fix: Remove dead browseros/qa routes from DelegationProtocol
+
+**Status:** completed
+
+**Details:**
+- `browseros` and `qa` delegate types had routing rules in `DelegationProtocol.ts` but no registered worker implementations exist
+- Searched codebase: `BrowserOSManager` is a connection manager, not a worker; no `qa` worker class found
+- Removed `browseros` routing for `.css/.scss/.html` files and `qa` routing for `.md/.json/.yml` files
+- `getDelegate()` and `determineSpecialistForTask()` now only return registered worker types: `claude`, `aider`, `opencode`
+- Updated `tests/orchestrator/DelegationProtocol.test.ts` to reflect new routing behavior (all files fall back to `claude`)
+- All 185 tests pass (34 test files, 2 skipped)
+
+**Git changes:**
+- `src/orchestrator/DelegationProtocol.ts` — removed browseros/qa routing, simplified to claude-only with future extension points
+- `tests/orchestrator/DelegationProtocol.test.ts` — updated test expectations
+- `docs/STATUS.md` — moved BUG-03 to Completed section
+- `docs/ROADMAP.md` — checked BUG-03 checkbox
+
+---
+
 ### 2026-05-23 16:04 — [claude] — fixMeow() MiniMax credential passthrough
 
 **Status:** completed

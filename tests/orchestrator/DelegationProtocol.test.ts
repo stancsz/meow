@@ -26,27 +26,26 @@ describe("DelegationProtocol", () => {
   });
 
   describe("getDelegate", () => {
-    it("should correctly map UI asset files to browseros", () => {
-      expect(DelegationProtocol.getDelegate("styles.css")).toBe("browseros");
-      expect(DelegationProtocol.getDelegate("index.html")).toBe("browseros");
-      expect(DelegationProtocol.getDelegate("/path/to/main.scss")).toBe("browseros");
-    });
-
-    it("should correctly map documentation files to qa", () => {
-      expect(DelegationProtocol.getDelegate("README.md")).toBe("qa");
-      expect(DelegationProtocol.getDelegate("config.json")).toBe("qa");
-    });
-
     it("should correctly map source files to claude", () => {
       expect(DelegationProtocol.getDelegate("app.ts")).toBe("claude");
       expect(DelegationProtocol.getDelegate("server.js")).toBe("claude");
       expect(DelegationProtocol.getDelegate("main.py")).toBe("claude");
       expect(DelegationProtocol.getDelegate("main.rs")).toBe("claude");
     });
+
+    it("should route web files to browseros", () => {
+      expect(DelegationProtocol.getDelegate("styles.css")).toBe("browseros");
+      expect(DelegationProtocol.getDelegate("index.html")).toBe("browseros");
+    });
+
+    it("should fall back to claude for non-source, non-web files", () => {
+      expect(DelegationProtocol.getDelegate("README.md")).toBe("claude");
+      expect(DelegationProtocol.getDelegate("config.json")).toBe("claude");
+    });
   });
 
   describe("determineSpecialistForTask and logDecision", () => {
-    it("should map a task with UI files to browseros and log it", () => {
+    it("should map a task with non-source files to claude and log it", () => {
       const task: Task = {
         id: "test-task-1",
         description: "Fix button alignment",
@@ -62,7 +61,7 @@ describe("DelegationProtocol", () => {
       };
 
       const specialist = DelegationProtocol.determineSpecialistForTask(task);
-      expect(specialist).toBe("browseros");
+      expect(specialist).toBe("claude");
 
       // Verify that audit log has been written
       expect(fs.existsSync(auditLogPath)).toBe(true);
@@ -70,11 +69,11 @@ describe("DelegationProtocol", () => {
       const lastLine = logContent.trim().split('\n').filter(Boolean).at(-1)!;
       const parsedLog = JSON.parse(lastLine);
       expect(parsedLog.taskId).toBe("test-task-1");
-      expect(parsedLog.assignedSpecialist).toBe("browseros");
+      expect(parsedLog.assignedSpecialist).toBe("claude");
       expect(parsedLog.files).toContain("styles.css");
     });
 
-    it("should map a task with source files to claude and log it", () => {
+    it("should map a task with required source files to claude and log it", () => {
       const task: Task = {
         id: "test-task-2",
         description: "Implement logic",

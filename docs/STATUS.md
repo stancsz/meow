@@ -30,10 +30,7 @@ Fix highest severity first. Mark done in `ROADMAP.md` and append to `loop-decisi
 
 ### Medium (fix after criticals)
 
-**BUG-03 — `DelegationProtocol` routes to unregistered workers**
-- `browseros` and `qa` delegate types silently fall back to `claude`
-- File: `src/orchestrator/DelegationProtocol.ts`
-- Fix: register workers or remove dead routes
+**BUG-03 — `DelegationProtocol` routes to unregistered workers** — completed
 
 **BUG-04 — `FedClient` infinite reconnect loop**
 - On permanent network failure, `triggerReconnection()` retries forever
@@ -73,6 +70,7 @@ Fix highest severity first. Mark done in `ROADMAP.md` and append to `loop-decisi
 | 5-phase AI-native self-improvement plan | `docs/rfc/ai-native-meow-plan.md` |
 | Quantum branding removed | committed |
 | Architectural gaps 1–6 (modes, validation, SQLite coord, delegation) | `docs/rfc/architectural-decisions.md` |
+| BUG-03: Removed `browseros` and `qa` dead routes from `DelegationProtocol` | `src/orchestrator/DelegationProtocol.ts` |
 
 ---
 
