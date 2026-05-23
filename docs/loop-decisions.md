@@ -53,10 +53,9 @@ ALL PHASES FROM AI_NATIVE_MEOW_PLAN.md NOW COMPLETE:
 - All tests pass (180 passed)
 - Committed: 7bbff2a feat: wire Harvester into EvolveHarness failure path — learning from failures
 
-2026-05-23 — meow -p blocked: API key INVALID (401 from both biosphere gateway AND Anthropic directly)
-- LLM_BASE_URL=https://api.anthropic.com + LLM_API_KEY from .env → "invalid x-api-key"
-- LLM_BASE_URL=biosphere-gateway + same key → "Invalid API key"
-- The .env API key is not a valid Anthropic key
-- meow cannot execute without a valid API key
+2026-05-23 — meow -p blocked: .env API key is invalid and dotenv-cli not loading correctly
+- LLM_BASE_URL=biosphere-gateway-242248356997.us-central1.run.app/anthropic + LLM_API_KEY=sk-ant-api03... → 401
+- dotenv-cli -e .env also fails with same error (env vars not passed through correctly)
+- The API key itself is invalid (rejected by both biosphere gateway and api.anthropic.com)
 - All 12 phases from AI_NATIVE_MEOW_PLAN.md remain complete
 - Awaiting user to set valid ANTHROPIC_API_KEY to resume autonomous loop
