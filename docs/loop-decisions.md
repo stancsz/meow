@@ -36,3 +36,12 @@ ALL PHASES FROM AI_NATIVE_MEOW_PLAN.md NOW COMPLETE:
 - Phase 4.1+4.2: eval auto-run post-repair, eval_baselines table ✅
 - Phase 5.1: TUI review panel (Ctrl+R) ✅
 - Phase 5.2: MEOW_AUTO_DEPLOY_THRESHOLD config ✅
+
+2026-05-23 — meow -p recommendation:
+  Hook Harvester into EvolveHarness failure path — failed verifications should
+  distill failure patterns into skills and retry. Currently Harvester only runs
+  on success, so failures never generate learned patterns. This is the "learning
+  mechanism" gap from AI_NATIVE_COMPANY_PLAN.md's five loop layers.
+  
+  NOTE: All AI_NATIVE_MEOW_PLAN.md phases are complete. This is a bonus
+  enhancement to further close the learning loop.
