@@ -84,6 +84,3 @@ A confirmed failure mode (see `docs/FEEDBACK.md`): `meow -p` tasks have complete
 
 **Rule: after any significant `write` or file creation, immediately read the file back and verify it is not a stub.** If the read returns fewer than 10 lines for a document that should have content, treat it as a failed write and retry. Do not commit until verified.
 
-### fixMeow timeout (KNOWN BUG — BUG-02)
-
-`fixMeow()` in `src/agent/agent.ts` uses `spawn(shell:true)` which times out at 300s when called from inside the meow agent context on Windows, even though the same command works standalone. See `docs/FEEDBACK.md` for root cause analysis. Until BUG-02 is fixed, self-repair via `claude -p` will silently time out. Do not assume fixMeow succeeded without checking its return value.

@@ -351,7 +351,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
       await writeFile(tmpFile, fixPrompt, "utf-8");
 
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
-      const fullCmd = `${claudeBin} -p @${tmpFile} --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      const fullCmd = `${claudeBin} -p @${tmpFile} --output-format=json --dangerously-skip-permissions --permission-mode bypassPermissions`;
 
       return await new Promise<string>((resolve) => {
         // Use exec() instead of spawn() for reliable stdout collection on Windows.
@@ -378,13 +378,23 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
           // Require meaningful output on success — empty stdout with code 0 is a silent failure
           if (stdout.trim().length > 0) {
+            // Parse JSON output from --output-format=json
+            let extractedContent = stdout;
+            try {
+              const parsed = JSON.parse(stdout);
+              // Extract content from common JSON formats: {"content": "..."} or {"type":"text","content":"..."}
+              extractedContent = parsed.content || parsed.message || parsed.text || JSON.stringify(parsed, null, 2);
+            } catch {
+              // Not JSON — use stdout as-is (plain text response)
+            }
+
             this.kernel.push({
               type: "SET_STATE",
               key: `meow:repair:${Date.now()}`,
               value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError },
             });
-            this.suggestUpstreamContribution(stdout).catch(() => {});
-            resolve(stdout);
+            this.suggestUpstreamContribution(extractedContent).catch(() => {});
+            resolve(extractedContent);
           } else {
             // Silent failure: process exited 0 but produced no output — this is the BUG-02 symptom
             resolve(`❌ claude -p produced no output (exit code 0). The fixMeow exec on Windows did not collect stdout properly.\nPossible fixes:\n1. Pass --output-format=json to claude to ensure non-empty output\n2. Reduce prompt complexity to speed up response\nSTDOUT: "${stdout}"\nSTDERR: ${stderr.substring(0, 500)}`);
