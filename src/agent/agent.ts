@@ -341,6 +341,12 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
     // Run claude -p to fix MEOW
     try {
       const { execSync } = await import("child_process");
+
+      // Get baseline eval score BEFORE the repair (Phase 2.3)
+      const meowDb = this.db as MeowDatabase;
+      const baselineScore = meowDb?.getEvalBaseline("coding") ?? null;
+      const baselineRunId = `fixmeow_${Date.now()}`;
+
       const encoded = Buffer.from(fixPrompt).toString("base64");
       const result = execSync(
         `claude -p "$(echo '$encoded' | base64 -d)" --dangerously-skip-permissions --permission-mode bypassPermissions`,
@@ -351,13 +357,51 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           env: { ...process.env, CI: "true" },
         }
       );
-      
+
+      // Phase 4.1: Quality gate — run eval on patched code before deploying
+      const hasUncommitted = execSync("git status --porcelain", { cwd: meowDir, encoding: "utf-8" }).trim().length > 0
+        && !execSync("git status --porcelain", { cwd: meowDir, encoding: "utf-8" }).trim().startsWith("??");
+      let evalScore: number | null = null;
+
+      if (hasUncommitted && meowDb) {
+        try {
+          const { runBenchmark } = await import("../eval/harness");
+          const model = config.model || "claude-sonnet-4";
+          const report = await runBenchmark("coding", "meow", model, { verbose: false });
+          evalScore = report.totalScore;
+          meowDb.insertEvalBaseline({ suite: "coding", score: evalScore, model, trigger: "fixMeow", runId: baselineRunId });
+
+          if (baselineScore !== null && evalScore < baselineScore - 5) {
+            // Revert if score regressed more than 5 points
+            execSync("git stash", { cwd: meowDir, encoding: "utf-8" });
+            this.kernel.warn(`Self-repair reverted: eval score dropped ${(evalScore - baselineScore).toFixed(1)} points`, "FIXMEOW");
+            return `${result}\n\n⚠️ Self-repair produced a patch but eval regressed (${evalScore} < ${baselineScore} - 5). Patch has been reverted.`;
+          }
+        } catch (evalErr) {
+          this.kernel.warn(`Eval gate failed: ${(evalErr as Error).message}`, "FIXMEOW");
+        }
+      }
+
       // Record the repair in kernel state so future runs know MEOW was patched
       this.kernel.push({
         type: "SET_STATE",
         key: `meow:repair:${Date.now()}`,
         value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError }
       });
+
+      // Record to meow_self_improvements for the monitoring agent
+      if (meowDb) {
+        const diff = hasUncommitted ? execSync("git diff --stat", { cwd: meowDir, encoding: "utf-8" }).toString() : "";
+        const patchedFiles = diff.match(/src\/\S+/g) || [];
+        meowDb.insertSelfImprovement({
+          triggerType: "fixMeow",
+          failureCluster: ctx.lastError ?? "unknown",
+          filesPatched: patchedFiles,
+          evalBefore: baselineScore ?? undefined,
+          evalAfter: evalScore ?? undefined,
+          deployed: evalScore === null || baselineScore === null || evalScore >= baselineScore - 5,
+        });
+      }
 
       // If claude -p produced patches, suggest contributing to stancsz/meow
       await this.suggestUpstreamContribution(result);

@@ -251,6 +251,16 @@ export class MeowDatabase implements DatabasePort {
         human_reviewed  INTEGER DEFAULT 0,
         created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS meow_eval_baselines (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        suite      TEXT,
+        score      INTEGER,
+        model      TEXT,
+        trigger    TEXT,
+        run_id     TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   }
 
@@ -584,5 +594,25 @@ export class MeowDatabase implements DatabasePort {
       ? `SELECT * FROM meow_self_improvements WHERE deployed = ? ORDER BY created_at DESC`
       : `SELECT * FROM meow_self_improvements ORDER BY created_at DESC`;
     return this.db.prepare(sql).all(...(deployed !== undefined ? [deployed ? 1 : 0] : [])) as any;
+  }
+
+  insertEvalBaseline(opts: { suite: string; score: number; model: string; trigger: string; runId?: string }): void {
+    this.db.prepare(`
+      INSERT INTO meow_eval_baselines (suite, score, model, trigger, run_id)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(opts.suite, opts.score, opts.model, opts.trigger, opts.runId ?? null);
+  }
+
+  getEvalBaseline(suite: string): number | null {
+    const row = this.db.prepare(
+      `SELECT score FROM meow_eval_baselines WHERE suite = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(suite) as { score: number } | undefined;
+    return row ? row.score : null;
+  }
+
+  getRecentEvalBaselines(suite: string, limit = 10): Array<{ score: number; trigger: string; created_at: string }> {
+    return this.db.prepare(
+      `SELECT score, trigger, created_at FROM meow_eval_baselines WHERE suite = ? ORDER BY created_at DESC LIMIT ?`
+    ).all(suite, limit) as any;
   }
 }
