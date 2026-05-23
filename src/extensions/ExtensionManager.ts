@@ -49,8 +49,15 @@ export class ExtensionManager {
             path: file
           });
         }
-      } catch (e) {
-        console.error(`Failed to discover extension at ${file}:`, e);
+      } catch (e: any) {
+        // Suppress ESM resolution errors during discovery — these are expected when
+        // running from TypeScript source (Node ESM can't resolve .ts extension-less
+        // imports). Extensions work correctly via the built dist/ output.
+        if (e.code === "ERR_MODULE_NOT_FOUND" || e.message?.includes("Cannot find module")) {
+          // Skip — extension will be loaded from dist/ built code instead
+        } else {
+          console.error(`Failed to discover extension at ${file}:`, e);
+        }
       }
     }
     this.isInitialized = true;
