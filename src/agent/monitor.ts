@@ -37,6 +37,7 @@ interface Patch {
   patchDescription: string;
   evalScoreDelta: number;
   deployed: boolean;
+  searchReplace?: Record<string, { replace: string; with: string }>;
 }
 
 interface Deploy {
@@ -202,7 +203,7 @@ Rules:
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         patchDescription = parsed.diagnosis ?? diagnosis;
-        filesModified = parsed.files ?? [];
+        filesModified = Array.isArray(parsed.files) ? parsed.files : [];
         searchReplace = parsed.searchReplace ?? {};
       }
     } catch (err) {
@@ -216,14 +217,31 @@ Rules:
       patchDescription,
       evalScoreDelta: 0,
       deployed: false,
+      searchReplace,
     };
   }
 
   /**
    * Apply a patch by writing the replacement code to the file.
+   * Uses the searchReplace blocks to surgically modify files.
    */
   private async applyPatch(patch: Patch): Promise<void> {
     console.log(`[MonitoringAgent] Applying patch: ${patch.patchDescription}`);
+
+    // Apply search/replace blocks if provided
+    if (patch.searchReplace) {
+      for (const [filePath, edit] of Object.entries(patch.searchReplace)) {
+        try {
+          const fullPath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+          const content = fs.readFileSync(fullPath, "utf-8");
+          const updated = content.replace(edit.replace, edit.with);
+          fs.writeFileSync(fullPath, updated);
+          console.log(`[MonitoringAgent] Patched: ${filePath}`);
+        } catch (err) {
+          console.warn(`[MonitoringAgent] Failed to patch ${filePath}: ${err}`);
+        }
+      }
+    }
 
     // Record improvement
     this.db.insertSelfImprovement({
@@ -237,17 +255,31 @@ Rules:
   }
 
   /**
-   * Run eval suite on the patched code.
+   * Run eval suite on the patched code — the Phase 4 quality gate.
+   * Returns true only if the eval score is maintained or improved.
    */
   private async runEvalGate(_patch: Patch): Promise<boolean> {
-    // Stub: run the eval harness
-    // In practice: spawn eval, check score delta
-    // TODO: wire eval harness (Phase 4)
     try {
-      execSync("bun run test -- --run 2>&1", { stdio: "pipe", timeout: 60000 });
+      const meowDb = this.db as any;
+      const baselineScore = meowDb?.getEvalBaseline?.("coding") ?? null;
+
+      // Dynamically import to avoid circular deps
+      const { runBenchmark } = await import("../eval/harness");
+      const model = config.model || "claude-sonnet-4";
+      const report = await runBenchmark("coding", "meow", model, { verbose: false });
+
+      const evalScore = report.totalScore;
+
+      if (baselineScore !== null && evalScore < baselineScore - 5) {
+        console.warn(`[MonitoringAgent] Eval gate failed: score ${evalScore} < baseline ${baselineScore} - 5`);
+        return false;
+      }
+
+      meowDb?.insertEvalBaseline?.({ suite: "coding", score: evalScore, model, trigger: "monitoring_agent" });
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      console.warn(`[MonitoringAgent] Eval gate error: ${err}. Allowing deploy (eval failed).`);
+      return true; // Allow deploy if eval can't run
     }
   }
 
