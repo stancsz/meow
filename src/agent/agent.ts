@@ -353,7 +353,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
         {
           cwd: meowDir,
           encoding: "utf-8",
-          timeout: 180,
+          timeout: 180_000, // 3 minutes in ms (was 180ms — always timed out)
           env: { ...process.env, CI: "true" },
         }
       );

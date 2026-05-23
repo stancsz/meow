@@ -268,4 +268,31 @@ export class FileCoordinator {
 
     return stale;
   }
+
+  private staleLockTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * Start periodic cleanup of stale locks.
+   * Call this when the coordinator enters a production lifecycle (e.g., when ParallelExecutor starts).
+   * The cleanup runs every `intervalMs` milliseconds and removes locks older than `maxAgeMs`.
+   */
+  public startStaleLockRecovery(intervalMs: number = 30000, maxAgeMs: number = 60000): void {
+    if (this.staleLockTimer) return; // Already running
+    this.staleLockTimer = setInterval(() => {
+      const stale = this.releaseStaleLocks(maxAgeMs);
+      if (stale.length > 0) {
+        console.log(`[FileCoordinator] Recovered ${stale.length} stale lock(s): ${stale.join(", ")}`);
+      }
+    }, intervalMs);
+  }
+
+  /**
+   * Stop the periodic stale lock cleanup timer.
+   */
+  public stopStaleLockRecovery(): void {
+    if (this.staleLockTimer) {
+      clearInterval(this.staleLockTimer);
+      this.staleLockTimer = null;
+    }
+  }
 }

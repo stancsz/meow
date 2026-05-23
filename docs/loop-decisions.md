@@ -12,3 +12,11 @@
   Phase 2.1 (MonitoringAgent scheduling) — need to wire monitoring agent to run on a cron
   trigger or after N task completions. Currently the agent exists but isn't triggered
   automatically. This blocks Loop 2 from running in production.
+
+2026-05-23 — working on: Phase 2.4 monitoring agent auto-trigger
+- Added triggerMonitoringAgentIfNeeded() to kernel.ts main loop
+- Orchestrator calls kernel.onTaskComplete() after task completion
+- fixMeow() calls kernel.triggerMonitorNextCycle() to force monitoring run
+- Monitoring runs every 30 min or after 50 task completions
+- All tests pass (180 passed)
+- Committed: e7bfd73 feat: Phase 2.4 — monitoring agent auto-trigger in kernel supervisor loop

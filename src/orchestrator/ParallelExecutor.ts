@@ -55,132 +55,141 @@ export class ParallelExecutor {
   }
 
   async run(): Promise<Map<string, TaskResult>> {
-    return new Promise((resolve) => {
-      this.runResolve = resolve;
-      this.runResults = new Map<string, TaskResult>();
-      this.activeTaskCount = 0;
+    // Stop any previous recovery timer before starting a new one
+    this.coordinator.stopStaleLockRecovery();
+    // Start stale lock recovery for the lifetime of this executor run
+    this.coordinator.startStaleLockRecovery(30000, 60000);
 
-      const checkDone = () => {
-        if (this.activeTaskCount > 0) return;
-        if (this.queue.canAcceptWork()) return;
-        this.runResolve?.(this.runResults!);
-      };
+    try {
+      return await new Promise<Map<string, TaskResult>>((resolve, reject) => {
+        this.runResolve = resolve;
+        this.runResults = new Map<string, TaskResult>();
+        this.activeTaskCount = 0;
 
-      const startTask = (task: Task, worker: WorkerConfig) => {
-        this.backoffCounts.delete(task.id);
-        this.activeTaskCount++;
-        const timeout = setTimeout(() => {
-          this.handleTaskTimeout(task.id);
-        }, task.timeoutMs || this.executorConfig.taskTimeoutMs);
+        const checkDone = () => {
+          if (this.activeTaskCount > 0) return;
+          if (this.queue.canAcceptWork()) return;
+          this.runResolve?.(this.runResults!);
+        };
 
-        this.runningTasks.set(task.id, { task, workerId: worker.workerId, timeout });
-        this.taskEvents?.onStatusChange?.(task.id, 'running');
+        const startTask = (task: Task, worker: WorkerConfig) => {
+          this.backoffCounts.delete(task.id);
+          this.activeTaskCount++;
+          const timeout = setTimeout(() => {
+            this.handleTaskTimeout(task.id);
+          }, task.timeoutMs || this.executorConfig.taskTimeoutMs);
 
-        this.executeTask(task, worker).then((result: TaskResult) => {
-          if (!this.runningTasks.has(task.id)) return; // Already timed out
-          
-          this.runResults?.set(task.id, result);
-          clearTimeout(timeout);
-          this.runningTasks.delete(task.id);
-          this.taskEvents?.onStatusChange?.(task.id, result.success ? 'completed' : 'failed');
-          this.taskEvents?.onResult?.(task.id, result);
-          this.activeTaskCount--;
-          dispatch();
-          checkDone();
-        }).catch((error: any) => {
-          if (!this.runningTasks.has(task.id)) return; // Already timed out
+          this.runningTasks.set(task.id, { task, workerId: worker.workerId, timeout });
+          this.taskEvents?.onStatusChange?.(task.id, 'running');
 
-          const failedResult: TaskResult = {
-            taskId: task.id,
-            success: false,
-            error: error.message || String(error),
-          };
-          this.runResults?.set(task.id, failedResult);
-          clearTimeout(timeout);
-          this.runningTasks.delete(task.id);
-          this.taskEvents?.onStatusChange?.(task.id, 'failed');
-          this.taskEvents?.onResult?.(task.id, failedResult);
-          this.activeTaskCount--;
-          dispatch();
-          checkDone();
-        });
-      };
+          this.executeTask(task, worker).then((result: TaskResult) => {
+            if (!this.runningTasks.has(task.id)) return; // Already timed out
 
-      const dispatch = () => {
-        // Track if we're making progress to prevent spin loops
-        let noWorkerAvailableCount = 0;
+            this.runResults?.set(task.id, result);
+            clearTimeout(timeout);
+            this.runningTasks.delete(task.id);
+            this.taskEvents?.onStatusChange?.(task.id, result.success ? 'completed' : 'failed');
+            this.taskEvents?.onResult?.(task.id, result);
+            this.activeTaskCount--;
+            dispatch();
+            checkDone();
+          }).catch((error: any) => {
+            if (!this.runningTasks.has(task.id)) return; // Already timed out
 
-        while (this.queue.canAcceptWork()) {
-          const task = this.queue.dequeue();
-          if (!task) break;
+            const failedResult: TaskResult = {
+              taskId: task.id,
+              success: false,
+              error: error.message || String(error),
+            };
+            this.runResults?.set(task.id, failedResult);
+            clearTimeout(timeout);
+            this.runningTasks.delete(task.id);
+            this.taskEvents?.onStatusChange?.(task.id, 'failed');
+            this.taskEvents?.onResult?.(task.id, failedResult);
+            this.activeTaskCount--;
+            dispatch();
+            checkDone();
+          });
+        };
 
-          // Convert required/produced files to FileArtifact format for lock checking
-          const taskArtifacts: any[] = [];
-          if (task.requiredFiles) {
-            for (const path of task.requiredFiles) {
-              taskArtifacts.push({ path, operation: 'update' });
+        const dispatch = () => {
+          // Track if we're making progress to prevent spin loops
+          let noWorkerAvailableCount = 0;
+
+          while (this.queue.canAcceptWork()) {
+            const task = this.queue.dequeue();
+            if (!task) break;
+
+            // Convert required/produced files to FileArtifact format for lock checking
+            const taskArtifacts: any[] = [];
+            if (task.requiredFiles) {
+              for (const path of task.requiredFiles) {
+                taskArtifacts.push({ path, operation: 'update' });
+              }
+            }
+            if (task.producedFiles) {
+              for (const artifact of task.producedFiles) {
+                taskArtifacts.push(artifact);
+              }
+            }
+
+            // Check if there's any conflicting active lock
+            const conflicts = this.coordinator.wouldConflict(task.id, taskArtifacts);
+            if (conflicts.length > 0) {
+              // Trigger conflict event
+              this.taskEvents?.onFileConflict?.(task.id, conflicts);
+
+              const currentBackoff = this.backoffCounts.get(task.id) || 0;
+              const delay = Math.min(50 * Math.pow(2, currentBackoff), 1000);
+              this.backoffCounts.set(task.id, currentBackoff + 1);
+
+              // Re-enqueue the task to let others proceed
+              task.status = 'pending';
+              (this.queue as any).running.delete(task.id);
+              this.queue.enqueue(task);
+
+              // Schedule a dispatch check after the backoff delay
+              setTimeout(() => {
+                dispatch();
+              }, delay);
+
+              break;
+            }
+
+            const worker = this.selectWorker(task);
+            if (!worker) {
+              // No worker can accept this task - re-enqueue and stop this dispatch round
+              task.status = 'pending';
+              (this.queue as any).running.delete(task.id);
+              this.queue.enqueue(task);
+              noWorkerAvailableCount++;
+              // If multiple tasks in a row can't find workers, stop dispatching
+              // to avoid spinning when all workers are at capacity
+              if (noWorkerAvailableCount >= 2) break;
+              continue;
+            }
+
+            noWorkerAvailableCount = 0; // Reset on successful dispatch
+
+            // Acquire the lock atomically before starting
+            this.coordinator.requestAccess(task.id, taskArtifacts);
+
+            startTask(task, worker);
+
+            // If we just started a task, there may be more work to do
+            // But don't hog the event loop - let other async operations proceed
+            if (this.activeTaskCount >= this.executorConfig.maxWorkers) {
+              break;
             }
           }
-          if (task.producedFiles) {
-            for (const artifact of task.producedFiles) {
-              taskArtifacts.push(artifact);
-            }
-          }
+        };
 
-          // Check if there's any conflicting active lock
-          const conflicts = this.coordinator.wouldConflict(task.id, taskArtifacts);
-          if (conflicts.length > 0) {
-            // Trigger conflict event
-            this.taskEvents?.onFileConflict?.(task.id, conflicts);
-
-            const currentBackoff = this.backoffCounts.get(task.id) || 0;
-            const delay = Math.min(50 * Math.pow(2, currentBackoff), 1000);
-            this.backoffCounts.set(task.id, currentBackoff + 1);
-
-            // Re-enqueue the task to let others proceed
-            task.status = 'pending';
-            (this.queue as any).running.delete(task.id);
-            this.queue.enqueue(task);
-
-            // Schedule a dispatch check after the backoff delay
-            setTimeout(() => {
-              dispatch();
-            }, delay);
-
-            break;
-          }
-
-          const worker = this.selectWorker(task);
-          if (!worker) {
-            // No worker can accept this task - re-enqueue and stop this dispatch round
-            task.status = 'pending';
-            (this.queue as any).running.delete(task.id);
-            this.queue.enqueue(task);
-            noWorkerAvailableCount++;
-            // If multiple tasks in a row can't find workers, stop dispatching
-            // to avoid spinning when all workers are at capacity
-            if (noWorkerAvailableCount >= 2) break;
-            continue;
-          }
-
-          noWorkerAvailableCount = 0; // Reset on successful dispatch
-
-          // Acquire the lock atomically before starting
-          this.coordinator.requestAccess(task.id, taskArtifacts);
-
-          startTask(task, worker);
-
-          // If we just started a task, there may be more work to do
-          // But don't hog the event loop - let other async operations proceed
-          if (this.activeTaskCount >= this.executorConfig.maxWorkers) {
-            break;
-          }
-        }
-      };
-
-      dispatch();
-      checkDone();
-    });
+        dispatch();
+        checkDone();
+      });
+    } finally {
+      this.coordinator.stopStaleLockRecovery();
+    }
   }
 
   private checkDone(): void {
