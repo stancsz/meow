@@ -12,6 +12,6 @@ export default defineConfig({
   sourcemap: false,
   minify: false,
   clean: true,
-  external: ['bun'],
+  external: ['bun', 'cross-spawn', 'child_process'],
   noExternal: ['@modelcontextprotocol/sdk'],
 })
