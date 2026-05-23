@@ -90,15 +90,19 @@ export class AgenticMemory {
    */
   public async store(content: string, metadata: Record<string, any>, embedding: number[]): Promise<void> {
     try {
-      await this.db.execute(
+      if (!embedding || embedding.length === 0) {
+        this.kernel.log?.("Memory store skipped: empty embedding", "warn");
+        return;
+      }
+      const rowResult = await this.db.execute(
         `INSERT INTO vector_memory_data (content, metadata) VALUES (?, ?)`,
         [content, JSON.stringify(metadata)]
       );
-      const rowId = await this.db.query<{id: number}>('SELECT last_insert_rowid() as id');
-      if (rowId?.[0]?.id) {
+      const rowId = rowResult?.lastInsertRowid;
+      if (rowId && embedding.length > 1) {
         await this.db.execute(
           `INSERT INTO vec_memory (rowid, embedding) VALUES (?, ?)`,
-          [rowId[0].id, new Float32Array(embedding)]
+          [rowId, new Float32Array(embedding)]
         );
       }
     } catch (e) {
