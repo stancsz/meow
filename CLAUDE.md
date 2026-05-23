@@ -1,6 +1,7 @@
 # meow-swarm
 
 > **IMPORTANT**: Before working in this project, read `.meow/skills/meow-setup/SKILL.md` and remember how to use meow-swarm.
+> **For autonomous agent loops**: read `docs/loop.md` — it is the operating procedure for extended unattended runs.
 
 ## meow -p (the primary interface)
 
@@ -40,7 +41,20 @@ meow-swarm is a **background daemon-style coding harness**. Think `nohup ./worke
 ## Requirements
 
 - Node.js 18+ (Bun NOT supported — better-sqlite3 native addons require Node.js)
-- `ANTHROPIC_API_KEY` env var
+- LLM provider env vars — **preferred: MiniMax** (falls back to Anthropic):
+
+```bash
+# Preferred — MiniMax (set in system env)
+export LLM_API_KEY=$MINIMAX_API_KEY
+export LLM_BASE_URL=$MINIMAX_BASE_URL
+export MEOW_MODEL="MiniMax-M1"
+
+# Fallback — Anthropic
+export LLM_API_KEY=$ANTHROPIC_API_KEY
+# LLM_BASE_URL defaults to https://api.anthropic.com
+```
+
+`src/config/env.ts` reads `LLM_API_KEY` and `LLM_BASE_URL` first, then falls back to `ANTHROPIC_API_KEY`. Never hardcode keys.
 
 ## Architecture
 
@@ -49,4 +63,13 @@ meow-swarm is a **background daemon-style coding harness**. Think `nohup ./worke
 - `src/cli/tui.ts` — 4-panel blessed TUI
 - `src/orchestrator/Orchestrator.ts` — L1 task orchestration
 - `src/kernel/kernel.ts` — Heartbeat loop, watchdog, respawn
-- `src/db/database.ts` — SQLite + sqlite-vec for task persistence and checkpointing
+- `src/kernel/database.ts` — SQLite + sqlite-vec for task persistence and checkpointing
+
+## Agent loop
+
+to run meow as a continuous self-improving loop, follow `docs/loop.md`. the loop:
+1. checks env vars (MiniMax first)
+2. picks the highest-leverage open item from `docs/ARCHITECTURAL_GAP_ANALYSIS.md`
+3. runs live tests, does the work, commits
+4. uses `meow -p` to find the next item
+5. never stops — decisions are logged in `docs/loop-decisions.md`

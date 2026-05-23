@@ -217,6 +217,41 @@ export class MeowDatabase implements DatabasePort {
       CREATE INDEX IF NOT EXISTS idx_bench_run_id ON benchmark_results(run_id);
       CREATE INDEX IF NOT EXISTS idx_bench_suite ON benchmark_results(suite);
     `);
+
+    // AI-Native Phase 1.1: task_outcomes — structured fingerprint for every task
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS task_outcomes (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id          TEXT NOT NULL,
+        task_text       TEXT NOT NULL,
+        result          TEXT,
+        quality_score   INTEGER,
+        failure_reason  TEXT,
+        tools_called    TEXT,
+        skills_used     TEXT,
+        tokens_in       INTEGER,
+        tokens_out      INTEGER,
+        duration_ms     INTEGER,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_outcomes_result ON task_outcomes(result);
+      CREATE INDEX IF NOT EXISTS idx_task_outcomes_run ON task_outcomes(run_id);
+    `);
+
+    // AI-Native Phase 2.2: meow_self_improvements — track monitoring agent changes
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS meow_self_improvements (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        trigger_type    TEXT,
+        failure_cluster TEXT,
+        files_patched   TEXT,
+        eval_before     INTEGER,
+        eval_after      INTEGER,
+        deployed        INTEGER DEFAULT 0,
+        human_reviewed  INTEGER DEFAULT 0,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
   }
 
   // Implements DatabasePort
@@ -459,5 +494,95 @@ export class MeowDatabase implements DatabasePort {
       INSERT OR REPLACE INTO agent_registry (agent_name, capabilities, last_seen, status)
       VALUES (?, ?, CURRENT_TIMESTAMP, 'available')
     `).run(name, JSON.stringify(capabilities));
+  }
+
+  // ── AI-Native Phase 1.1: Task outcomes ─────────────────────────────────────
+
+  insertTaskOutcome(opts: {
+    runId: string;
+    taskText: string;
+    result: string;
+    qualityScore?: number;
+    failureReason?: string;
+    toolsCalled?: string[];
+    skillsUsed?: string[];
+    tokensIn?: number;
+    tokensOut?: number;
+    durationMs?: number;
+  }): void {
+    this.db.prepare(`
+      INSERT INTO task_outcomes (run_id, task_text, result, quality_score, failure_reason, tools_called, skills_used, tokens_in, tokens_out, duration_ms)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      opts.runId,
+      opts.taskText,
+      opts.result,
+      opts.qualityScore ?? null,
+      opts.failureReason ?? null,
+      opts.toolsCalled ? JSON.stringify(opts.toolsCalled) : null,
+      opts.skillsUsed ? JSON.stringify(opts.skillsUsed) : null,
+      opts.tokensIn ?? null,
+      opts.tokensOut ?? null,
+      opts.durationMs ?? null
+    );
+  }
+
+  getTaskOutcomes(result?: string, limit = 100): Array<{
+    id: number; run_id: string; task_text: string; result: string;
+    quality_score: number; failure_reason: string; tools_called: string;
+    skills_used: string; tokens_in: number; tokens_out: number;
+    duration_ms: number; created_at: string;
+  }> {
+    const sql = result
+      ? `SELECT * FROM task_outcomes WHERE result = ? ORDER BY created_at DESC LIMIT ?`
+      : `SELECT * FROM task_outcomes ORDER BY created_at DESC LIMIT ?`;
+    return this.db.prepare(sql).all(result ?? limit, ...(result ? [limit] : [])) as any;
+  }
+
+  getRecentFailures(hours = 24, limit = 20): Array<{ task_text: string; failure_reason: string; freq: number }> {
+    return this.db.prepare(`
+      SELECT task_text, failure_reason, COUNT(*) as freq
+      FROM task_outcomes
+      WHERE result = 'failure'
+        AND created_at > datetime('now', '-${hours} hours')
+        AND failure_reason IS NOT NULL
+      GROUP BY failure_reason
+      ORDER BY freq DESC
+      LIMIT ?
+    `).all(limit) as Array<{ task_text: string; failure_reason: string; freq: number }>;
+  }
+
+  // ── AI-Native Phase 2.2: Self-improvement tracking ─────────────────────────
+
+  insertSelfImprovement(opts: {
+    triggerType: string;
+    failureCluster: string;
+    filesPatched: string[];
+    evalBefore?: number;
+    evalAfter?: number;
+    deployed?: boolean;
+  }): void {
+    this.db.prepare(`
+      INSERT INTO meow_self_improvements (trigger_type, failure_cluster, files_patched, eval_before, eval_after, deployed)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      opts.triggerType,
+      opts.failureCluster,
+      JSON.stringify(opts.filesPatched),
+      opts.evalBefore ?? null,
+      opts.evalAfter ?? null,
+      opts.deployed ? 1 : 0
+    );
+  }
+
+  getSelfImprovements(deployed?: boolean): Array<{
+    id: number; trigger_type: string; failure_cluster: string;
+    files_patched: string; eval_before: number; eval_after: number;
+    deployed: number; human_reviewed: number; created_at: string;
+  }> {
+    const sql = deployed !== undefined
+      ? `SELECT * FROM meow_self_improvements WHERE deployed = ? ORDER BY created_at DESC`
+      : `SELECT * FROM meow_self_improvements ORDER BY created_at DESC`;
+    return this.db.prepare(sql).all(...(deployed !== undefined ? [deployed ? 1 : 0] : [])) as any;
   }
 }

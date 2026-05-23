@@ -67,7 +67,8 @@ describe("DelegationProtocol", () => {
       // Verify that audit log has been written
       expect(fs.existsSync(auditLogPath)).toBe(true);
       const logContent = fs.readFileSync(auditLogPath, "utf8");
-      const parsedLog = JSON.parse(logContent.trim());
+      const lastLine = logContent.trim().split('\n').filter(Boolean).at(-1)!;
+      const parsedLog = JSON.parse(lastLine);
       expect(parsedLog.taskId).toBe("test-task-1");
       expect(parsedLog.assignedSpecialist).toBe("browseros");
       expect(parsedLog.files).toContain("styles.css");
@@ -91,7 +92,8 @@ describe("DelegationProtocol", () => {
 
       expect(fs.existsSync(auditLogPath)).toBe(true);
       const logContent = fs.readFileSync(auditLogPath, "utf8");
-      const parsedLog = JSON.parse(logContent.trim());
+      const lastLine = logContent.trim().split('\n').filter(Boolean).at(-1)!;
+      const parsedLog = JSON.parse(lastLine);
       expect(parsedLog.taskId).toBe("test-task-2");
       expect(parsedLog.assignedSpecialist).toBe("claude");
       expect(parsedLog.files).toContain("src/index.ts");

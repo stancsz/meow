@@ -17,6 +17,7 @@ import { AgenticMemory, MemoryResult } from "./memory";
 import { ReasoningEngine } from "./reasoning";
 import { MeowDatabase } from "../kernel/database";
 import { config } from "../config/env";
+import { embed } from "./embeddings";
 import { DatabasePort } from "../extensions/database/manifest";
 import { AuditLogger } from "../kernel/audit";
 import pc from "picocolors";
@@ -214,7 +215,7 @@ export class Agent {
             await this.agenticMemory.store(
               `Tool [${toolName}] result for query [${userInput}]: ${result.substring(0, 500)}`,
               { tool: toolName, type: "tool_output" },
-              this.mockEmbedding(userInput)
+              await embed(result.substring(0, 100))
             );
 
             this.messages.push({ role: "assistant", content: response });
@@ -243,16 +244,18 @@ export class Agent {
         if (passed) {
           // MEOW succeeded — record for metrics, reset failure counter
           this.kernel.push({ type: "SET_STATE", key: `task:${userInput.substring(0, 50)}:success`, value: Date.now() });
+          this.recordTaskOutcome(userInput, 'success');
           return response;
         } else {
           lastError = this.extractError(testResult);
           continue;
         }
       }
-      
+
+      this.recordTaskOutcome(userInput, 'success');
       return response;
     }
-    
+
     // MEOW-3-RULE: MEOW tried maxRetries times and failed.
     // claude -p is NOT a fallback to finish the task.
     // claude -p is ONLY called to FIX MEOW (patch the tool/prompt/logic that caused the failure).
@@ -263,6 +266,7 @@ export class Agent {
     const fixResult = await this.fixMeow({ userInput, lastError, attempt, runTests, testCmd });
     
     // Return the repair report, NOT the task result
+    this.recordTaskOutcome(userInput, 'failure', lastError ?? undefined);
     return `🩹 MEOW Self-Repair Report\n${'─'.repeat(40)}\n${fixResult}\n${'─'.repeat(40)}\n\n📋 The task was NOT completed — MEOW was patched instead.\n   Please re-run the same task to let MEOW try again with the fix applied.`;
   }
 
@@ -711,7 +715,7 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
     const lastUserMessage = this.messages.filter(m => m.role === "user").pop();
     let relevantMemories: MemoryResult[] = [];
     if (lastUserMessage && lastUserMessage.content.trim()) {
-      relevantMemories = await this.agenticMemory.recall(lastUserMessage.content, this.mockEmbedding(lastUserMessage.content));
+      relevantMemories = await this.agenticMemory.recall(lastUserMessage.content, await embed(lastUserMessage.content));
     }
     if (relevantMemories.length > 0) {
       prompt += `\n\n# RECALLED AGENTIC MEMORY (Associative Knowledge):\n`;
@@ -1185,7 +1189,7 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
     await this.agenticMemory.store(
       `CONTEXT_ANCHOR: ${summary}`,
       { type: "archived_context", original_length: rawContent.length },
-      this.mockEmbedding(summary)
+      await embed(summary)
     );
 
     // Inject the anchor back into L1 to maintain semantic continuity
@@ -1209,5 +1213,23 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
 
   getEditedFiles(): string[] {
     return Array.from(this.editedFiles);
+  }
+
+  // ── AI-Native Phase 1.2: Task outcome instrumentation ────────────────────
+
+  private recordTaskOutcome(taskText: string, result: string, failureReason?: string): void {
+    const meowDb = this.db as any;
+    if (!meowDb || typeof meowDb.insertTaskOutcome !== "function") return;
+    try {
+      meowDb.insertTaskOutcome({
+        runId: this.runId,
+        taskText,
+        result,
+        failureReason: failureReason ?? null,
+      });
+    } catch (err) {
+      // Non-fatal — task outcome tracking must never break the agent
+      console.warn("[Agent] recordTaskOutcome failed:", err);
+    }
   }
 }

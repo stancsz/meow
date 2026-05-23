@@ -1,11 +1,32 @@
 #!/usr/bin/env node
 // meow-swarm — Autonomous multi-agent coding harness
 
+import * as fs from "fs";
+import * as path from "path";
 import { config } from "./config/env";
 import { Agent } from "./agent/agent";
 import { createRepl } from "./cli/repl";
 import { MeowKernel } from "./kernel/kernel";
 import { DatabasePort } from "./extensions/database/manifest";
+import { MeowDatabase } from "./kernel/database";
+
+/**
+ * Resolve a prompt string that may be a file reference.
+ * Supports:  meow -p {path/to/file.md}
+ * The braces are stripped and the file is read relative to cwd.
+ */
+function resolvePrompt(raw: string): string {
+  const match = raw.match(/^\{(.+)\}$/);
+  if (!match) return raw;
+  const filePath = path.resolve(process.cwd(), match[1]);
+  if (!fs.existsSync(filePath)) {
+    console.error(`❌ Prompt file not found: ${filePath}`);
+    process.exit(1);
+  }
+  const contents = fs.readFileSync(filePath, "utf8").trim();
+  console.log(`📄 [meow] Loaded prompt from: ${path.relative(process.cwd(), filePath)}`);
+  return contents;
+}
 
 function isBun(): boolean {
   return typeof (globalThis as any).Bun !== "undefined";
@@ -84,11 +105,13 @@ async function main() {
   // Support for -p (plan/non-interactive) mode — the primary headless interface
   const planMode = process.argv.includes("-p") || process.argv.includes("--plan");
   if (planMode) {
-    const command = process.argv.filter(arg => !arg.startsWith("--") && arg !== "-p" && arg !== "--plan").slice(2).join(" ");
-    if (!command) {
+    const rawCommand = process.argv.filter(arg => !arg.startsWith("--") && arg !== "-p" && arg !== "--plan").slice(2).join(" ");
+    if (!rawCommand) {
       console.error("Usage: meow -p \"<task description>\"");
+      console.error("       meow -p {path/to/prompt.md}");
       process.exit(1);
     }
+    const command = resolvePrompt(rawCommand);
 
     // Print seed/budget info if set
     if (config.deterministic || config.seed !== undefined) {
@@ -126,6 +149,29 @@ async function main() {
     const tui = new MeowTUI(agent);
     tui.start();
     return;
+  }
+
+  // AI-Native Phase 2.4: Monitoring agent mode
+  if (process.argv.includes("--monitor")) {
+    const { MonitoringAgent } = await import("./agent/monitor");
+    const monitor = new MonitoringAgent(db as MeowDatabase);
+    const report = await monitor.run();
+    console.log("\n📊 Monitoring Report:");
+    console.log(`  Clusters found:  ${report.clusters.length}`);
+    console.log(`  Patches generated: ${report.patches.length}`);
+    console.log(`  Deployed:        ${report.deploys.length}`);
+    console.log(`  Flagged for review: ${report.flaggedForReview.length}`);
+    await kernel.shutdown();
+    process.exit(0);
+  }
+
+  // AI-Native Phase 3.1: Knowledge synthesis mode
+  if (process.argv.includes("--synthesize")) {
+    const { KnowledgeSynthesizer } = await import("./agent/synthesizer");
+    const synthesizer = new KnowledgeSynthesizer(db as MeowDatabase);
+    await synthesizer.synthesize();
+    await kernel.shutdown();
+    process.exit(0);
   }
 
   // Non-interactive command mode (legacy)
