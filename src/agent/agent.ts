@@ -401,6 +401,11 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           evalAfter: evalScore ?? undefined,
           deployed: evalScore === null || baselineScore === null || evalScore >= baselineScore - 5,
         });
+
+        // Trigger monitoring agent to run on next kernel cycle
+        if (typeof this.kernel.triggerMonitorNextCycle === 'function') {
+          this.kernel.triggerMonitorNextCycle();
+        }
       }
 
       // If claude -p produced patches, suggest contributing to stancsz/meow

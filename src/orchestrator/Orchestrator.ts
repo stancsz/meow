@@ -307,6 +307,11 @@ export class Orchestrator {
         });
       }
 
+      // Notify kernel that tasks are complete (triggers monitoring agent if threshold reached)
+      if (this.agent.kernel && typeof this.agent.kernel.onTaskComplete === 'function') {
+        this.agent.kernel.onTaskComplete();
+      }
+
       onStatus?.({
         level: 'progress',
         message: 'Aggregating results...',

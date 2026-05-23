@@ -88,6 +88,11 @@ export class MeowKernel {
   /**
    * The Supervisor Main Loop
    */
+  private lastMonitorRun: number = 0;
+  private monitorIntervalMs: number = 1800000; // 30 minutes default
+  private taskCompletionCounter: number = 0;
+  private monitorOnNextCycle: boolean = false; // forced run (e.g. after N failures)
+
   public start() {
     this.log("Starting watchdog monitor...", "KERNEL");
     setInterval(() => {
@@ -96,7 +101,55 @@ export class MeowKernel {
       }
       this.monitorTTL();
       this.watchdogCheck();
+      this.triggerMonitoringAgentIfNeeded();
     }, this.drainInterval);
+  }
+
+  /**
+   * Trigger the monitoring agent if conditions are met:
+   * - Every monitorIntervalMs (default 30 min), OR
+   * - After every 50 task completions, OR
+   * - When monitorOnNextCycle is set (forced run, e.g. after fixMeow)
+   */
+  private async triggerMonitoringAgentIfNeeded(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastRun = now - (this.lastMonitorRun ?? 0);
+
+    if (timeSinceLastRun >= this.monitorIntervalMs ||
+        this.taskCompletionCounter >= 50 ||
+        this.monitorOnNextCycle) {
+      this.lastMonitorRun = now;
+      this.taskCompletionCounter = 0;
+      this.monitorOnNextCycle = false;
+
+      try {
+        const { MonitoringAgent } = await import("../agent/monitor");
+        const db = this.db as any;
+        if (db && typeof db.query === "function") {
+          const monitor = new MonitoringAgent(db);
+          const report = await monitor.run();
+          this.log(`[MONITOR] clusters=${report.clusters.length} patches=${report.patches.length} deploys=${report.deploys.length}`, "MONITOR");
+        }
+      } catch (err) {
+        this.warn(`MonitoringAgent trigger failed: ${(err as Error).message}`, "KERNEL");
+      }
+    }
+  }
+
+  /**
+   * Increment task completion counter.
+   * Called by orchestrator after each task completes.
+   */
+  public onTaskComplete(): void {
+    this.taskCompletionCounter++;
+  }
+
+  /**
+   * Force monitoring agent to run on next cycle.
+   * Called by fixMeow() after a self-repair.
+   */
+  public triggerMonitorNextCycle(): void {
+    this.monitorOnNextCycle = true;
   }
 
   /**
