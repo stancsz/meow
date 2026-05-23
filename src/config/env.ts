@@ -14,6 +14,10 @@ export interface MeowConfig {
   auditDir: string;
   // Ambiguity
   ambiguityThreshold: number;
+  // Phase 5.2: Auto-deploy threshold (policy layer — human at the edge)
+  // Patches with eval confidence >= threshold auto-deploy
+  // Patches below threshold go to DRI review panel (TUI Ctrl+R)
+  autoDeployThreshold: number;
 }
 
 function parseIntOrUndefined(env: string | undefined): number | undefined {
@@ -46,4 +50,8 @@ export const config: MeowConfig = {
 
   // Ambiguity: agent asks for clarification if uncertainty > this threshold (0.0-1.0)
   ambiguityThreshold: parseFloat(process.env.MEOW_AMBIGUITY_THRESHOLD || "0.7"),
+
+  // Phase 5.2: Auto-deploy threshold (0.0-1.0)
+  // Patches with eval score >= threshold auto-deploy; below threshold → DRI review
+  autoDeployThreshold: parseFloat(process.env.MEOW_AUTO_DEPLOY_THRESHOLD || "0.80"),
 };

@@ -94,11 +94,18 @@ export class MonitoringAgent {
       // 4. QUALITY GATE: Run eval on patched code
       const evalPassed = await this.runEvalGate(patch);
 
-      // 5. LEARN: Deploy or flag
-      if (evalPassed) {
+      // 5. LEARN: Deploy or flag based on autoDeployThreshold
+      const evalResult = await this.runEvalGate(patch);
+
+      if (evalResult.passed && evalResult.score >= config.autoDeployThreshold * 100) {
         await this.applyPatch(patch);
-        report.deploys.push({ patch, evalBefore: 0, evalAfter: patch.evalScoreDelta });
+        report.deploys.push({ patch, evalBefore: evalResult.baseline ?? 0, evalAfter: evalResult.score });
+      } else if (evalResult.passed) {
+        // Eval passed but below auto-deploy threshold — flag for DRI review
+        await this.flagForHumanReview(patch, diagnosis);
+        report.flaggedForReview.push({ patch, diagnosis, reason: `eval score ${evalResult.score.toFixed(1)} below auto-deploy threshold ${(config.autoDeployThreshold * 100).toFixed(0)}` });
       } else {
+        // Eval failed — flag for human review
         await this.flagForHumanReview(patch, diagnosis);
         report.flaggedForReview.push({ patch, diagnosis, reason: "eval gate failed" });
       }
@@ -256,30 +263,31 @@ Rules:
 
   /**
    * Run eval suite on the patched code — the Phase 4 quality gate.
-   * Returns true only if the eval score is maintained or improved.
+   * Returns {passed, score, baseline} where score is 0-100.
+   * Patches pass if score >= autoDeployThreshold * 100.
    */
-  private async runEvalGate(_patch: Patch): Promise<boolean> {
+  private async runEvalGate(_patch: Patch): Promise<{ passed: boolean; score: number; baseline: number | null }> {
     try {
       const meowDb = this.db as any;
-      const baselineScore = meowDb?.getEvalBaseline?.("coding") ?? null;
+      const baseline = meowDb?.getEvalBaseline?.("coding") ?? null;
 
       // Dynamically import to avoid circular deps
       const { runBenchmark } = await import("../eval/harness");
       const model = config.model || "claude-sonnet-4";
       const report = await runBenchmark("coding", "meow", model, { verbose: false });
 
-      const evalScore = report.totalScore;
+      const score = report.totalScore;
 
-      if (baselineScore !== null && evalScore < baselineScore - 5) {
-        console.warn(`[MonitoringAgent] Eval gate failed: score ${evalScore} < baseline ${baselineScore} - 5`);
-        return false;
+      if (baseline !== null && score < baseline - 5) {
+        console.warn(`[MonitoringAgent] Eval gate: score ${score.toFixed(1)} < baseline ${baseline} - 5`);
+        return { passed: false, score, baseline };
       }
 
-      meowDb?.insertEvalBaseline?.({ suite: "coding", score: evalScore, model, trigger: "monitoring_agent" });
-      return true;
+      meowDb?.insertEvalBaseline?.({ suite: "coding", score, model, trigger: "monitoring_agent" });
+      return { passed: true, score, baseline };
     } catch (err) {
-      console.warn(`[MonitoringAgent] Eval gate error: ${err}. Allowing deploy (eval failed).`);
-      return true; // Allow deploy if eval can't run
+      console.warn(`[MonitoringAgent] Eval gate error: ${err}. Allowing deploy.`);
+      return { passed: true, score: 0, baseline: null };
     }
   }
 
