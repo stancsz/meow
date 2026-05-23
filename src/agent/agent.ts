@@ -1145,9 +1145,16 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
    * Covers: compile errors, runtime errors, lint errors, test failures.
    */
   private detectRunFailure(output: string): boolean {
+    // Only match actual build/test failures — not ESLint warnings
+    // Real errors appear at line start: "✗", "error:", "Error:", "FAILED", "Build failed"
+    // Warnings don't have these prefixes
     const failurePatterns = [
-      /\b(error|Error|ERROR|failed|FAILED|Failed)\b/,
-      /\b(fatal|FATAL)\b/,
+      /^Error:/m,                    // Error at start of line (not "warning" context)
+      /^error:/m,                    // lowercase error at line start
+      /^✗/m,                         // failure X symbol
+      /^FAILED$/m,                   // all-caps FAILED
+      /\bfailed\b/i,                 // "failed" case-insensitive
+      /\bfatal\b/i,                  // fatal error
       /\bSyntaxError\b/,
       /\bReferenceError\b/,
       /\bTypeError\b/,
