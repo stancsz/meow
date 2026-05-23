@@ -251,6 +251,14 @@ export class MeowDatabase implements DatabasePort {
         human_reviewed  INTEGER DEFAULT 0,
         created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS skill_effectiveness (
+        skill_name      TEXT NOT NULL,
+        task_result     TEXT,
+        quality_score   INTEGER,
+        run_id          TEXT,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   }
 
@@ -584,5 +592,54 @@ export class MeowDatabase implements DatabasePort {
       ? `SELECT * FROM meow_self_improvements WHERE deployed = ? ORDER BY created_at DESC`
       : `SELECT * FROM meow_self_improvements ORDER BY created_at DESC`;
     return this.db.prepare(sql).all(...(deployed !== undefined ? [deployed ? 1 : 0] : [])) as any;
+  }
+
+  insertSkillEffectiveness(opts: { skillName: string; taskResult?: string; qualityScore?: number; runId?: string }): void {
+    this.db.prepare(`
+      INSERT INTO skill_effectiveness (skill_name, task_result, quality_score, run_id)
+      VALUES (?, ?, ?, ?)
+    `).run(opts.skillName, opts.taskResult ?? null, opts.qualityScore ?? null, opts.runId ?? null);
+  }
+
+  getSkillEffectiveness(skillName?: string, limit = 100): Array<{ skill_name: string; task_result: string; quality_score: number; count: number }> {
+    if (skillName) {
+      return this.db.prepare(`
+        SELECT skill_name, task_result, quality_score, COUNT(*) as count
+        FROM skill_effectiveness
+        WHERE skill_name = ?
+        GROUP BY skill_name, task_result, quality_score
+        ORDER BY count DESC
+        LIMIT ?
+      `).all(skillName, limit) as any;
+    }
+    return this.db.prepare(`
+      SELECT skill_name, task_result, quality_score, COUNT(*) as count
+      FROM skill_effectiveness
+      GROUP BY skill_name, task_result, quality_score
+      ORDER BY count DESC
+      LIMIT ?
+    `).all(limit) as any;
+  }
+
+  getTopSkills(limit = 20): Array<{ skill_name: string; success_count: number; failure_count: number; total: number }> {
+    return this.db.prepare(`
+      SELECT
+        skill_name,
+        SUM(CASE WHEN task_result = 'success' THEN 1 ELSE 0 END) as success_count,
+        SUM(CASE WHEN task_result = 'failure' THEN 1 ELSE 0 END) as failure_count,
+        COUNT(*) as total
+      FROM skill_effectiveness
+      GROUP BY skill_name
+      ORDER BY total DESC
+      LIMIT ?
+    `).all(limit) as any;
+  }
+
+  updateSkillEffectivenessByRunId(runId: string, taskResult: string): void {
+    this.db.prepare(`
+      UPDATE skill_effectiveness
+      SET task_result = ?
+      WHERE run_id = ? AND task_result IS NULL
+    `).run(taskResult, runId);
   }
 }

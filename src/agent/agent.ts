@@ -1227,6 +1227,13 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
         result,
         failureReason: failureReason ?? null,
       });
+
+      // Phase 3.2: Update skill effectiveness with task result
+      if (meowDb && typeof meowDb.updateSkillEffectivenessByRunId === "function") {
+        try {
+          meowDb.updateSkillEffectivenessByRunId(this.runId, result);
+        } catch {}
+      }
     } catch (err) {
       // Non-fatal — task outcome tracking must never break the agent
       console.warn("[Agent] recordTaskOutcome failed:", err);
