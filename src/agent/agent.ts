@@ -361,8 +361,10 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
         const timer = setTimeout(() => {
           child.kill();
-          resolve(`❌ claude -p timed out after 180s\nSTDERR: ${stderr.substring(0, 500)}`);
-        }, 180_000);
+          resolve(`❌ claude -p timed out after 300s\nSTDERR: ${stderr.substring(0, 500)}`);
+        }, 300_000);
+
+        child.stdin?.end();
 
         child.on("close", (code: number | null) => {
           clearTimeout(timer);
