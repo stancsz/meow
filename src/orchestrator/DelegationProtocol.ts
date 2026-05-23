@@ -13,8 +13,8 @@ export class DelegationProtocol {
       return 'claude';
     }
 
-    // Web/browser automation files
-    if (['.html', '.css', '.scss', '.sass'].includes(ext)) {
+    // CSS/SCSS for web styling tasks
+    if (['.css', '.scss', '.sass'].includes(ext)) {
       return 'browseros';
     }
 
