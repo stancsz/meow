@@ -69,7 +69,9 @@ export LLM_API_KEY=$ANTHROPIC_API_KEY
 
 to run meow as a continuous self-improving loop, follow `docs/loop.md`. the loop:
 1. checks env vars (MiniMax first)
-2. picks the highest-leverage open item from `docs/ARCHITECTURAL_GAP_ANALYSIS.md`
+2. reads `docs/STATUS.md` — picks the top open bug or roadmap item
 3. runs live tests, does the work, commits
 4. uses `meow -p` to find the next item
 5. never stops — decisions are logged in `docs/loop-decisions.md`
+
+**docs reading rule**: only read `docs/STATUS.md`, `docs/ROADMAP.md`, `docs/loop.md`, and `docs/loop-decisions.md` unless a specific task requires something from `docs/rfc/`. Never read `docs/archive/`. Do not browse or read the docs folder beyond these files.

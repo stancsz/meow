@@ -4,6 +4,24 @@
 
 ---
 
+## Critical Runtime Errors (fix these first)
+
+### `Memory store failed: SqliteError: Only integers are allowed for primary key values on vec_memory`
+
+**Severity:** Critical — fires 7–10× per session. Every memory write silently fails. Cross-session recall, MonitoringAgent clustering, and KnowledgeSynthesizer all depend on this table. Nothing learns until it's fixed.
+
+**Root cause:** `sqlite-vec` requires integer rowids for vector tables. The insert is passing a non-integer primary key (likely a UUID string or derived text key).
+
+**Affected files:** Wherever `vec_memory` rows are inserted — likely `src/agent/memory.ts` or `src/kernel/database.ts`.
+
+**Fix:** Use an auto-increment integer PK. If the caller needs a UUID, store it as a separate column but let the PK be `INTEGER PRIMARY KEY AUTOINCREMENT`.
+
+**Workaround:** None — the error is caught and swallowed, so meow continues, but memory is non-functional.
+
+**Tracking:** Visible in `.meow/logs/meow-2026-05-21.log` through `meow-2026-05-23.log` on every session.
+
+---
+
 ## Startup Errors
 
 ### `Cannot find module 'C:\Users\stanc\github\meow\src\extensions\Extension'`
@@ -183,15 +201,16 @@ export LLM_API_KEY="sk-ant-api03-y7XcGi4-O5TQQIxzDR9OEWSQaIf9Lx5NPlSBsTPEj4BdjSl
 
 | Error | Severity | Status |
 |---|---|---|
-| Extension discovery fails on Windows | Warning | Not fixed |
+| `vec_memory` integer PK crash (BUG-01) | **Critical** | **Needs fix — top priority** |
+| `claude -p` spawnSync ETIMEDOUT (BUG-02) | **Critical** | **Needs fix** |
+| DelegationProtocol unregistered workers (BUG-03) | Medium | **Needs fix** |
+| FedClient reconnect infinite loop (BUG-04) | Medium | **Needs fix** |
+| FileCoordinator orchestrator non-enforcement (BUG-05) | Medium | **Needs fix** |
+| PID mismatch on respawn (BUG-06) | Medium | **Needs fix** |
+| Architect fallback validation no-op (BUG-07) | Low | **Needs fix** |
+| Extension discovery fails on Windows | Warning | Not fixed (non-fatal) |
 | UV_HANDLE_CLOSING assertion | Cosmetic | None needed |
 | INVALID_ALT_NUMBER circular dep | Warning | Non-blocking |
-| `claude -p` spawnSync ETIMEDOUT | Critical | **Needs fix** |
 | 401 Invalid API key | Operational | Config fix only |
 | LINT-FIX LOOP exhaustion | Operational | Known gap |
-| FedClient reconnect infinite loop | Medium | **Needs fix** |
-| FileCoordinator orchestrator non-enforcement | Medium | **Needs fix** |
-| PID mismatch on respawn | Medium | **Needs fix** |
-| Architect fallback validation no-op | Low | **Needs fix** |
 | Husky pre-push hook failure | Operational | **Needs fix** |
-| DelegationProtocol unregistered workers | Medium | Workaround exists |
