@@ -124,9 +124,12 @@ export class Architect {
               expectedOutputs: ["passed", "success", "OK"]
             };
           } else {
+            // Fallback validation: pipe the task output file through a basic error checker.
+            // Uses the first produced file as the target. Previously this always passed.
+            const targetFile = task.producedFiles?.[0]?.path ?? "__none__";
             task.validationContract = {
-              validationScript: `node -e "console.log('Synthesized validation contract passed');"`,
-              expectedOutputs: ["Synthesized validation contract passed"]
+              validationScript: `node -e "const fs=require('fs');const f=require('process').argv[2];const out=f&&f!=='__none__'&&fs.existsSync(f)?fs.readFileSync(f,'utf8'):'';if(/\\berror\\b/i.test(out)||/\\bfailed\\b/i.test(out)){console.log('VALIDATION FAILED');process.exit(1);}console.log('passed');" ${targetFile}`,
+              expectedOutputs: ["passed"]
             };
           }
         }

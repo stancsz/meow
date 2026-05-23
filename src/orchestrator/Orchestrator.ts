@@ -381,6 +381,18 @@ export class Orchestrator {
    * Execute a single task via registered workers (used by self-review).
    */
   private async executeTaskWithWorker(task: Task): Promise<TaskResult> {
+    // Phase 1 gap fix: enforce file lock coordinator
+    if (task.producedFiles && task.producedFiles.length > 0) {
+      const access = this.coordinator.requestAccess(task.id, task.producedFiles);
+      if (!access.allowed) {
+        return {
+          taskId: task.id,
+          success: false,
+          output: `File conflict blocked: ${access.conflicts.join(", ")}`,
+        };
+      }
+    }
+
     if (this.workers.length === 0) {
       this.registerWorkers([{
         workerId: 'default',
