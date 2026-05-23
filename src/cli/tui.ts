@@ -183,6 +183,7 @@ export class MeowTUI {
   private screen!:   blessed.Widgets.Screen;
   private logPane!:  blessed.Widgets.Log;
   private statusBar!: blessed.Widgets.BoxElement;
+  private reviewsPane?: blessed.Widgets.Log; // 5th panel: pending self-repair reviews
 
   private agent!:       Agent;
   private liaison!:     Liaison;
@@ -197,6 +198,7 @@ export class MeowTUI {
   private tokens:     number    = 0;
   private running:    boolean   = false;
   private abortCtrl?: AbortController;
+  private showReviews: boolean = false;
 
   // ── constructor ─────────────────────────────────────────────────────────────
 
@@ -215,13 +217,63 @@ export class MeowTUI {
 
   // ── layout (2 rows: log + status, input is the status bar content) ──────────
 
+  private buildReviewsPane() {
+    if (this.reviewsPane) return;
+
+    // Reviews pane: right side, 40% width, full height
+    this.reviewsPane = blessed.log({
+      parent:    this.screen,
+      top:       0,
+      left:     '60%',
+      width:    '40%',
+      height:   '100%-1',
+      tags:      true,
+      scrollable: true,
+      alwaysScroll: true,
+      style:    { fg: 'yellow', bg: 'black' },
+      content:  this.reviewsContent(),
+    });
+  }
+
+  private destroyReviewsPane() {
+    if (!this.reviewsPane) return;
+    this.screen.remove(this.reviewsPane);
+    this.reviewsPane = undefined;
+  }
+
+  private reviewsContent(): string {
+    const meowDb = this.agent?.db as any;
+    if (!meowDb || typeof meowDb.getSelfImprovements !== 'function') {
+      return `{yellow-fg}No reviews{/yellow-fg}`;
+    }
+
+    const improvements = meowDb.getSelfImprovements();
+    const unreviewed = improvements.filter((i: any) => !i.human_reviewed);
+
+    if (unreviewed.length === 0) {
+      return `{green-fg}No pending reviews{/green-fg}`;
+    }
+
+    const lines = [`{yellow-fg}⚠ Pending Reviews (${unreviewed.length}){/yellow-fg}`, ''];
+    for (const item of unreviewed.slice(0, 10)) {
+      const date = item.created_at ? new Date(item.created_at).toLocaleDateString() : '?';
+      lines.push(`{bold}#${item.id}{/bold} [${date}] ${item.trigger_type}`);
+      lines.push(`  ${(item.failure_cluster || 'unknown').substring(0, 60)}`);
+      if (item.eval_before !== null && item.eval_after !== null) {
+        lines.push(`  eval: ${item.eval_before} → ${item.eval_after}`);
+      }
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
   private build() {
     // Full-screen scrolling log pane
     this.logPane = blessed.log({
       parent:    this.screen,
       top:       0,
       left:      0,
-      width:     '100%',
+      width:     this.showReviews ? '60%' : '100%',
       height:   '100%-1',
       tags:      true,
       scrollable: true,
@@ -240,6 +292,10 @@ export class MeowTUI {
       style:    { fg: 'white', bg: 'black' },
       content:  this.phaseContent(),
     });
+
+    if (this.showReviews) {
+      this.buildReviewsPane();
+    }
   }
 
   private phaseContent(): string {
@@ -299,6 +355,20 @@ export class MeowTUI {
     // Ctrl+F → fake-search (highlights term in log pane)
     this.screen.key('C-f', () => {
       this.put(stylize(S.yellow, '(search: type /tasks to view task tree)'));
+    });
+
+    // Ctrl+R → toggle reviews panel (DRI human-at-the-edge interface)
+    this.screen.key('C-r', () => {
+      this.showReviews = !this.showReviews;
+      if (this.showReviews) {
+        this.buildReviewsPane();
+        this.logPane.width = '60%';
+      } else {
+        this.destroyReviewsPane();
+        this.logPane.width = '100%';
+      }
+      this.screen.render();
+      this.put(stylize(S.yellow, this.showReviews ? '[Reviews panel: ON]' : '[Reviews panel: OFF]'));
     });
 
     // Any printable key when not running → readline prompt

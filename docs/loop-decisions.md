@@ -28,3 +28,8 @@
 - Added MeowKernel raw Database adapter back to fix "execute is not a function"
 - All tests pass (180 passed)
 - Committed: a446dfc fix: MeowKernel raw Database adapter — fixes test regressions
+
+2026-05-23 — meow -p recommendation (claude -p ETIMEDOUT):
+  Phase 5.1 TUI review panel — add 5th panel to blessed TUI for pending reviews
+  showing self-repairs that failed eval gate and skill updates needing approval.
+  This is the "Human at the Edge" DRI interface from AI_NATIVE_MEOW_PLAN.md.
