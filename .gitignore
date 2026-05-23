@@ -4,9 +4,12 @@ node_modules/
 # Environment
 .env
 .env.local
+
+# Runtime state (meow-swarm daemon)
+.meow/
 tmp/
+memory/
 .claude/
-scratch/
 
 # Build output
 dist/
@@ -30,24 +33,20 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-dist/
-build/
 
 # Logs
 *.log
 npm-debug.log
 logs/
-.meow/
-*.db*
 
-# Installer
-**.exe
+# Database
+*.db
+*.db-shm
+*.db-wal
 
-# Screenshots
-**screenshot**
-*.txt
-skills/meowju_skills/
+# Screenshots/media
+*screenshot*
+*screen*
 **screen**
-
-**.png
-**.jpg
+*.png
+*.jpg

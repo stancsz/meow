@@ -237,6 +237,12 @@ export class FedClient {
 
   private triggerReconnection() {
     if (this.isReconnecting) return;
+    // Cap at 12 attempts (~5min of backoff) then give up to avoid infinite loop
+    if (this.reconnectAttempts >= 12) {
+      console.warn(`🛰️ [FedClient] Max reconnect attempts (12) reached. Giving up. Manual reconnect required.`);
+      this.isReconnecting = false;
+      return;
+    }
     this.isReconnecting = true;
     const delay = Math.min(100 * Math.pow(2, this.reconnectAttempts), 5000);
     this.reconnectAttempts++;
