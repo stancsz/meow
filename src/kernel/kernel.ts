@@ -1,4 +1,5 @@
 import { DatabasePort } from "../extensions/database/manifest";
+import Database from "better-sqlite3";
 import pc from "picocolors";
 import fs from "fs";
 import path from "path";
@@ -22,9 +23,55 @@ export class MeowKernel {
   private frozenThresholdMs: number = 1200000; // 20 minutes
   private driftThresholdMs: number = 600000; // 10 minutes - warning if no progress change
   private respawnCallbacks: Array<(oldPid: number, newPid: number) => void> = [];
+  private exitHandler: (() => Promise<void>) | null = null;
 
   constructor(db: DatabasePort) {
-    this.db = db;
+    // If a raw better-sqlite3 Database is passed instead of a DatabasePort,
+    // wrap it in a thin adapter so kernel methods that call db.execute()
+    // continue to work (meow kernels that were passed a raw Database.Database
+    // from test fixtures or direct instantiation).
+    if (typeof (db as any).prepare === "function" && typeof (db as any).exec === "function") {
+      const rawDb = db as unknown as Database.Database;
+      this.db = {
+        query: async <T = any>(sql: string, params?: any[]): Promise<T[]> => {
+          const stmt = rawDb.prepare(sql);
+          return stmt.all(...(params ?? [])) as T[];
+        },
+        execute: async (sql: string, params?: any[]): Promise<{ changes: number; lastInsertRowid: number }> => {
+          const stmt = rawDb.prepare(sql);
+          const result = stmt.run(...(params ?? []));
+          return { changes: result.changes, lastInsertRowid: Number(result.lastInsertRowid) };
+        },
+        exec: async (sql: string): Promise<{ done: boolean }> => {
+          rawDb.exec(sql);
+          return { done: true };
+        },
+        batch: async (actions: any[]): Promise<{ processed: number; errors: string[] }> => {
+          const errors: string[] = [];
+          const tx = rawDb.transaction(() => {
+            for (const action of actions) {
+              try {
+                if (action.type === "SET_STATE") {
+                  rawDb.prepare(
+                    `INSERT OR REPLACE INTO swarm_state (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`
+                  ).run(action.key, JSON.stringify(action.value));
+                } else if (action.type === "DELETE_STATE") {
+                  rawDb.prepare("DELETE FROM swarm_state WHERE key = ?").run(action.key);
+                }
+              } catch (e: any) {
+                errors.push(`${action.type}: ${e.message}`);
+              }
+            }
+          });
+          tx();
+          return { processed: actions.length, errors };
+        },
+        close: async (): Promise<void> => { rawDb.close(); },
+        loadExtension: async (_path: string): Promise<void> => { rawDb.loadExtension(_path); },
+      } as DatabasePort;
+    } else {
+      this.db = db;
+    }
     this.setupLogDirectory();
     this.setupExitHandlers();
   }
