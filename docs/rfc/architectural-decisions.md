@@ -2,6 +2,11 @@
 
 **Reviewer:** stangg
 **Date:** May 2026
+**Last updated:** 2026-05-23
+
+> **How to use this doc:** Section 5 lists gaps. Gaps marked ✅ are closed. Open gaps
+> feed into `docs/STATUS.md` and `docs/ROADMAP.md`. For the current priority list,
+> read `docs/STATUS.md` first.
 
 ---
 
@@ -208,7 +213,27 @@
 
 ## 5. Key Architectural Gaps
 
-### Gap 1: Meow's L3 is Flat — No Execution Modes
+### Gap Status Summary
+
+| Gap | Description | Status |
+|-----|-------------|--------|
+| Gap 1 | L3 flat — no execution modes | ✅ Closed — `ExecutionModes.ts` added |
+| Gap 2 | No pre-hoc validation contracts | ✅ Closed — `ValidationContract` + passes flag |
+| Gap 3 | No structured handoff between layers | ✅ Closed — `TaskSpec` with validation field |
+| Gap 4 | `FileCoordinator` in-memory vs SQLite | ✅ Closed — SQLite-backed, proven in tests |
+| Gap 5 | No path-based delegation protocol | ✅ Closed — `DelegationProtocol.ts` added |
+| Gap 6 | L1-L2 handoff informal | ✅ Closed — LLM-based decomposition |
+| BUG-01 | `vec_memory` integer PK crash | ❌ Open — memory broken on every startup |
+| BUG-02 | `fixMeow()` ETIMEDOUT Windows | ❌ Open — self-repair broken |
+| BUG-03 | DelegationProtocol unregistered workers | ❌ Open — browseros/qa route to claude |
+| BUG-04 | FedClient infinite reconnect | ❌ Open — no max attempts cap |
+| BUG-05 | FileCoordinator not enforced in Orchestrator | ❌ Open — advisory only |
+| BUG-06 | PID mismatch on respawn | ❌ Open — watchdog loses track |
+| BUG-07 | Architect fallback validation no-op | ❌ Open — always passes |
+
+---
+
+### ✅ Gap 1: Meow's L3 is Flat — No Execution Modes (CLOSED)
 
 **Current Meow:**
 ```
@@ -228,7 +253,7 @@ KitchenOrchestrator.run() → detect_mode() → switch(mode):
 
 **Fix:** Add `ExecutionMode` enum to meow, refactor `Orchestrator.execute()` into mode handlers.
 
-### Gap 2: No Pre-Hoc Validation Contracts
+### ✅ Gap 2: No Pre-Hoc Validation Contracts (CLOSED)
 
 **Current Meow:**
 ```
@@ -245,7 +270,7 @@ Architect verifies → passes: true → done
 
 **Fix:** Add `ValidationContract` interface. In `Architect.plan()`, generate contracts BEFORE spawning agents. Set `passes: false` initially. Only mark done when passes: true.
 
-### Gap 3: No Structured Handoff Between Layers
+### ✅ Gap 3: No Structured Handoff Between Layers (CLOSED)
 
 **Current Meow:**
 ```
@@ -271,7 +296,7 @@ Coder → structured result { passes: true/false, artifacts: [...] }
 
 **Fix:** Add `TaskSpec.validation: ValidationContract` to Task interface. Specialists receive structured input and return structured `TaskResult` with `passes` field.
 
-### Gap 4: FileCoordinator In-Memory vs SQLite Atomic Claiming
+### ✅ Gap 4: FileCoordinator In-Memory vs SQLite Atomic Claiming (CLOSED)
 
 **Current Meow (FileCoordinator.ts):**
 ```typescript
@@ -296,7 +321,7 @@ def claim_task(self, task_id: str, agent_id: str) -> bool:
 
 **Fix:** Replace in-memory FileCoordinator with SQLite-backed `SwarmDatabase` from Kitchen's `state/manager.py`. Use `BEGIN IMMEDIATE` transactions.
 
-### Gap 5: No Path-Based Delegation Protocol
+### ✅ Gap 5: No Path-Based Delegation Protocol (CLOSED)
 
 **Current Meow:** Any specialist can be assigned to any file.
 
@@ -318,7 +343,7 @@ class DelegationProtocol:
 
 **Fix:** Add `DelegationProtocol.ts` with path-based rules. Log all delegation decisions to `delegation-audit.jsonl`.
 
-### Gap 6: L1-L2 Handoff is Informal
+### ✅ Gap 6: L1-L2 Handoff is Informal (CLOSED)
 
 **Current Meow:** `Liaison.extractIntent()` produces `MissionBrief` via regex + keyword heuristics.
 
@@ -327,6 +352,85 @@ class DelegationProtocol:
 - L1 enriches context (available files, skills, MCP servers)
 - L2 (Architect) runs full LLM-based decomposition with this context
 - Not just regex classification
+
+---
+
+## 5b. Operational Gaps (Wave 4 — Active)
+
+These gaps are confirmed by live logs and the `ERRORS.md` error table. They are the current
+priority. See `docs/STATUS.md` for the ordered fix list.
+
+### BUG-01: `vec_memory` Integer Primary Key Crash
+
+**Symptom (from `.meow/logs/`):**
+```
+Memory store failed: SqliteError: Only integers are allowed for primary key values on vec_memory
+```
+Fires 7–10× per session. Every memory write fails. Memory subsystem is effectively broken.
+
+**Root cause:** The `vec_memory` table requires integer primary keys (a `sqlite-vec` constraint), but the insert is passing a non-integer (likely a UUID or string ID).
+
+**Fix:** Ensure the primary key value passed to `vec_memory` inserts is an integer. Use `AUTOINCREMENT` or derive from the parent table's integer rowid.
+
+---
+
+### BUG-02: `fixMeow()` spawnSync ETIMEDOUT on Windows
+
+**Symptom:** `claude -p spawnSync ETIMEDOUT` — MEOW-3-RULE self-repair loop is broken on Windows.
+
+**Root cause:** `spawnSync("cmd.exe", ["/c", "claude -p ..."])` hangs waiting for TTY input that never arrives.
+
+**Fix:** Use `spawn("node", [claudeBinPath, "-p", ...], { shell: false, stdio: ["pipe", "pipe", "pipe"] })` and close stdin immediately. Or use `execFile`. See `ERRORS.md` for full options.
+
+---
+
+### BUG-03: DelegationProtocol Routes to Unregistered Workers
+
+**File:** `src/orchestrator/DelegationProtocol.ts`
+
+**Symptom:** Tasks that should route to `browseros` or `qa` silently fall back to `claude`.
+
+**Fix:** Either register actual workers for these types, or remove them from the routing table until they exist.
+
+---
+
+### BUG-04: FedClient Infinite Reconnect Loop
+
+**File:** `src/swarm/federation/FedHub.ts:238`
+
+**Symptom:** On permanent network failure, `triggerReconnection()` retries indefinitely.
+
+**Fix:** Add `maxReconnectAttempts` counter; stop after N attempts and emit a `permanently_disconnected` event.
+
+---
+
+### BUG-05: FileCoordinator Not Enforced in Orchestrator
+
+**Files:** `src/orchestrator/FileCoordinator.ts`, `src/orchestrator/Orchestrator.ts`
+
+**Symptom:** `requestAccess()` returns `allowed: false`, but Orchestrator dispatches the task anyway. File lock is advisory-only.
+
+**Fix:** Check `allowed` before dispatch. If `false`, requeue with backoff.
+
+---
+
+### BUG-06: PID Mismatch on Respawn
+
+**File:** `src/kernel/kernel.ts`
+
+**Symptom:** `respawnAgent()` spawns a new PID but the caller retains the old reference. Watchdog loses the agent.
+
+**Fix:** `respawnAgent()` must return the new PID. All call sites must update the mission registry.
+
+---
+
+### BUG-07: Architect Fallback Validation Always Passes
+
+**File:** `src/architect/Architect.ts:125`
+
+**Symptom:** When no test file is found, the fallback contract runs `node -e "console.log('passed')"` — exits 0 always.
+
+**Fix:** Replace with a real sanity check, or fail explicitly when no test file exists.
 
 ---
 

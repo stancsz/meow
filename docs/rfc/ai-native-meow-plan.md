@@ -1,5 +1,12 @@
 # meow-swarm: AI-Native Self-Improving Loop — Project Plan
 
+> **STATUS: ALL PHASES COMPLETE** (as of 2026-05-23 — see `docs/loop-decisions.md` for commit hashes)
+>
+> This document is a historical record of the plan that was executed. The implementation
+> is in `src/`. For current open work, see `docs/STATUS.md` and `docs/ROADMAP.md` Wave 4.
+
+---
+
 > Mapping Tom Blomfield's YC talk "How to Build a Self-Improving Company with AI"
 > directly onto meow's codebase, gap by gap, loop by loop.
 

@@ -1,4 +1,7 @@
-# Test Report - 2026-05-21
+# Test Report — Snapshot 2026-05-21
+
+> **This is a point-in-time snapshot, not a living document.**
+> For current test status, run `npm test`. For current bug status, see `docs/STATUS.md`.
 
 ## Test Results Summary
 

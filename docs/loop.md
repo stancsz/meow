@@ -1,142 +1,97 @@
-# meow agent loop instructions
+# meow loop — operating procedure
 
-This loop never stops. Each iteration picks one thing, closes it, commits it, then finds the next thing. The goal is always the same: make meow a real self-improving AI-native system as described in `docs/AI_NATIVE_COMPANY_PLAN.md`.
-
----
-
-## before the first iteration only — orient yourself
-
-read these once to build your mental model. you do not need to re-read them every loop:
-
-- `docs/AI_NATIVE_COMPANY_PLAN.md` — the north star. what this whole thing is for.
-- `docs/AI_NATIVE_MEOW_PLAN.md` — what meow should become
-- `docs/ROADMAP.md` — current planned work
-- `docs/ARCHITECTURAL_GAP_ANALYSIS.md` — known gaps between intent and reality
-- `CLAUDE.md` — how to operate meow right now
-
-after that, each loop is the same four steps.
+One thing at a time. Pick it, close it, commit it, find the next thing. Never stop.
 
 ---
 
-## env check — run once at the start of every session
-
-before picking any work, verify the environment. run this and record what is present and what is missing:
+## orient (once per session)
 
 ```bash
-echo "MINIMAX_API_KEY:   ${MINIMAX_API_KEY:+set}"
-echo "MINIMAX_BASE_URL:  ${MINIMAX_BASE_URL:+set}"
-echo "LLM_API_KEY:       ${LLM_API_KEY:+set}"
-echo "LLM_BASE_URL:      ${LLM_BASE_URL:+set}"
-echo "ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set}"
-echo "MEOW_MODEL:        ${MEOW_MODEL:-not set}"
-echo "MEOW_BUDGET_CENTS: ${MEOW_BUDGET_CENTS:-not set}"
-echo "MEOW_AUDIT_DIR:    ${MEOW_AUDIT_DIR:-not set}"
+# verify env
+echo "LLM_API_KEY: ${LLM_API_KEY:+set} | ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set} | MEOW_MODEL: ${MEOW_MODEL:-not set}"
 ```
 
-**preferred provider is MiniMax.** if `MINIMAX_API_KEY` and `MINIMAX_BASE_URL` are set, configure meow to use them:
-
+Preferred provider: MiniMax. If `MINIMAX_API_KEY` + `MINIMAX_BASE_URL` are set:
 ```bash
 export LLM_API_KEY=$MINIMAX_API_KEY
 export LLM_BASE_URL=$MINIMAX_BASE_URL
 export MEOW_MODEL=${MEOW_MODEL:-"MiniMax-M1"}
 ```
 
-if MiniMax is not available, fall back to `ANTHROPIC_API_KEY`. if neither is set, document it in `docs/loop-decisions.md` as a blocker, skip any work that requires LLM calls, and focus on structural/non-LLM items instead. do not invent or hardcode keys.
+If neither provider is available: log the blocker in `loop-decisions.md`, skip LLM tasks, work on structural items only.
+
+Read ONLY these three docs. Stop. Do not read anything else in `docs/` unless the specific task you pick requires it.
+1. `docs/STATUS.md` — what to work on, open bugs
+2. `docs/ROADMAP.md` — wave plan and CLI reference
+3. `docs/loop-decisions.md` — what was last done
+
+`docs/rfc/` exists for reference — look up a specific file there only when a task explicitly needs it (e.g. fixing the TUI requires reading `docs/rfc/tui-spec.md`). `docs/archive/` is never read.
 
 ---
 
-## step 1 — pick one thing to work on
+## step 1 — pick one thing
 
-check `docs/ARCHITECTURAL_GAP_ANALYSIS.md` for open gaps. check `docs/ROADMAP.md` for planned items. check `docs/loop.md#decisions` for what was last worked on.
+Take the top open item from `docs/STATUS.md`. Priority:
+1. Critical bugs (BUG-01, BUG-02 first)
+2. Medium bugs
+3. Remaining ROADMAP items (TUI, etc.)
 
-pick the single highest-value open item. priority order:
-
-1. anything **critical** (meow crashes, loses data, silently does the wrong thing)
-2. anything **fragile** (breaks on edge cases, tests are mocked where they should be live)
-3. a **gap** that blocks one of the five loop layers from `AI_NATIVE_COMPANY_PLAN.md`:
-   - sensor layer — ingesting real signals
-   - policy layer — what runs autonomously vs. needs human sign-off
-   - tool layer — deterministic APIs the agent can call
-   - quality gate — checks, filters, auditing
-   - learning mechanism — the system sees its own failures and improves
-4. anything in `docs/ROADMAP.md` not yet done
-
-append your chosen item to `docs/loop-decisions.md` before doing any work:
+Append to `docs/loop-decisions.md` before touching any code:
 ```
 YYYY-MM-DD — working on: <item>
 ```
 
 ---
 
-## step 2 — perform live tests before and after
-
-before touching code, run the suite and record what passes and what fails:
+## step 2 — test before
 
 ```bash
 npm test
 ```
 
-then run at least one live test relevant to the item you picked:
+Run one live test relevant to the item:
+- kernel issue → `MeowKernel` with `:memory:` SQLite
+- agent issue → `meow -p "write hello world to /tmp/test.txt"` and verify file exists
+- orchestrator → enqueue real tasks and observe
+- TUI → `meow --tui` and verify render
 
-- if it's a kernel issue: create a `MeowKernel` with a real `:memory:` SQLite and verify behavior
-- if it's an agent issue: run `meow -p "write hello world to /tmp/test.txt"` and check the file exists
-- if it's an orchestrator issue: enqueue real tasks and watch them execute
-- if it's a TUI issue: spawn `meow --tui` and check it renders
-
-record what you ran, what happened, and whether it matched the expected behavior. **if a test only works with mocks, it doesn't count as passing.**
+Record what passed and what failed. **Mock-only tests don't count.**
 
 ---
 
-## step 3 — do the work, then commit it
+## step 3 — do the work and commit
 
-make the change. do not do more than the one item you picked. then:
+One item only. Then:
 
-1. run `npm test` again — confirm nothing regressed
-2. run the live test again — confirm the fix works end to end
-3. commit:
-
+1. `npm test` — no regressions
+2. Live test — fix confirmed end-to-end
+3. Commit:
 ```bash
-git add -A
-git commit -m "<short description of what changed and why>"
+git add -A && git commit -m "<what changed and why>"
 ```
 
-do not leave work uncommitted. if you can't commit because tests fail, fix the tests first. if you can't fix the tests, document why in `docs/ARCHITECTURAL_GAP_ANALYSIS.md` and revert the change.
+If tests fail: fix them first. If blocked (missing env, broken dep): log exact blocker in `loop-decisions.md`, revert, move to next item.
 
-if you are blocked by a missing env var, missing dependency, or broken environment: log it in `docs/loop-decisions.md` with the exact blocker, revert any incomplete changes, and move to the next item. do not get stuck.
-
-update `docs/ARCHITECTURAL_GAP_ANALYSIS.md` to mark the gap as closed if applicable.
+Update `docs/STATUS.md` to mark the bug closed. Update `docs/ROADMAP.md` checkbox.
 
 ---
 
-## step 4 — find and commit to the next highest-leverage action
-
-after committing, do not stop. do not ask for input. decide and move.
-
-run:
+## step 4 — find the next thing
 
 ```bash
-meow -p "read docs/AI_NATIVE_COMPANY_PLAN.md, docs/AI_NATIVE_MEOW_PLAN.md, docs/ARCHITECTURAL_GAP_ANALYSIS.md, and docs/ROADMAP.md. look at the current code in src/. apply 80/20 thinking: what is the single action that would deliver the most value toward making meow a real self-improving AI-native system? consider the five loop layers (sensor, policy, tool, quality gate, learning mechanism) and pick whichever is most broken or most missing. output only: the action, which layer it targets, and one sentence on why it is the highest-leverage move right now."
+meow -p "read docs/STATUS.md and docs/ROADMAP.md. look at src/. what is the single highest-leverage action right now? output only: the action, which of the five AI-native loop layers it targets (sensor/policy/tool/quality-gate/learning), and one sentence on why."
 ```
 
-take the output as the decision. do not second-guess it. add it to `docs/ROADMAP.md` and `docs/ARCHITECTURAL_GAP_ANALYSIS.md` as the next open item. record the decision and the reasoning in `docs/loop-decisions.md`. go back to step 1.
-
-the loop never ends. there is always a next thing.
+Take the output. Log it in `loop-decisions.md`. Add to `STATUS.md` if it's a new bug or to `ROADMAP.md` if it's planned work. Go back to step 1.
 
 ---
 
-## resolving conflicts
+## conflicts
 
-if anything is unclear or two docs contradict each other, resolve it by reading in this order:
-
-1. `docs/AI_NATIVE_COMPANY_PLAN.md` — highest authority
-2. `docs/AI_NATIVE_MEOW_PLAN.md` + `docs/ROADMAP.md`
-3. `docs/ARCHITECTURAL_GAP_ANALYSIS.md`
+If docs contradict each other, trust this order:
+1. `docs/STATUS.md` (current ground truth)
+2. `docs/rfc/ai-native-company-strategy.md` (strategic authority)
+3. `docs/ROADMAP.md`
 4. `CLAUDE.md`
 
-if the conflict still can't be resolved, document it in `docs/ARCHITECTURAL_GAP_ANALYSIS.md` as an open question and make the most conservative choice.
-
----
-
-## decisions
-
-decisions are logged in `docs/loop-decisions.md`. append there, not here.
+Document unresolvable conflicts in `docs/STATUS.md` as an open question.
