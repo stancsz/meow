@@ -23,7 +23,7 @@ The market has moved from AI-assisted coding ("System of Record") to Agentic SDL
 | Gap | Vision Capability | meow Current State | Severity |
 |-----|------------------|--------------------|----------|
 | **G1** Container isolation | Devin: secure sandbox, real OS-level | Regex command filter (`isCommandUnsafe`) — no Docker | Critical |
-| **G2** Browser/web agent | Devin: self-tests terminal → browser | `browseros` specialist silently routes to `claude` (BUG-03) | Critical |
+| **G2** Browser/web agent | Devin: self-tests terminal → browser | `browseros` specialist registered but limited CDP integration (BUG-03 resolved) | Critical |
 | **G3** Closed-loop pre-merge gate | Lightweight orchestrator asserts before merge | BUG-07: fallback validation always exits 0; BUG-05: FileCoordinator not enforced | Critical |
 | **G4** Self-repair on Windows | Devin self-heals; core to "System of Intelligence" | BUG-02: `fixMeow()` ETIMEDOUT — self-repair dead on primary dev platform | Critical |
 | **G5** Cross-session memory | Persistent recall across sessions | BUG-01: `vec_memory` crashes 7–10× per session; memory broken | Critical |
@@ -55,7 +55,7 @@ The market has moved from AI-assisted coding ("System of Record") to Agentic SDL
 
 **Vision:** Autonomous agents test their own changes end-to-end, including UI rendering and browser behavior.
 
-**meow today:** The `DelegationProtocol` defines `browseros` as a specialist type, but no worker is registered for it (BUG-03). Routing silently falls back to `claude`. There is no Playwright, Puppeteer, or CDP integration anywhere in the codebase.
+**meow today:** The `DelegationProtocol` has `browseros` as a specialist type, and the routing is now fixed (BUG-03 resolved). However, full CDP integration for end-to-end browser testing is still limited.
 
 **Impact:** meow cannot verify frontend changes, click through a UI, or test any behavior that requires a real browser. This eliminates meow from full-stack SDLC coverage.
 

@@ -70,7 +70,7 @@ Fix highest severity first. Mark done in `ROADMAP.md` and append to `loop-decisi
 | 5-phase AI-native self-improvement plan | `docs/rfc/ai-native-meow-plan.md` |
 | Quantum branding removed | committed |
 | Architectural gaps 1–6 (modes, validation, SQLite coord, delegation) | `docs/rfc/architectural-decisions.md` |
-| BUG-03: Removed `browseros` and `qa` dead routes from `DelegationProtocol` | `src/orchestrator/DelegationProtocol.ts` |
+| BUG-03: Registered `browseros` and `qa` workers in `DelegationProtocol` | `src/orchestrator/DelegationProtocol.ts` |
 
 ---
 

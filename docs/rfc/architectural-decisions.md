@@ -225,7 +225,7 @@
 | Gap 6 | L1-L2 handoff informal | ✅ Closed — LLM-based decomposition |
 | BUG-01 | `vec_memory` integer PK crash | ❌ Open — memory broken on every startup |
 | BUG-02 | `fixMeow()` ETIMEDOUT Windows | ❌ Open — self-repair broken |
-| BUG-03 | DelegationProtocol unregistered workers | ❌ Open — browseros/qa route to claude |
+| BUG-03 | DelegationProtocol unregistered workers | ✅ Resolved — workers registered |
 | BUG-04 | FedClient infinite reconnect | ❌ Open — no max attempts cap |
 | BUG-05 | FileCoordinator not enforced in Orchestrator | ❌ Open — advisory only |
 | BUG-06 | PID mismatch on respawn | ❌ Open — watchdog loses track |
@@ -388,9 +388,15 @@ Fires 7–10× per session. Every memory write fails. Memory subsystem is effect
 
 **File:** `src/orchestrator/DelegationProtocol.ts`
 
-**Symptom:** Tasks that should route to `browseros` or `qa` silently fall back to `claude`.
+**Symptom:** Tasks that should route to `browseros` or `qa` silently fell back to `claude`.
 
-**Fix:** Either register actual workers for these types, or remove them from the routing table until they exist.
+**Resolution:** Searched codebase and found both workers ARE registered:
+- `SPECIALISTS` in `src/agent/summoner.ts` has `qa` and `claude-browseros`
+- `SwarmManager` in `src/swarm/SwarmManager.ts` has `browseros` and `qa` as WorkerTypes
+
+**Fix applied:** Kept routing rules and fixed the routing logic:
+- `getDelegate()` routes `.css/.scss/.sass` → `browseros`
+- `determineSpecialistForTask()` routes web files → `browseros`, test files → `qa`
 
 ---
 
