@@ -17,6 +17,7 @@ import { AgenticMemory, MemoryResult } from "./memory";
 import { ReasoningEngine } from "./reasoning";
 import { MeowDatabase } from "../kernel/database";
 import { config } from "../config/env";
+import { embed } from "./embeddings";
 import { DatabasePort } from "../extensions/database/manifest";
 import { AuditLogger } from "../kernel/audit";
 import pc from "picocolors";
@@ -214,7 +215,7 @@ export class Agent {
             await this.agenticMemory.store(
               `Tool [${toolName}] result for query [${userInput}]: ${result.substring(0, 500)}`,
               { tool: toolName, type: "tool_output" },
-              this.mockEmbedding(userInput)
+              await embed(result.substring(0, 100))
             );
 
             this.messages.push({ role: "assistant", content: response });
@@ -714,7 +715,7 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
     const lastUserMessage = this.messages.filter(m => m.role === "user").pop();
     let relevantMemories: MemoryResult[] = [];
     if (lastUserMessage && lastUserMessage.content.trim()) {
-      relevantMemories = await this.agenticMemory.recall(lastUserMessage.content, this.mockEmbedding(lastUserMessage.content));
+      relevantMemories = await this.agenticMemory.recall(lastUserMessage.content, await embed(lastUserMessage.content));
     }
     if (relevantMemories.length > 0) {
       prompt += `\n\n# RECALLED AGENTIC MEMORY (Associative Knowledge):\n`;
@@ -1188,7 +1189,7 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
     await this.agenticMemory.store(
       `CONTEXT_ANCHOR: ${summary}`,
       { type: "archived_context", original_length: rawContent.length },
-      this.mockEmbedding(summary)
+      await embed(summary)
     );
 
     // Inject the anchor back into L1 to maintain semantic continuity
