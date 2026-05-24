@@ -362,8 +362,8 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           env: {
             ...process.env,
             CI: "true",
-            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-            ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
+            ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || process.env.LLM_BASE_URL,
           },
           encoding: "utf-8",
           timeout: 300_000,
@@ -402,11 +402,17 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           // Require meaningful output on success — empty stdout with code 0 is a silent failure
           if (stdout.trim().length > 0) {
             // Parse JSON output from --output-format=json
+            // Format: {"type":"result","result":{"content":"...","stop_reason":"..."}}
+            // The actual text is nested: parsed.result.result || parsed.result.content
             let extractedContent = stdout;
             try {
               const parsed = JSON.parse(stdout);
-              // Extract content from --output-format=json which returns {"type":"...","result":"..."}
-              extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
+              // Navigate the nested structure: result.result for text content
+              if (parsed.result) {
+                extractedContent = parsed.result.result || parsed.result.content || parsed.result.message || JSON.stringify(parsed.result, null, 2);
+              } else {
+                extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
+              }
             } catch {
               // Not JSON — use stdout as-is (plain text response)
             }

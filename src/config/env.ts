@@ -32,7 +32,7 @@ function parseBool(env: string | undefined, fallback: boolean): boolean {
 }
 
 export const config: MeowConfig = {
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
   baseUrl: process.env.ANTHROPIC_BASE_URL || "http://localhost:11434",
   model: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest",
 
