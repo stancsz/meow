@@ -340,75 +340,85 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
     // Run claude -p to fix MEOW
     try {
-      const { exec } = await import("child_process");
-      const { writeFile, rm } = await import("fs/promises");
+      const { spawn } = await import("child_process");
+      const { writeFile, rm, readFile } = await import("fs/promises");
       const { tmpdir } = await import("os");
       const path = await import("path");
 
       // Write prompt to temp file — avoids stdin heredoc issues on Windows cmd.exe
       // Use @file syntax so claude reads from file instead of stdin
       const tmpFile = path.join(tmpdir(), `meow_fix_${Date.now()}.txt`);
+      const outFile = path.join(tmpdir(), `meow_fix_out_${Date.now()}.txt`);
       await writeFile(tmpFile, fixPrompt, "utf-8");
 
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
-      const fullCmd = `${claudeBin} -p @${tmpFile} --output-format=json --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      const escapedTmpFile = tmpFile.replace(/\\/g, "/");
+      const escapedOutFile = outFile.replace(/\\/g, "/");
+      // On Windows, use cmd.exe /c to properly handle batch file I/O with output redirection to a file.
+      // This avoids the Windows batch stdout buffering issue with exec() where stdout isn't captured.
+      const fullCmd = process.platform === "win32"
+        ? `cmd.exe /c "${claudeBin} -p @"${escapedTmpFile}" --output-format=json --dangerously-skip-permissions > "${escapedOutFile}" 2>&1"`
+        : `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions`;
 
-      return await new Promise<string>((resolve) => {
-        // Use exec() instead of spawn() for reliable stdout collection on Windows.
-        // spawn(shell:true) with @file syntax can silently fail to collect stdout
-        // due to buffer flushing issues in cmd.exe child processes (BUG-02).
-        exec(fullCmd, {
+      return new Promise<string>((resolve) => {
+        const child = spawn(fullCmd, {
           cwd: meowDir,
+          shell: true,
           env: {
             ...process.env,
             CI: "true",
-            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-            ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
+            ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || process.env.LLM_BASE_URL,
           },
-          encoding: "utf-8",
           timeout: 300_000,
           windowsHide: true,
-        }, (err, stdout, stderr) => {
+        });
+
+        let timedOut = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, 300_000);
+
+        child.on('close', (code: number) => {
+          clearTimeout(timer);
           rm(tmpFile).catch(() => {});
 
-          if (err) {
-            // Timeout or other exec error — check if partial output was captured
-            const partialStdout = (err as any).stdout || "";
-            const partialStderr = (err as any).stderr || "";
-            const isTimeout = (err as any).killed && (err as any).code === 'ETIMEDOUT';
-
-            // On timeout with partial output, try to extract meaningful content
-            if (isTimeout && partialStdout.trim().length > 0) {
-              let extractedContent = partialStdout;
-              try {
-                const parsed = JSON.parse(partialStdout);
-                extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
-              } catch {
-                // Not JSON — use as-is
-              }
-              this.kernel.push({
-                type: "SET_STATE",
-                key: `meow:repair:${Date.now()}`,
-                value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError, partial: true },
-              });
-              this.suggestUpstreamContribution(extractedContent).catch(() => {});
-              resolve(extractedContent);
-            } else {
-              resolve(`❌ claude -p exited with error: ${err.message}${partialStderr ? '\nSTDERR: ' + partialStderr.substring(0, 300) : ''}${partialStdout ? '\nPartial output: ' + partialStdout.substring(0, 300) : ''}`);
-            }
+          if (timedOut) {
+            rm(outFile).catch(() => {});
+            resolve(`❌ claude -p timed out after 300s. Increase timeout or simplify the repair prompt.`);
             return;
           }
 
-          // Require meaningful output on success — empty stdout with code 0 is a silent failure
-          if (stdout.trim().length > 0) {
-            // Parse JSON output from --output-format=json
+          readFile(outFile, 'utf-8').then(stdout => {
+            rm(outFile).catch(() => {});
+            if (code !== 0 || stdout.trim().length === 0) {
+              resolve(`❌ claude -p exited with code ${code}. Output: "${stdout.substring(0, 300)}"`);
+              return;
+            }
+
+            // Try to find SEARCH/REPLACE blocks first (plain text format)
+            const hasSearchReplace = /<<<<<<< SEARCH/.test(stdout) && />>>>>>> REPLACE/.test(stdout);
             let extractedContent = stdout;
-            try {
-              const parsed = JSON.parse(stdout);
-              // Extract content from --output-format=json which returns {"type":"...","result":"..."}
-              extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
-            } catch {
-              // Not JSON — use stdout as-is (plain text response)
+
+            // If no SEARCH/REPLACE blocks, try JSON parsing (--output-format=json)
+            if (!hasSearchReplace) {
+              try {
+                const parsed = JSON.parse(stdout);
+                // claude --output-format=json returns {"result": "...", ...}
+                if (typeof parsed.result === "string" && parsed.result.trim()) {
+                  extractedContent = parsed.result.trim();
+                } else if (parsed.result?.result) {
+                  // Nested: {"result": {"result": "...", ...}}
+                  extractedContent = parsed.result.result || parsed.result.content || parsed.result.message || JSON.stringify(parsed.result, null, 2);
+                } else if (typeof parsed.content === "string") {
+                  extractedContent = parsed.content;
+                } else if (typeof parsed.message === "string") {
+                  extractedContent = parsed.message;
+                }
+              } catch {
+                // Not JSON — use stdout as-is (plain text response)
+              }
             }
 
             this.kernel.push({
@@ -418,10 +428,17 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
             });
             this.suggestUpstreamContribution(extractedContent).catch(() => {});
             resolve(extractedContent);
-          } else {
-            // Silent failure: process exited 0 but produced no output — this is the BUG-02 symptom
-            resolve(`❌ claude -p produced no output (exit code 0). The fixMeow exec on Windows did not collect stdout properly.\nPossible fixes:\n1. Pass --output-format=json to claude to ensure non-empty output\n2. Reduce prompt complexity to speed up response\nSTDOUT: "${stdout}"\nSTDERR: ${stderr.substring(0, 500)}`);
-          }
+          }).catch(err => {
+            rm(outFile).catch(() => {});
+            resolve(`❌ Failed to read claude output: ${err.message}`);
+          });
+        });
+
+        child.on('error', (err: Error) => {
+          clearTimeout(timer);
+          rm(tmpFile).catch(() => {});
+          rm(outFile).catch(() => {});
+          resolve(`❌ claude -p self-repair failed: ${err.message}\nCheck MEOW manually at ${meowDir}`);
         });
       });
     } catch (err: any) {

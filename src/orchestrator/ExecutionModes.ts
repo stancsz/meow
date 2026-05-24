@@ -6,6 +6,17 @@
 
 import { ExecutionMode } from './ExecutionMode';
 import { OrchestratorConfig, OrchestratedResult } from './Orchestrator';
+import { tuiEvents } from '../cli/tui-events';
+import type { Task } from './Task';
+import { TaskQueue } from './TaskQueue';
+import { ParallelExecutor } from './ParallelExecutor';
+import { FileCoordinator } from './FileCoordinator';
+import { DelegationProtocol } from './DelegationProtocol';
+import { config as envConfig } from '../config/env';
+import { MeowKernel } from '../kernel/kernel';
+import { MeowDatabase } from '../kernel/database';
+import { McpManager } from '../agent/mcp';
+import { SkillManager } from '../agent/skills';
 
 export interface ModeHandler {
   readonly mode: ExecutionMode;
@@ -20,9 +31,6 @@ export interface ModeHandlerConfig {
   retries?: number;
 }
 
-/**
- * AUTOPILOT handler: analyst → architect → executor → qa (full pipeline, quality-gated)
- */
 export class AutopilotHandler implements ModeHandler {
   readonly mode = ExecutionMode.AUTOPILOT;
 
@@ -35,14 +43,10 @@ export class AutopilotHandler implements ModeHandler {
     _config: OrchestratorConfig,
     _handlers: ModeHandlers
   ): Promise<OrchestratedResult> {
-    // TODO: Implement AUTOPILOT pipeline (analyst → architect → executor → qa)
     throw new Error('AutopilotHandler not yet implemented — use SHIP or SEQUENTIAL mode');
   }
 }
 
-/**
- * ECOMODE handler: always Haiku, fallback Sonnet — cost-optimized
- */
 export class EcoModeHandler implements ModeHandler {
   readonly mode = ExecutionMode.ECOMODE;
 
@@ -51,18 +55,122 @@ export class EcoModeHandler implements ModeHandler {
   }
 
   async execute(
-    _task: string,
-    _config: OrchestratorConfig,
+    task: string,
+    config: OrchestratorConfig,
     _handlers: ModeHandlers
   ): Promise<OrchestratedResult> {
-    // TODO: Implement ECOMODE (Haiku-first, fallback Sonnet)
-    throw new Error('EcoModeHandler not yet implemented — use PARALLEL mode');
+    const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
+    const SONNET_MODEL = 'claude-3-5-sonnet-latest';
+    const MAX_RETRIES = 1;
+    const TIMEOUT_MS = 30_000;
+
+    const taskId = 'ecomode-' + Date.now();
+    tuiEvents.emitTaskStart(taskId, '[ECOMODE] ' + task.substring(0, 60) + '...');
+
+    let lastResult: OrchestratedResult | null = null;
+    const models = [HAIKU_MODEL, SONNET_MODEL];
+
+    for (let attempt = 0; attempt < models.length; attempt++) {
+      const model = models[attempt];
+      const currentTaskId = taskId + '-' + attempt;
+
+      tuiEvents.emitTaskUpdate(currentTaskId, 'running', 'Attempt with ' + model);
+
+      const taskData: Task = {
+        id: currentTaskId,
+        description: task,
+        priority: 'medium',
+        dependencies: [],
+        createdAt: Date.now(),
+        maxRetries: MAX_RETRIES,
+        timeoutMs: TIMEOUT_MS,
+        status: 'pending',
+        producedFiles: [],
+        agentConfig: {
+          model,
+          baseUrl: envConfig.baseUrl,
+          apiKey: envConfig.apiKey || '',
+        },
+      };
+      taskData.assignedWorker = DelegationProtocol.determineSpecialistForTask(taskData);
+
+      const taskQueue = new TaskQueue(config.queue);
+      const coordinator = new FileCoordinator();
+
+      taskQueue.enqueue(taskData);
+
+      const kernel = new MeowKernel({} as any);
+      const db = new MeowDatabase({} as any);
+
+      const executor = new ParallelExecutor(
+        taskQueue,
+        coordinator,
+        config.executor,
+        {
+          onStatusChange: (tid, status) => {
+            if (status === 'running') tuiEvents.emitTaskStart(tid, task);
+            else if (status === 'completed') tuiEvents.emitTaskUpdate(tid, 'done');
+            else if (status === 'failed') tuiEvents.emitTaskUpdate(tid, 'failed');
+          },
+          onProgress: (_tid, message) => tuiEvents.emitMessage('info', message),
+          onResult: () => {},
+          onFileConflict: (_tid, conflicts) =>
+            tuiEvents.emitMessage('warn', 'File conflict: ' + conflicts.join(', ')),
+        }
+      );
+
+      const mcpMgr = new McpManager();
+      const skillMgr = new SkillManager();
+      executor.registerWorker({
+        workerId: 'eco-worker-' + attempt,
+        agentConfig: {
+          model,
+          baseUrl: envConfig.baseUrl,
+          apiKey: envConfig.apiKey || '',
+        },
+        mcpManager: mcpMgr,
+        skillManager: skillMgr,
+        kernel,
+        db,
+      } as any);
+
+      const results = await executor.run();
+      const taskResult = results.get(currentTaskId);
+
+      if (taskResult?.success) {
+        tuiEvents.emitTaskUpdate(currentTaskId, 'done', 'Success with ' + model);
+        tuiEvents.emitMessage('info', 'ECOMODE succeeded with ' + model);
+        return {
+          success: true,
+          summary: 'ECOMODE completed with ' + model + ': ' + (taskResult.output || ''),
+          details: {
+            successfulTasks: [currentTaskId],
+            failedTasks: [],
+            totalTasks: 1,
+          } as any,
+        };
+      }
+
+      lastResult = {
+        success: false,
+        summary: 'ECOMODE ' + model + ' failed: ' + (taskResult?.error || 'unknown'),
+        details: {
+          successfulTasks: [],
+          failedTasks: [currentTaskId],
+          totalTasks: 1,
+        } as any,
+      };
+
+      if (attempt < models.length - 1) {
+        tuiEvents.emitMessage('info', 'Falling back from Haiku to Sonnet...');
+      }
+    }
+
+    tuiEvents.emitTaskUpdate(taskId, 'failed', 'Both Haiku and Sonnet failed');
+    return lastResult!;
   }
 }
 
-/**
- * PIPELINE handler: analyst → architect → executor → qa → writer (sequential chain)
- */
 export class PipelineHandler implements ModeHandler {
   readonly mode = ExecutionMode.PIPELINE;
 
@@ -75,14 +183,10 @@ export class PipelineHandler implements ModeHandler {
     _config: OrchestratorConfig,
     _handlers: ModeHandlers
   ): Promise<OrchestratedResult> {
-    // TODO: Implement PIPELINE (sequential chain)
     throw new Error('PipelineHandler not yet implemented — use SHIP or SEQUENTIAL mode');
   }
 }
 
-/**
- * RALPH handler: ultrawork loop + architect_verify (never gives up, max 100 iterations)
- */
 export class RalphHandler implements ModeHandler {
   readonly mode = ExecutionMode.RALPH;
 
@@ -95,7 +199,6 @@ export class RalphHandler implements ModeHandler {
     _config: OrchestratorConfig,
     _handlers: ModeHandlers
   ): Promise<OrchestratedResult> {
-    // TODO: Implement RALPH (ultrawork, 100 retries, architect verify)
     throw new Error('RalphHandler not yet implemented — use SHIP or SEQUENTIAL mode');
   }
 }
@@ -107,9 +210,6 @@ export interface ModeHandlers {
   ralph: RalphHandler;
 }
 
-/**
- * Routing table: maps ExecutionMode to ModeHandler
- */
 export const MODE_HANDLERS: Record<ExecutionMode, ModeHandler | null> = {
   [ExecutionMode.PARALLEL]: null,
   [ExecutionMode.SEQUENTIAL]: null,
@@ -125,17 +225,10 @@ export const MODE_HANDLERS: Record<ExecutionMode, ModeHandler | null> = {
   [ExecutionMode.SWARM_TEAM]: null,
 };
 
-/**
- * Get handler for a given mode, or null if no specialized handler exists.
- */
 export function getHandler(mode: ExecutionMode): ModeHandler | null {
   return MODE_HANDLERS[mode] ?? null;
 }
 
-/**
- * Route execution to the appropriate mode handler.
- * Falls back to Orchestrator's built-in execution if no specialized handler exists.
- */
 export function routeToHandler(
   mode: ExecutionMode,
   task: string,
@@ -144,7 +237,7 @@ export function routeToHandler(
 ): Promise<OrchestratedResult> | null {
   const handler = getHandler(mode);
   if (!handler) {
-    return null; // Signal to use default execution
+    return null;
   }
   return handler.execute(task, config, handlers);
 }

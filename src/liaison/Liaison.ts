@@ -65,7 +65,7 @@ export class Liaison {
     this.config = {
       fastModel: config.fastModel || "claude-3-5-haiku-latest",
       fastModelBaseUrl: config.fastModelBaseUrl || process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com/v1",
-      fastModelApiKey: config.fastModelApiKey || process.env.ANTHROPIC_API_KEY || "",
+      fastModelApiKey: config.fastModelApiKey || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || "",
       initialResponseTimeoutMs: config.initialResponseTimeoutMs || 500,
       enableStreaming: config.enableStreaming ?? true,
     };
