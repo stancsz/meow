@@ -9,6 +9,24 @@ Each agent appends a timestamped entry when:
 
 ---
 
+### 2026-05-23 18:30 — [claude] — Wave 5 ECOMODE handler implemented, inline stubs removed
+
+**Status:** completed
+
+**Details:**
+- Implemented `EcoModeHandler.execute()` in `src/orchestrator/ExecutionModes.ts`: Haiku-first with Sonnet fallback, maxRetries=1, timeoutMs=30000
+- Emits `tuiEvents` for `task_start`, `task_update`, `task_done` (added `emitTaskDone()` to `TUIEventBus`)
+- Removed inline throw stubs from `Orchestrator.execute()` — replaced with real handler imports from `ExecutionModes.ts`
+- `npm run check`: typecheck ✅ (0 errors), lint ✅ (0 errors, only pre-existing warnings)
+- Updated `docs/COMMS.md` with this fix entry
+
+**Git changes:**
+- `src/orchestrator/ExecutionModes.ts` — implemented EcoModeHandler with Haiku→Sonnet fallback and tuiEvents
+- `src/orchestrator/Orchestrator.ts` — removed inline throw stubs, now imports real handler classes
+- `src/cli/tui-events.ts` — added `emitTaskDone()` method
+
+---
+
 ### 2026-05-23 17:45 — [claude] — Gap 1 fix: ExecutionModes.ts created, routeToHandler stub added
 
 **Status:** completed
