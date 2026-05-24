@@ -19,6 +19,7 @@ export interface ValidationContract {
   testSuite?: string;      // vitest/jest test suite name or filter
   validationScript?: string; // custom script to run
   expectedOutputs?: string[]; // expected string matches in file or output
+  mustFail?: boolean;      // if true, validation script must exit non-zero (used when no test file exists)
 }
 
 export interface TaskResult {

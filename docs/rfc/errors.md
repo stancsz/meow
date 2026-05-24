@@ -204,7 +204,7 @@ export LLM_API_KEY="sk-ant-api03-y7XcGi4-O5TQQIxzDR9OEWSQaIf9Lx5NPlSBsTPEj4BdjSl
 | `vec_memory` integer PK crash (BUG-01) | **Critical** | **Needs fix — top priority** |
 | `claude -p` spawnSync ETIMEDOUT (BUG-02) | **Critical** | **Needs fix** |
 | DelegationProtocol unregistered workers (BUG-03) | Medium | **Resolved** |
-| FedClient reconnect infinite loop (BUG-04) | Medium | **Needs fix** |
+| FedClient reconnect infinite loop (BUG-04) | Medium | **Resolved** |
 | FileCoordinator orchestrator non-enforcement (BUG-05) | Medium | **Needs fix** |
 | PID mismatch on respawn (BUG-06) | Medium | **Needs fix** |
 | Architect fallback validation no-op (BUG-07) | Low | **Needs fix** |

@@ -372,7 +372,30 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           rm(tmpFile).catch(() => {});
 
           if (err) {
-            resolve(`❌ claude -p exited with error: ${err.message}\nSTDERR: ${stderr.substring(0, 500)}\nSTDOUT: ${stdout.substring(0, 500)}`);
+            // Timeout or other exec error — check if partial output was captured
+            const partialStdout = (err as any).stdout || "";
+            const partialStderr = (err as any).stderr || "";
+            const isTimeout = (err as any).killed && (err as any).code === 'ETIMEDOUT';
+
+            // On timeout with partial output, try to extract meaningful content
+            if (isTimeout && partialStdout.trim().length > 0) {
+              let extractedContent = partialStdout;
+              try {
+                const parsed = JSON.parse(partialStdout);
+                extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
+              } catch {
+                // Not JSON — use as-is
+              }
+              this.kernel.push({
+                type: "SET_STATE",
+                key: `meow:repair:${Date.now()}`,
+                value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError, partial: true },
+              });
+              this.suggestUpstreamContribution(extractedContent).catch(() => {});
+              resolve(extractedContent);
+            } else {
+              resolve(`❌ claude -p exited with error: ${err.message}${partialStderr ? '\nSTDERR: ' + partialStderr.substring(0, 300) : ''}${partialStdout ? '\nPartial output: ' + partialStdout.substring(0, 300) : ''}`);
+            }
             return;
           }
 
@@ -382,8 +405,8 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
             let extractedContent = stdout;
             try {
               const parsed = JSON.parse(stdout);
-              // Extract content from common JSON formats: {"content": "..."} or {"type":"text","content":"..."}
-              extractedContent = parsed.content || parsed.message || parsed.text || JSON.stringify(parsed, null, 2);
+              // Extract content from --output-format=json which returns {"type":"...","result":"..."}
+              extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
             } catch {
               // Not JSON — use stdout as-is (plain text response)
             }

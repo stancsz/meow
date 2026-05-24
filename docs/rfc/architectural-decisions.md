@@ -226,7 +226,7 @@
 | BUG-01 | `vec_memory` integer PK crash | ❌ Open — memory broken on every startup |
 | BUG-02 | `fixMeow()` ETIMEDOUT Windows | ❌ Open — self-repair broken |
 | BUG-03 | DelegationProtocol unregistered workers | ✅ Resolved — workers registered |
-| BUG-04 | FedClient infinite reconnect | ❌ Open — no max attempts cap |
+| BUG-04 | FedClient infinite reconnect | ✅ Resolved — max reconnect cap + permanently_disconnected event |
 | BUG-05 | FileCoordinator not enforced in Orchestrator | ❌ Open — advisory only |
 | BUG-06 | PID mismatch on respawn | ❌ Open — watchdog loses track |
 | BUG-07 | Architect fallback validation no-op | ❌ Open — always passes |

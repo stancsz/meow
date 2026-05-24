@@ -9,6 +9,67 @@ Each agent appends a timestamped entry when:
 
 ---
 
+### 2026-05-23 17:33 — [claude] — BUG-07 fix: no-test-file fallback now fails explicitly
+
+**Status:** completed
+
+**Details:**
+- `src/architect/Architect.ts` line 125: when no test file was found, the fallback validation ran `node -e console.log(passed)` which always exited 0
+- Replaced with a real sanity check: `node -e "console.error('ERROR: No test file found for validation');process.exit(1)"`
+- This causes validation to fail immediately when no test file exists, rather than silently passing
+- All 186 tests pass (34 test files, 1 skipped)
+
+**Git changes:**
+- `src/architect/Architect.ts` — replaced silent `console.log(passed)` fallback with explicit failure script
+
+---
+
+### 2026-05-23 17:33 — [claude] — BUG-06 fix: respawnAgent() returns new PID, watchdog keeps reference
+
+**Status:** completed
+
+**Details:**
+- `respawnAgent()` called `spawn(...).pid` which only captures the PID value, not a reference to the child process
+- The caller had no way to track the new agent — watchdog would lose the agent
+- Fixed `respawnAgent()` to return `number | null` instead of `void`
+- Changed `spawn(...).pid` to store child in variable first, then return `newChild.pid`
+- Added cleanup for `agentProgress` map entry on respawn (was only deleting `agentHeartbeats`)
+- All 186 tests pass (34 test files, 1 skipped)
+
+**Git changes:**
+- `src/kernel/kernel.ts` — `respawnAgent()` now returns `Promise<number | null>`, stores child process before accessing `.pid`, cleans up `agentProgress` on respawn
+
+---
+
+**Status:** completed
+
+**Details:**
+- In `ParallelExecutor.dispatch()`, `requestAccess()` was called but its return value was ignored — tasks proceeded regardless of `allowed` status
+- Added a check: if `!access.allowed`, requeue the task with exponential backoff (50ms * 2^attempts, max 1000ms) and fire `onFileConflict` event
+- This prevents tasks from executing when file access is denied due to conflicts from other running tasks
+- All 186 tests pass (34 test files, 1 skipped)
+
+**Git changes:**
+- `src/orchestrator/ParallelExecutor.ts` — check `access.allowed` before dispatch, requeue with backoff if denied
+
+---
+
+**Status:** completed
+
+**Details:**
+- `FedClient.triggerReconnection()` already capped at 12 attempts, but didn't emit any event — callers had no way to react
+- Made `FedClient` extend `EventEmitter`; added `super()` in constructor
+- Added `MAX_RECONNECT_ATTEMPTS = 12` static constant
+- After max attempts reached, now emits `permanently_disconnected` event with `{ url, attempts }` payload
+- All 186 tests pass (34 test files, 2 skipped)
+
+**Git changes:**
+- `src/swarm/federation/FedHub.ts` — FedClient extends EventEmitter, emits permanently_disconnected
+- `docs/STATUS.md` — marked BUG-04 completed
+- `docs/ROADMAP.md` — checked BUG-04 checkbox
+
+---
+
 ### 2026-05-23 16:27 — [claude] — BUG-03 fix: Register or remove unregistered DelegationProtocol workers
 
 **Status:** completed
