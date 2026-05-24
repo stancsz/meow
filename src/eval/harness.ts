@@ -312,7 +312,7 @@ if (require.main === module) {
 
   const suite = getArg("--suite", "coding");
   const meowPath = getArg("--meow", "meow");
-  const model = getArg("--model", process.env.MEOW_MODEL || "claude-sonnet-4");
+  const model = getArg("--model", process.env.ANTHROPIC_MODEL || "claude-sonnet-4");
   const verbose = args.includes("--verbose");
 
   console.log(`\n${"─".repeat(60)}`);

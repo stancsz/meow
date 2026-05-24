@@ -13,6 +13,7 @@ import { SkillManager } from '../agent/skills';
 import { Architect } from '../architect/Architect';
 import { MissionBrief } from '../liaison/MissionBrief';
 import { ExecutionMode, isQualityMode, SelfReviewResult } from './ExecutionMode';
+import { routeToHandler, ModeHandlers, getHandler } from './ExecutionModes';
 import { SelfReviewRunner } from './SelfReviewRunner';
 import { DelegationProtocol } from './DelegationProtocol';
 
@@ -194,6 +195,20 @@ export class Orchestrator {
     const mode = options?.mode ?? ExecutionMode.SHIP;
     const onStatus = options?.onStatus;
 
+    // Gap 1 fix: route to mode-specific handler if one exists
+    const handlers: ModeHandlers = {
+      autopilot: { mode: ExecutionMode.AUTOPILOT, canHandle: (m: ExecutionMode) => m === ExecutionMode.AUTOPILOT, execute: async () => { throw new Error('AutopilotHandler not yet implemented'); } } as any,
+      ecomode: { mode: ExecutionMode.ECOMODE, canHandle: (m: ExecutionMode) => m === ExecutionMode.ECOMODE, execute: async () => { throw new Error('EcoModeHandler not yet implemented'); } } as any,
+      pipeline: { mode: ExecutionMode.PIPELINE, canHandle: (m: ExecutionMode) => m === ExecutionMode.PIPELINE, execute: async () => { throw new Error('PipelineHandler not yet implemented'); } } as any,
+      ralph: { mode: ExecutionMode.RALPH, canHandle: (m: ExecutionMode) => m === ExecutionMode.RALPH, execute: async () => { throw new Error('RalphHandler not yet implemented'); } } as any,
+    };
+    const routedResult = routeToHandler(mode, request, this.config, handlers);
+    if (routedResult !== null) {
+      // Mode has a dedicated handler — use it instead of default execution
+      onStatus?.({ level: 'info', message: `Routing to ${mode} mode handler`, timestamp: Date.now() });
+      return routedResult as Promise<OrchestratedResult>;
+    }
+
     onStatus?.({
       level: 'info',
       message: `Orchestrating: ${request}`,
@@ -246,7 +261,7 @@ export class Orchestrator {
     if (mode === ExecutionMode.ECOMODE) {
       for (const task of tasks) {
         task.agentConfig = {
-          model: 'minimax',
+          model: this.agent.model || "claude-3-5-sonnet-latest",
           baseUrl: this.agent.baseUrl,
           apiKey: this.agent.apiKey || '',
         };

@@ -8,7 +8,7 @@ One thing at a time. Pick it, close it, commit it, find the next thing. Never st
 
 ```bash
 # verify env
-echo "LLM_API_KEY: ${LLM_API_KEY:+set} | ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set} | MEOW_MODEL: ${MEOW_MODEL:-not set}"
+echo "ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set} | ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:+set}"
 ```
 
 Credentials and model are set in `.env` — do not export them inline. If no provider is available: log the blocker in `loop-decisions.md`, skip LLM tasks, work on structural items only.

@@ -9,6 +9,23 @@ Each agent appends a timestamped entry when:
 
 ---
 
+### 2026-05-23 17:45 — [claude] — Gap 1 fix: ExecutionModes.ts created, routeToHandler stub added
+
+**Status:** completed
+
+**Details:**
+- Created `src/orchestrator/ExecutionModes.ts` with AUTOPILOT/ECOMODE/PIPELINE/RALPH handler stubs and `ModeHandler` interface
+- Added `routeToHandler()` to `Orchestrator.execute()` — routes execution to mode-specific handler when one exists
+- Updated `docs/rfc/architectural-decisions.md` Gap 1 status to confirm file now truly exists
+- `npm run check`: typecheck ✅ (0 errors), lint ✅ (0 errors, 650 warnings — all pre-existing)
+
+**Git changes:**
+- `src/orchestrator/ExecutionModes.ts` — NEW: ModeHandler interface, AutopilotHandler/EcoModeHandler/PipelineHandler/RalphHandler stubs, routeToHandler()
+- `src/orchestrator/Orchestrator.ts` — added routeToHandler import and routing stub in execute()
+- `docs/rfc/architectural-decisions.md` — Gap 1: confirmed truly closed with creation date
+
+---
+
 ### 2026-05-23 17:33 — [claude] — BUG-07 fix: no-test-file fallback now fails explicitly
 
 **Status:** completed

@@ -63,9 +63,9 @@ export class Liaison {
   constructor(agent: Agent, config: LiaisonConfig = {}) {
     this.agent = agent;
     this.config = {
-      fastModel: config.fastModel || "minimax",
-      fastModelBaseUrl: config.fastModelBaseUrl || "https://api.minimax.chat/v1",
-      fastModelApiKey: config.fastModelApiKey || "",
+      fastModel: config.fastModel || "claude-3-5-haiku-latest",
+      fastModelBaseUrl: config.fastModelBaseUrl || process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com/v1",
+      fastModelApiKey: config.fastModelApiKey || process.env.ANTHROPIC_API_KEY || "",
       initialResponseTimeoutMs: config.initialResponseTimeoutMs || 500,
       enableStreaming: config.enableStreaming ?? true,
     };

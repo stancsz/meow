@@ -22,7 +22,7 @@ Meow-Swarm is a **background daemon** for coding tasks — think `nohup ./worker
 # Install (Node.js 18+ required)
 npm install -g meow-swarm
 
-# Configure API key (MiniMax preferred, falls back to Anthropic)
+# Configure API key (Anthropic)
 export ANTHROPIC_API_KEY="sk-ant-..."
 
 # Dispatch a task (runs in background)

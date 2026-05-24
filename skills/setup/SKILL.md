@@ -11,7 +11,7 @@ This skill allows MEOW to autonomously install and configure its Level-2 special
 ## 🔎 Pre-flight Checks
 1. **Identify OS**: Determine if the environment is macOS, Linux, or Windows.
 2. **Key Discovery**: 
-   - Check local `.env` for `LLM_API_KEY` and `LLM_BASE_URL`.
+   - Check local `.env` for `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`.
    - Check process environment for these variables.
    - If missing, ask the user or look for `ANTHROPIC_AUTH_TOKEN`.
 
@@ -20,15 +20,15 @@ This skill allows MEOW to autonomously install and configure its Level-2 special
 ### 1. Claude Code
 - **Command**: `npm install -g @anthropic-ai/claude-code`
 - **Verification**: `claude --version`
-- **Config**: Set `ANTHROPIC_API_KEY` to the value of `LLM_API_KEY`.
+- **Config**: Set `ANTHROPIC_API_KEY`.
 
 ### 2. Aider
 - **Command**: `pipx install aider-chat` (Recommended: Use Python 3.12 for stability)
 - **Manual Command**: `pip3.12 install aider-chat`
 - **Verification**: `aider --version`
 - **Config**: 
-  - Set `ANTHROPIC_API_KEY` to `LLM_API_KEY`.
-  - If `LLM_BASE_URL` is set, configure the specialist to use it as its API base where applicable (e.g., `OPENAI_API_BASE`).
+  - Set `ANTHROPIC_API_KEY`.
+  - If `ANTHROPIC_BASE_URL` is set, configure the specialist to use it as its API base where applicable (e.g., `OPENAI_API_BASE`).
 
 ### 3. OpenCode
 - **Command (Mac/Linux)**: `curl -fsSL https://opencode.ai/install | bash`
