@@ -142,7 +142,7 @@ Respond with ONLY the markdown content to append to CLAUDE.md.`;
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: config.model || "minimax",
+          model: config.model || "claude-3-5-sonnet-latest",
           messages: [{ role: "user", content: prompt }],
           max_tokens: 1024,
         }),

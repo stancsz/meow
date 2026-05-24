@@ -158,7 +158,7 @@ Even when working correctly, `MissionReviewer`'s 7-criterion scoring (Gap 3 from
 
 **Vision:** Enterprise orchestrators route tasks to the cheapest model capable of completing them. Trivial lint fixes → Haiku; architecture decisions → Opus. This is a core cost-control mechanism.
 
-**meow today:** `env.ts` reads `MEOW_MODEL` (defaults to `MiniMax-M2.7` or falls back to Anthropic). All tasks use the same model regardless of complexity. No Haiku/Sonnet/Opus tiering.
+**meow today:** `env.ts` reads `ANTHROPIC_MODEL` (defaults to `claude-3-5-sonnet-latest`). All tasks use the same model regardless of complexity. No Haiku/Sonnet/Opus tiering.
 
 **Impact:** Meow over-spends on trivial tasks and under-spends is not the risk — the risk is that complex architectural tasks get routed to a cheaper model by accident if the env var is set to a lightweight model.
 

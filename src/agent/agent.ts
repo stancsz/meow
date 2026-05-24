@@ -362,8 +362,8 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           env: {
             ...process.env,
             CI: "true",
-            ANTHROPIC_API_KEY: process.env.LLM_API_KEY || process.env.ANTHROPIC_API_KEY,
-            ANTHROPIC_BASE_URL: process.env.LLM_BASE_URL || process.env.ANTHROPIC_BASE_URL,
+            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+            ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
           },
           encoding: "utf-8",
           timeout: 300_000,

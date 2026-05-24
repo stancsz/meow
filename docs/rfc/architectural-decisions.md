@@ -235,6 +235,8 @@
 
 ### ✅ Gap 1: Meow's L3 is Flat — No Execution Modes (CLOSED)
 
+**Status:** ✅ Truly closed as of 2026-05-23 — `src/orchestrator/ExecutionModes.ts` created with AUTOPILOT/ECOMODE/PIPELINE/RALPH handlers; `routeToHandler()` stub added to `Orchestrator.execute()`.
+
 **Current Meow:**
 ```
 execute() → ParallelExecutor.run() → all tasks in parallel

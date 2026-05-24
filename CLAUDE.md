@@ -41,9 +41,9 @@ meow-swarm is a **background daemon-style coding harness**. Think `nohup ./worke
 ## Requirements
 
 - Node.js 18+ (Bun NOT supported — better-sqlite3 native addons require Node.js)
-- LLM provider env vars — **preferred: MiniMax** (falls back to Anthropic):
+- LLM provider env vars — **preferred: Anthropic**:
 
-Set credentials and model in `.env` (copy from `.env.example`). `src/config/env.ts` reads `LLM_API_KEY`, `LLM_BASE_URL`, and `MEOW_MODEL` from the environment. Never hardcode keys or model names.
+Set credentials and model in `.env` (copy from `.env.example`). `src/config/env.ts` reads `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_MODEL` from the environment. Never hardcode keys or model names.
 
 ## Architecture
 
@@ -57,7 +57,7 @@ Set credentials and model in `.env` (copy from `.env.example`). `src/config/env.
 ## Agent loop
 
 to run meow as a continuous self-improving loop, follow `docs/loop.md`. the loop:
-1. checks env vars (MiniMax first)
+1. checks env vars (Anthropic first)
 2. reads `docs/STATUS.md` — picks the top open bug or roadmap item
 3. runs live tests, does the work, commits
 4. uses `meow -p` to find the next item

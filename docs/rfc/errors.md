@@ -93,12 +93,9 @@
 
 **Severity:** Operational — meow cannot make LLM calls
 
-**Root cause:** The `LLM_API_KEY` in the shell environment uses an expired or invalid key. The gateway at `https://biosphere-gateway-242248356997.us-central1.run.app/anthropic/v1/messages` rejects requests with the old `sk-cp-...` prefix key.
+**Root cause:** The `ANTHROPIC_API_KEY` in the shell environment uses an expired or invalid key.
 
-**Fix:** Use the correct key (`sk-ant-api03-...`) in `~/.bashrc`:
-```bash
-export LLM_API_KEY="sk-ant-api03-y7XcGi4-O5TQQIxzDR9OEWSQaIf9Lx5NPlSBsTPEj4BdjSljxUJCfSsdHQi4UvYy7KOizFUKv3GLmkyZ9-wVhFj4LZOsfP4"
-```
+**Fix:** Update your `ANTHROPIC_API_KEY` environment variable with a valid key from your Anthropic dashboard.
 
 ---
 
