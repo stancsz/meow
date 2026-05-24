@@ -352,7 +352,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
       const escapedTmpFile = tmpFile.replace(/\\/g, "/");
-      const fullCmd = `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      const fullCmd = `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions < NUL`;
 
       return await new Promise<string>((resolve) => {
         // Use exec() with shell:true on Windows so cmd.exe handles < NUL redirection.
