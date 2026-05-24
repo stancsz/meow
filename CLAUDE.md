@@ -43,18 +43,7 @@ meow-swarm is a **background daemon-style coding harness**. Think `nohup ./worke
 - Node.js 18+ (Bun NOT supported — better-sqlite3 native addons require Node.js)
 - LLM provider env vars — **preferred: MiniMax** (falls back to Anthropic):
 
-```bash
-# Preferred — MiniMax (set in system env)
-export LLM_API_KEY=$MINIMAX_API_KEY
-export LLM_BASE_URL=$MINIMAX_BASE_URL
-export MEOW_MODEL="MiniMax-M1"
-
-# Fallback — Anthropic
-export LLM_API_KEY=$ANTHROPIC_API_KEY
-# LLM_BASE_URL defaults to https://api.anthropic.com
-```
-
-`src/config/env.ts` reads `LLM_API_KEY` and `LLM_BASE_URL` first, then falls back to `ANTHROPIC_API_KEY`. Never hardcode keys.
+Set credentials and model in `.env` (copy from `.env.example`). `src/config/env.ts` reads `LLM_API_KEY`, `LLM_BASE_URL`, and `MEOW_MODEL` from the environment. Never hardcode keys or model names.
 
 ## Architecture
 
@@ -75,3 +64,23 @@ to run meow as a continuous self-improving loop, follow `docs/loop.md`. the loop
 5. never stops — decisions are logged in `docs/loop-decisions.md`
 
 **docs reading rule**: only read `docs/STATUS.md`, `docs/ROADMAP.md`, `docs/loop.md`, and `docs/loop-decisions.md` unless a specific task requires something from `docs/rfc/`. Never read `docs/archive/`. Do not browse or read the docs folder beyond these files.
+
+## Known Failure Modes — Read Before Touching Docs or Files
+
+### Duplicate roadmap drift (HIGH RISK)
+
+`docs/STATUS.md` and `docs/ROADMAP.md` both list the same bugs. They are intentionally separate — STATUS.md is the live ground truth (prose, root causes, current phase), ROADMAP.md is the historical wave plan (checkboxes, CLI reference). **When you close a bug or unimplemented item, you MUST update both:**
+
+1. `docs/STATUS.md` — move the bug out of "Open Bugs" into "Completed"
+2. `docs/ROADMAP.md` — check the `- [ ]` checkbox to `- [x]`
+
+If only one is updated, the other becomes stale and future agents will re-work already-closed items. Also check `docs/rfc/architectural-decisions.md` — it has a gap status table that must be kept consistent with STATUS.md.
+
+**Trust order when docs contradict:** STATUS.md > ROADMAP.md > everything else.
+
+### Write verification (HIGH RISK)
+
+A confirmed failure mode (see `docs/FEEDBACK.md`): `meow -p` tasks have completed, reported success, and written a file — but the file on disk contained only a stub title line with no body content.
+
+**Rule: after any significant `write` or file creation, immediately read the file back and verify it is not a stub.** If the read returns fewer than 10 lines for a document that should have content, treat it as a failed write and retry. Do not commit until verified.
+

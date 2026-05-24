@@ -137,8 +137,8 @@ export class BrowserOSManager {
 
     // Launch BrowserOS
     const child = spawn("browseros-cli", ["launch", "--wait", String(BROWSEROS_LAUNCH_WAIT)], {
-      detached: true,
-      stdio: "ignore",
+      detached: false,
+      stdio: "pipe",
       shell: true
     });
 

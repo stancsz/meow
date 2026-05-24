@@ -11,14 +11,7 @@ One thing at a time. Pick it, close it, commit it, find the next thing. Never st
 echo "LLM_API_KEY: ${LLM_API_KEY:+set} | ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set} | MEOW_MODEL: ${MEOW_MODEL:-not set}"
 ```
 
-Preferred provider: MiniMax. If `MINIMAX_API_KEY` + `MINIMAX_BASE_URL` are set:
-```bash
-export LLM_API_KEY=$MINIMAX_API_KEY
-export LLM_BASE_URL=$MINIMAX_BASE_URL
-export MEOW_MODEL=${MEOW_MODEL:-"MiniMax-M1"}
-```
-
-If neither provider is available: log the blocker in `loop-decisions.md`, skip LLM tasks, work on structural items only.
+Credentials and model are set in `.env` — do not export them inline. If no provider is available: log the blocker in `loop-decisions.md`, skip LLM tasks, work on structural items only.
 
 Read ONLY these three docs. Stop. Do not read anything else in `docs/` unless the specific task you pick requires it.
 1. `docs/STATUS.md` — what to work on, open bugs

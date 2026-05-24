@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import { EventEmitter } from 'events';
 import * as crypto from 'crypto';
 import { Task, TaskResult } from '../../orchestrator/Task';
 
@@ -177,7 +178,8 @@ export class FedServer {
   }
 }
 
-export class FedClient {
+export class FedClient extends EventEmitter {
+  private static readonly MAX_RECONNECT_ATTEMPTS = 12;
   private ws: WebSocket | null = null;
   private url: string;
   private privateKey: crypto.KeyObject;
@@ -190,6 +192,7 @@ export class FedClient {
   private isClosedIntentionally = false;
 
   constructor(url: string, keys: { publicKey: string; privateKey: crypto.KeyObject }) {
+    super();
     this.url = url;
     this.privateKey = keys.privateKey;
     this.publicKeyPem = keys.publicKey;
@@ -237,10 +240,10 @@ export class FedClient {
 
   private triggerReconnection() {
     if (this.isReconnecting) return;
-    // Cap at 12 attempts (~5min of backoff) then give up to avoid infinite loop
-    if (this.reconnectAttempts >= 12) {
-      console.warn(`🛰️ [FedClient] Max reconnect attempts (12) reached. Giving up. Manual reconnect required.`);
+    if (this.reconnectAttempts >= FedClient.MAX_RECONNECT_ATTEMPTS) {
+      console.warn(`🛰️ [FedClient] Max reconnect attempts (${FedClient.MAX_RECONNECT_ATTEMPTS}) reached. Giving up. Manual reconnect required.`);
       this.isReconnecting = false;
+      this.emit('permanently_disconnected', { url: this.url, attempts: this.reconnectAttempts });
       return;
     }
     this.isReconnecting = true;

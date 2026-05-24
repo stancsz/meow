@@ -194,9 +194,9 @@ export class MeowKernel {
   }
 
   /**
-   * Respawn a frozen agent
+   * Respawn a frozen agent. Returns the new PID.
    */
-  private async respawnAgent(pid: number) {
+  private async respawnAgent(pid: number): Promise<number | null> {
     // Get the frozen agent's mission info
     const missions = await this.db.query<{ agent_name: string; goal: string }>(
       `SELECT agent_name, goal FROM missions WHERE pid = ?`,
@@ -206,7 +206,7 @@ export class MeowKernel {
 
     if (!mission) {
       console.error(`🚨 [WATCHDOG] Cannot respawn PID ${pid} - no mission record found`);
-      return;
+      return null;
     }
 
     // Mark old mission as failed
@@ -215,8 +215,9 @@ export class MeowKernel {
       [pid]
     );
 
-    // Remove from heartbeat tracking
+    // Remove from heartbeat and progress tracking
     this.agentHeartbeats.delete(pid);
+    this.agentProgress.delete(pid);
 
     // Spawn replacement agent
     console.log(pc.cyan(`🔄 [WATCHDOG] Respawning agent for mission: ${mission.goal}`));
@@ -225,7 +226,7 @@ export class MeowKernel {
     const { spawn } = require('child_process');
     const shell = process.platform === 'win32';
     const isBun = typeof (globalThis as any).Bun !== "undefined";
-    
+
     let spawnCmd: string;
     let spawnArgs: string[];
 
@@ -237,11 +238,13 @@ export class MeowKernel {
       spawnArgs = ['tsx', 'src/index.ts'];
     }
 
-    const newPid = spawn(spawnCmd, spawnArgs, {
+    const newChild = spawn(spawnCmd, spawnArgs, {
       cwd: process.cwd(),
-      detached: true,
-      stdio: 'inherit'
-    }).pid;
+      detached: false,
+      shell: true,
+      stdio: 'pipe'
+    });
+    const newPid = newChild.pid;
 
     // Register new mission
     await this.registerMission(newPid, mission.agent_name, mission.goal);
@@ -249,8 +252,10 @@ export class MeowKernel {
 
     // Notify listeners of PID change
     for (const cb of this.respawnCallbacks) {
-      cb(pid, newPid!);
+      cb(pid, newPid);
     }
+
+    return newPid;
   }
 
   /**

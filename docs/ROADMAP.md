@@ -6,13 +6,13 @@
 
 Fix the bugs breaking the running system. See `STATUS.md` for bug details and root causes.
 
-- [ ] BUG-01: Fix `vec_memory` integer PK crash — memory broken every session
-- [ ] BUG-02: Fix `fixMeow()` ETIMEDOUT on Windows — self-repair dead
-- [ ] BUG-03: Register or remove unregistered `DelegationProtocol` workers (`browseros`, `qa`)
-- [ ] BUG-04: Cap `FedClient.triggerReconnection()` at max attempts
-- [ ] BUG-05: Enforce `FileCoordinator.requestAccess()` in `Orchestrator` dispatch
-- [ ] BUG-06: Fix PID mismatch on `respawnAgent()` — watchdog loses track
-- [ ] BUG-07: Fix Architect fallback validation no-op (`node -e "console.log('passed')"`)
+- [x] BUG-01: Fix `vec_memory` integer PK crash — memory broken every session
+- [x] BUG-02: Fix `fixMeow()` ETIMEDOUT on Windows — self-repair dead
+- [x] BUG-03: Register or remove unregistered `DelegationProtocol` workers (`browseros`, `qa`)
+- [x] BUG-04: Cap `FedClient.triggerReconnection()` at max attempts
+- [x] BUG-05: Enforce `FileCoordinator.requestAccess()` in `Orchestrator` dispatch
+- [x] BUG-06: Fix PID mismatch on `respawnAgent()` — watchdog loses track
+- [x] BUG-07: Fix Architect fallback validation no-op (`node -e "console.log('passed')"`)
 - [ ] TUI rewrite per `docs/rfc/tui-spec.md` (pick after criticals done)
 
 ---

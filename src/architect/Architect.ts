@@ -124,12 +124,12 @@ export class Architect {
               expectedOutputs: ["passed", "success", "OK"]
             };
           } else {
-            // Fallback validation: pipe the task output file through a basic error checker.
-            // Uses the first produced file as the target. Previously this always passed.
-            const targetFile = task.producedFiles?.[0]?.path ?? "__none__";
+            // No test file found - validation must fail explicitly rather than passing silently.
+            // Previously this always passed when no test file and no produced files existed.
             task.validationContract = {
-              validationScript: `node -e "const fs=require('fs');const f=require('process').argv[2];const out=f&&f!=='__none__'&&fs.existsSync(f)?fs.readFileSync(f,'utf8'):'';if(/\\berror\\b/i.test(out)||/\\bfailed\\b/i.test(out)){console.log('VALIDATION FAILED');process.exit(1);}console.log('passed');" ${targetFile}`,
-              expectedOutputs: ["passed"]
+              validationScript: `node -e "console.error('ERROR: No test file found for validation');process.exit(1)"`,
+              expectedOutputs: [],
+              mustFail: true
             };
           }
         }

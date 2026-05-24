@@ -165,8 +165,27 @@ export class ParallelExecutor {
 
           noWorkerAvailableCount = 0; // Reset on successful dispatch
 
-          // Acquire the lock atomically before starting
-          this.coordinator.requestAccess(task.id, taskArtifacts);
+          // Check file access before starting (requeue with backoff if denied)
+          const access = this.coordinator.requestAccess(task.id, taskArtifacts);
+          if (!access.allowed) {
+            this.taskEvents?.onFileConflict?.(task.id, access.conflicts);
+
+            const currentBackoff = this.backoffCounts.get(task.id) || 0;
+            const delay = Math.min(50 * Math.pow(2, currentBackoff), 1000);
+            this.backoffCounts.set(task.id, currentBackoff + 1);
+
+            // Re-enqueue the task to let others proceed
+            task.status = 'pending';
+            (this.queue as any).running.delete(task.id);
+            this.queue.enqueue(task);
+
+            // Schedule a dispatch check after the backoff delay
+            setTimeout(() => {
+              dispatch();
+            }, delay);
+
+            break;
+          }
 
           startTask(task, worker);
 

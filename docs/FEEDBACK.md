@@ -9,6 +9,8 @@
 
 `fixMeow()` in `src/agent/agent.ts` times out at 300s when `claude -p` is spawned via Node.js `spawn(shell:true)` *inside the meow agent context*, even though the same spawn command works correctly when tested directly in a standalone Node script.
 
+**Status: FIXED** — Replaced `spawn(shell:true)` with `exec()` in `src/agent/agent.ts` fixMeow(). `exec()` collects stdout reliably via callback rather than event-based streaming that can race with process exit on Windows cmd.exe.
+
 ---
 
 ## What Was Observed
@@ -98,3 +100,61 @@ return await new Promise<string>((resolve) => {
 
 - `15ec526` — fix: increase fixMeow timeout to 300s and close stdin to prevent hang
 - `b8a31bd` — fix: use @file syntax for claude -p to avoid stdin hang, suppress extension discovery errors
+
+---
+
+## Issue: meow -p Task Produces Stub Instead of Full Content
+
+**Date:** 2026-05-23
+**Status:** Confirmed
+
+---
+
+## What Was Observed
+
+When dispatching a task via `meow -p` to create `docs/repo-map.md`, the agent completed the task and reported success, but the file only contained a single-line stub (`# Meow Repository Map`) with no actual content.
+
+The agent's output showed it had read files and written to the target, but the final file was nearly empty.
+
+---
+
+## Code Path
+
+`meow -p "Create a repository map document and save it to docs/repo-map.md..."`
+
+The agent:
+1. Listed directories and read key files (confirmed by cost/output traces)
+2. Called `write` to save `docs/repo-map.md`
+3. Reported success
+
+But the file on disk contained only the title line.
+
+---
+
+## Hypotheses
+
+1. **Write succeeded but was later overwritten** — The agent may have called `write` successfully, but a subsequent operation (another agent, a retry, or a checkpoint restore) overwrote it.
+
+2. **Write was called with truncated content** — The content passed to `write` was somehow truncated before it reached the file system. This could happen if the prompt content was very long and got compacted or truncated during context management.
+
+3. **MEOW-3-RULE recovery produced stale state** — After the agent completed and checkpointed, a subsequent recovery or replay may have restored an earlier empty version of the file.
+
+4. **Context compaction dropped the write content** — If the agent's context was compacted mid-task, the full content to write may have been lost from the agent's context before the `write` call executed.
+
+5. **Task claimed and worked by multiple agents** — The task was picked up by multiple specialist agents in parallel, and one agent's write overwrote another's.
+
+---
+
+## What to Check
+
+- [ ] Look at git history for `docs/repo-map.md` — was it ever fully written before this session?
+- [ ] Check if `docs/repo-map.md` existed before the meow -p call (did the agent create from scratch or edit?)
+- [ ] Compare the agent's reported `write` call content vs what ended up on disk
+- [ ] Add a read-back verification step after `write` to confirm content was written
+- [ ] Check if ParallelExecutor or another agent could have written to the same file concurrently
+
+---
+
+## Related Commits
+
+None yet — this was the first time this issue was observed.

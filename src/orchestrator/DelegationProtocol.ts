@@ -8,19 +8,14 @@ export class DelegationProtocol {
   public static getDelegate(filePath: string): 'claude' | 'aider' | 'opencode' | 'browseros' | 'qa' {
     const ext = path.extname(filePath).toLowerCase();
 
-    // UI/Assets
-    if (['.css', '.scss', '.html'].includes(ext)) {
-      return 'browseros';
-    }
-
-    // Docs/Metadata
-    if (['.md', '.json', '.yml', '.yaml', '.txt'].includes(ext)) {
-      return 'qa';
-    }
-
     // Source files
     if (['.ts', '.js', '.py', '.go', '.rs', '.tsx', '.jsx', '.cpp', '.c', '.h', '.java'].includes(ext)) {
       return 'claude';
+    }
+
+    // CSS/SCSS for web styling tasks
+    if (['.css', '.scss', '.sass'].includes(ext)) {
+      return 'browseros';
     }
 
     return 'claude';
@@ -28,13 +23,13 @@ export class DelegationProtocol {
 
   public static determineSpecialistForTask(task: Task): 'claude' | 'aider' | 'opencode' | 'browseros' | 'qa' {
     const allFiles = new Set<string>();
-    
+
     if (task.requiredFiles) {
       for (const f of task.requiredFiles) {
         allFiles.add(f);
       }
     }
-    
+
     if (task.producedFiles) {
       for (const artifact of task.producedFiles) {
         allFiles.add(artifact.path);
@@ -45,16 +40,17 @@ export class DelegationProtocol {
 
     if (allFiles.size > 0) {
       const fileList = Array.from(allFiles);
-      const isUI = fileList.some(f => ['.css', '.scss', '.html'].includes(path.extname(f).toLowerCase()));
-      if (isUI) {
+      const isSource = fileList.some(f => ['.ts', '.js', '.py', '.go', '.rs', '.tsx', '.jsx', '.cpp', '.c', '.h', '.java'].includes(path.extname(f).toLowerCase()));
+      const isWeb = fileList.some(f => ['.html', '.css', '.scss', '.sass'].includes(path.extname(f).toLowerCase()));
+
+      // QA specialist for test files
+      const isTest = fileList.some(f => f.includes('.test.') || f.includes('.spec.') || f.includes('__tests__'));
+      if (isTest) {
+        delegate = 'qa';
+      } else if (isWeb) {
         delegate = 'browseros';
-      } else {
-        const isDoc = fileList.every(f => ['.md', '.json', '.yml', '.yaml', '.txt'].includes(path.extname(f).toLowerCase()));
-        if (isDoc) {
-          delegate = 'qa';
-        } else {
-          delegate = 'claude';
-        }
+      } else if (isSource) {
+        delegate = 'claude';
       }
     }
 

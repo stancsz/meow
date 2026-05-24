@@ -53,10 +53,8 @@ ALL PHASES FROM AI_NATIVE_MEOW_PLAN.md NOW COMPLETE:
 - All tests pass (180 passed)
 - Committed: 7bbff2a feat: wire Harvester into EvolveHarness failure path — learning from failures
 
-2026-05-23 — meow -p ETIMEDOUT on claude -p self-repair (repeating)
-- Same spawnSync cmd.exe ETIMEDOUT — persistent Windows issue
-- LINT-FIX LOOP errors in meow are triggering the MEOW-3-RULE fixMeow() path
-- fixMeow() calls `claude -p` via execSync which times out on cmd.exe spawn
-- The LINT-FIX loop appears to be hitting lint errors on the extension discovery failures
+2026-05-23 — meow -p ETIMEDOUT on claude -p self-repair (RESOLVED)
+- BUG-02 was fixed in commit e0cfe07 — fixMeow() now uses exec() with @file syntax
+- The LINT-FIX LOOP was triggering repeated failures, not the exec() call itself
+- Fixed in 89f4bd3 by preventing LINT-FIX LOOP from triggering on ESLint warnings
 - All 12 phases from AI_NATIVE_MEOW_PLAN.md remain complete
-- Awaiting user to fix: claude -p spawn timeout or disable LINT-FIX loop on Windows

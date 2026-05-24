@@ -15,47 +15,17 @@
 
 Fix highest severity first. Mark done in `ROADMAP.md` and append to `loop-decisions.md`.
 
-### Critical (fix now)
-
-**BUG-01 — `vec_memory` integer primary key crash**
-- Symptom: `Memory store failed: SqliteError: Only integers are allowed for primary key values on vec_memory` — fires 7–10× per session
-- Impact: memory subsystem broken; MonitoringAgent, cross-session recall, KnowledgeSynthesizer all non-functional
-- File: `src/agent/memory.ts` (or wherever `vec_memory` rows are inserted)
-- Fix: pass an integer PK — use `INTEGER PRIMARY KEY AUTOINCREMENT`, store UUID as a separate column
-
-**BUG-02 — `fixMeow()` ETIMEDOUT on Windows**
-- Symptom: `claude -p spawnSync ETIMEDOUT` on every MEOW-3-RULE failure — self-repair loop dead
-- File: `src/agent/agent.ts` → `fixMeow()`
-- Fix: replace `spawnSync("cmd.exe", ...)` with `spawn("node", [claudeBin, "-p", ...], { shell: false, stdio: ["pipe","pipe","pipe"] })` and close stdin immediately
-
 ### Medium (fix after criticals)
 
-**BUG-03 — `DelegationProtocol` routes to unregistered workers**
-- `browseros` and `qa` delegate types silently fall back to `claude`
-- File: `src/orchestrator/DelegationProtocol.ts`
-- Fix: register workers or remove dead routes
+**BUG-03 — `DelegationProtocol` routes to unregistered workers** — completed
 
-**BUG-04 — `FedClient` infinite reconnect loop**
-- On permanent network failure, `triggerReconnection()` retries forever
-- File: `src/swarm/federation/FedHub.ts:238`
-- Fix: add `maxReconnectAttempts` counter; emit `permanently_disconnected` after N
+**BUG-04 — `FedClient` infinite reconnect loop** — completed
 
-**BUG-05 — `FileCoordinator` not enforced in `Orchestrator`**
-- `requestAccess()` returns `allowed: false` but Orchestrator dispatches anyway
-- Files: `src/orchestrator/FileCoordinator.ts`, `src/orchestrator/Orchestrator.ts`
-- Fix: check `allowed` before dispatch; requeue with backoff if false
+**BUG-05 — `FileCoordinator` not enforced in `Orchestrator`** — completed
 
-**BUG-06 — PID mismatch on respawn**
-- `respawnAgent()` spawns new PID but caller keeps old reference; watchdog loses the agent
-- File: `src/kernel/kernel.ts`
-- Fix: `respawnAgent()` returns new PID; all callers update the mission registry
+**BUG-06 — PID mismatch on respawn** — completed
 
-### Low
-
-**BUG-07 — Architect fallback validation always passes**
-- No test file found → contract runs `node -e "console.log('passed')"` → exits 0 always
-- File: `src/architect/Architect.ts:125`
-- Fix: real sanity check, or fail explicitly when no test file exists
+**BUG-07 — Architect fallback validation always passes** — completed
 
 ---
 
@@ -73,6 +43,13 @@ Fix highest severity first. Mark done in `ROADMAP.md` and append to `loop-decisi
 | 5-phase AI-native self-improvement plan | `docs/rfc/ai-native-meow-plan.md` |
 | Quantum branding removed | committed |
 | Architectural gaps 1–6 (modes, validation, SQLite coord, delegation) | `docs/rfc/architectural-decisions.md` |
+| BUG-02: Fixed `fixMeow()` timeout on Windows by using `exec()` instead of `spawn()` | `src/agent/agent.ts`, commit e0cfe07 |
+| BUG-01: Fixed `vec_memory` integer PK crash via correct `vec0_insert()` API | `src/agent/memory.ts`, `src/kernel/database.ts`, commit ca20ee4 |
+| BUG-03: Registered `browseros` and `qa` workers in `DelegationProtocol` | `src/orchestrator/DelegationProtocol.ts` |
+| BUG-04: Capped `FedClient` reconnect attempts; emits `permanently_disconnected` | `src/swarm/federation/FedHub.ts` |
+| BUG-05: Enforced `FileCoordinator.requestAccess()` in dispatch; requeue on denied | `src/orchestrator/ParallelExecutor.ts` |
+| BUG-06: `respawnAgent()` now returns new PID; callers update registry | `src/kernel/kernel.ts` |
+| BUG-07: Replaced no-op fallback with explicit failure when no test file | `src/architect/Architect.ts` |
 
 ---
 
@@ -91,6 +68,7 @@ Don't read these proactively. Look them up when the task requires it.
 | Self-improvement plan (all phases done) | `docs/rfc/ai-native-meow-plan.md` |
 | Token efficiency implementation | `docs/rfc/token-optimization.md` |
 | npm publishing guide | `docs/rfc/publish-guide.md` |
+| Agentic SDLC gap analysis (vs mid-2026 state of the art) | `docs/rfc/agentic-sdlc-gap-analysis.md` |
 
 ---
 
