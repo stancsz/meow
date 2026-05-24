@@ -340,69 +340,63 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
     // Run claude -p to fix MEOW
     try {
-      const { exec } = await import("child_process");
-      const { writeFile, rm } = await import("fs/promises");
+      const { spawn } = await import("child_process");
+      const { writeFile, rm, readFile } = await import("fs/promises");
       const { tmpdir } = await import("os");
       const path = await import("path");
 
       // Write prompt to temp file — avoids stdin heredoc issues on Windows cmd.exe
       // Use @file syntax so claude reads from file instead of stdin
       const tmpFile = path.join(tmpdir(), `meow_fix_${Date.now()}.txt`);
+      const outFile = path.join(tmpdir(), `meow_fix_out_${Date.now()}.txt`);
       await writeFile(tmpFile, fixPrompt, "utf-8");
 
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
       const escapedTmpFile = tmpFile.replace(/\\/g, "/");
-      const fullCmd = `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions < NUL`;
+      const escapedOutFile = outFile.replace(/\\/g, "/");
+      // On Windows, use cmd.exe /c to properly handle batch file I/O with output redirection to a file.
+      // This avoids the Windows batch stdout buffering issue with exec() where stdout isn't captured.
+      const fullCmd = process.platform === "win32"
+        ? `cmd.exe /c "${claudeBin} -p @"${escapedTmpFile}" --output-format=json --dangerously-skip-permissions > "${escapedOutFile}" 2>&1"`
+        : `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions`;
 
-      return await new Promise<string>((resolve) => {
-        // Use exec() with shell:true on Windows so cmd.exe handles < NUL redirection.
-        // Without shell:true, Windows can't process batch files or stdin redirects,
-        // causing fixMeow to hang silently (BUG-02 revisited).
-        exec(fullCmd, {
+      return new Promise<string>((resolve) => {
+        const child = spawn(fullCmd, {
           cwd: meowDir,
-          shell: process.platform === "win32" ? "cmd.exe" : "/bin/sh",
+          shell: true,
           env: {
             ...process.env,
             CI: "true",
             ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
             ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || process.env.LLM_BASE_URL,
           },
-          encoding: "utf-8",
           timeout: 300_000,
           windowsHide: true,
-        }, (err: any, stdout: any, stderr: any) => {
+        });
+
+        let timedOut = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, 300_000);
+
+        child.on('close', (code: number) => {
+          clearTimeout(timer);
           rm(tmpFile).catch(() => {});
 
-          if (err) {
-            // Timeout or other exec error — check if partial output was captured
-            const partialStdout = (err as any).stdout || "";
-            const partialStderr = (err as any).stderr || "";
-            const isTimeout = (err as any).killed && (err as any).code === 'ETIMEDOUT';
-
-            // On timeout with partial output, try to extract meaningful content
-            if (isTimeout && partialStdout.trim().length > 0) {
-              let extractedContent = partialStdout;
-              try {
-                const parsed = JSON.parse(partialStdout);
-                extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
-              } catch {
-                // Not JSON — use as-is
-              }
-              this.kernel.push({
-                type: "SET_STATE",
-                key: `meow:repair:${Date.now()}`,
-                value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError, partial: true },
-              });
-              this.suggestUpstreamContribution(extractedContent).catch(() => {});
-              resolve(extractedContent);
-            } else {
-              resolve(`❌ claude -p exited with error: ${err.message}${partialStderr ? '\nSTDERR: ' + partialStderr.substring(0, 300) : ''}${partialStdout ? '\nPartial output: ' + partialStdout.substring(0, 300) : ''}`);
-            }
+          if (timedOut) {
+            rm(outFile).catch(() => {});
+            resolve(`❌ claude -p timed out after 300s. Increase timeout or simplify the repair prompt.`);
             return;
           }
 
-          // Require meaningful output on success — empty stdout with code 0 is a silent failure
-          if (stdout.trim().length > 0) {
+          readFile(outFile, 'utf-8').then(stdout => {
+            rm(outFile).catch(() => {});
+            if (code !== 0 || stdout.trim().length === 0) {
+              resolve(`❌ claude -p exited with code ${code}. Output: "${stdout.substring(0, 300)}"`);
+              return;
+            }
+
             // Try to find SEARCH/REPLACE blocks first (plain text format)
             const hasSearchReplace = /<<<<<<< SEARCH/.test(stdout) && />>>>>>> REPLACE/.test(stdout);
             let extractedContent = stdout;
@@ -434,10 +428,17 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
             });
             this.suggestUpstreamContribution(extractedContent).catch(() => {});
             resolve(extractedContent);
-          } else {
-            // Silent failure: process exited 0 but produced no output — this is the BUG-02 symptom
-            resolve(`❌ claude -p produced no output (exit code 0). The fixMeow exec on Windows did not collect stdout properly.\nPossible fixes:\n1. Pass --output-format=json to claude to ensure non-empty output\n2. Reduce prompt complexity to speed up response\nSTDOUT: "${stdout}"\nSTDERR: ${stderr.substring(0, 500)}`);
-          }
+          }).catch(err => {
+            rm(outFile).catch(() => {});
+            resolve(`❌ Failed to read claude output: ${err.message}`);
+          });
+        });
+
+        child.on('error', (err: Error) => {
+          clearTimeout(timer);
+          rm(tmpFile).catch(() => {});
+          rm(outFile).catch(() => {});
+          resolve(`❌ claude -p self-repair failed: ${err.message}\nCheck MEOW manually at ${meowDir}`);
         });
       });
     } catch (err: any) {
