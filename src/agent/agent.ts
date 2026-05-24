@@ -351,14 +351,16 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
       await writeFile(tmpFile, fixPrompt, "utf-8");
 
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
-      const fullCmd = `${claudeBin} -p @${tmpFile} --output-format=json --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      const escapedTmpFile = tmpFile.replace(/\\/g, "/");
+      const fullCmd = `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions --permission-mode bypassPermissions`;
 
       return await new Promise<string>((resolve) => {
-        // Use exec() instead of spawn() for reliable stdout collection on Windows.
-        // spawn(shell:true) with @file syntax can silently fail to collect stdout
-        // due to buffer flushing issues in cmd.exe child processes (BUG-02).
+        // Use exec() with shell:true on Windows so cmd.exe handles < NUL redirection.
+        // Without shell:true, Windows can't process batch files or stdin redirects,
+        // causing fixMeow to hang silently (BUG-02 revisited).
         exec(fullCmd, {
           cwd: meowDir,
+          shell: process.platform === "win32" ? "cmd.exe" : "/bin/sh",
           env: {
             ...process.env,
             CI: "true",
@@ -368,7 +370,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           encoding: "utf-8",
           timeout: 300_000,
           windowsHide: true,
-        }, (err, stdout, stderr) => {
+        }, (err: any, stdout: any, stderr: any) => {
           rm(tmpFile).catch(() => {});
 
           if (err) {
@@ -401,20 +403,28 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
           // Require meaningful output on success — empty stdout with code 0 is a silent failure
           if (stdout.trim().length > 0) {
-            // Parse JSON output from --output-format=json
-            // Format: {"type":"result","result":{"content":"...","stop_reason":"..."}}
-            // The actual text is nested: parsed.result.result || parsed.result.content
+            // Try to find SEARCH/REPLACE blocks first (plain text format)
+            const hasSearchReplace = /<<<<<<< SEARCH/.test(stdout) && />>>>>>> REPLACE/.test(stdout);
             let extractedContent = stdout;
-            try {
-              const parsed = JSON.parse(stdout);
-              // Navigate the nested structure: result.result for text content
-              if (parsed.result) {
-                extractedContent = parsed.result.result || parsed.result.content || parsed.result.message || JSON.stringify(parsed.result, null, 2);
-              } else {
-                extractedContent = parsed.result || parsed.content || parsed.message || JSON.stringify(parsed, null, 2);
+
+            // If no SEARCH/REPLACE blocks, try JSON parsing (--output-format=json)
+            if (!hasSearchReplace) {
+              try {
+                const parsed = JSON.parse(stdout);
+                // claude --output-format=json returns {"result": "...", ...}
+                if (typeof parsed.result === "string" && parsed.result.trim()) {
+                  extractedContent = parsed.result.trim();
+                } else if (parsed.result?.result) {
+                  // Nested: {"result": {"result": "...", ...}}
+                  extractedContent = parsed.result.result || parsed.result.content || parsed.result.message || JSON.stringify(parsed.result, null, 2);
+                } else if (typeof parsed.content === "string") {
+                  extractedContent = parsed.content;
+                } else if (typeof parsed.message === "string") {
+                  extractedContent = parsed.message;
+                }
+              } catch {
+                // Not JSON — use stdout as-is (plain text response)
               }
-            } catch {
-              // Not JSON — use stdout as-is (plain text response)
             }
 
             this.kernel.push({

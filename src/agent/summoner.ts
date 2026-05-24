@@ -77,7 +77,7 @@ INSTRUCTIONS:
 - SURGICAL CHANGES: Match the existing style exactly.`;
       
       // Hardened Headless Flags: -p for non-interactive print mode, bypass for everything else
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
     }
   },
   aider: {
@@ -139,7 +139,7 @@ RESOURCES: ${ctx.files.join(", ")}
 - SIMPLICITY FIRST: Clean, readable test code.
 - GOAL-DRIVEN: Your success is defined by test coverage and documentation clarity.`;
       
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
     }
   },
   "claude-hermes": {
@@ -171,7 +171,7 @@ INSTRUCTIONS:
 - GOAL-DRIVEN: Define success criteria before starting`;
 
       // Hermes uses Claude Code with specialized prompts for skill evolution
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
     }
   },
   "claude-browseros": {
@@ -203,7 +203,7 @@ INSTRUCTIONS:
 - Take screenshot: claude mcp call mcp__browseros__ss --page <pageId>`;
 
       // BrowserOS works through MCP tools with Claude Code
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
     }
   },
   eigent: {
@@ -233,7 +233,7 @@ INSTRUCTIONS:
 - THINK BEFORE CODING: Plan parallelization strategy
 - SIMPLICITY FIRST: Minimize redundant parallel tasks`;
 
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions --permission-mode bypassPermissions`;
+      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
     }
   }
 };
