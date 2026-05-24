@@ -31,7 +31,14 @@ Fix highest severity first. Mark done in `ROADMAP.md` and append to `loop-decisi
 
 ## Unimplemented Planned Work
 
-**TUI rewrite** — `docs/rfc/tui-spec.md` describes a task-tree + streaming output redesign not yet built. Pick this after all criticals are resolved.
+**Wave 5 — Mode activation + CLI rewrite.** Read `docs/rfc/architect-guidance.md` before picking any of these. Order matters.
+
+1. **ECOMODE handler** — implement `EcoModeHandler.execute()` in `ExecutionModes.ts` (Haiku-first, Sonnet fallback)
+2. **AUTOPILOT handler** — implement multi-stage pipeline: Liaison → Architect → workers → Auditor
+3. **TUI rewrite** — per `docs/rfc/tui-spec.md`; do after AUTOPILOT so the task tree has real events to render
+4. **REPL rewrite** — replace `parallelMode` boolean with `ExecutionMode`, add readline history, add `/abort`; do alongside TUI
+5. **RALPH handler** — AUTOPILOT wrapper with 100-retry loop; do last
+6. **Persistent error log** — tee stderr + uncaught exceptions to `~/.meow/logs/error.log` with rotation; do in first Wave 5 commit alongside the Orchestrator inline-stub cleanup
 
 ---
 
@@ -69,6 +76,7 @@ Don't read these proactively. Look them up when the task requires it.
 | Token efficiency implementation | `docs/rfc/token-optimization.md` |
 | npm publishing guide | `docs/rfc/publish-guide.md` |
 | Agentic SDLC gap analysis (vs mid-2026 state of the art) | `docs/rfc/agentic-sdlc-gap-analysis.md` |
+| Wave 5 build order + REPL/TUI/mode architecture | `docs/rfc/architect-guidance.md` |
 
 ---
 
