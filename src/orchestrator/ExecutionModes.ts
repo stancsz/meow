@@ -100,7 +100,7 @@ export class EcoModeHandler implements ModeHandler {
       taskQueue.enqueue(taskData);
 
       const kernel = new MeowKernel({} as any);
-      const db = new MeowDatabase({} as any);
+      const db = new MeowDatabase(':memory:');
 
       const executor = new ParallelExecutor(
         taskQueue,

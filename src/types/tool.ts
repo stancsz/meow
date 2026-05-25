@@ -6,14 +6,40 @@ import path from "path";
 const execAsync = promisify(exec);
 
 /**
+ * Convert Unix-style path to Windows path on Windows.
+ * /c/Users/... → C:\Users\...
+ * Handles both /c/ and /C/ formats.
+ */
+function convertUnixPath(p: string): string {
+  if (process.platform === "win32" && /^\/[a-z]\//i.test(p)) {
+    // /c/Users/... -> C:\Users\...
+    const match = p.match(/^\/([a-z])\/(.*)/i);
+    if (match) {
+      return match[1].toUpperCase() + ":\\" + match[2].replace(/\//g, "\\");
+    }
+  }
+  return p;
+}
+
+/**
  * Sanitize a file path to prevent shell metacharacter injection.
  * Strips any shell operators appended after the actual path.
  * e.g. "/path/file.md | tail -300" → "/path/file.md"
+ *
+ * NOTE: On Windows, path.normalize() converts /c/... to \c\... which doesn't work.
+ * We handle Unix-style paths by converting them first.
  */
 function sanitizePath(raw: string): string {
-  // Strip everything after shell metacharacters: | & $ ; < > ` \ and anything following
-  const cleaned = String(raw).replace(/[|&;$<>`\\].*$/, "").trim();
-  return path.normalize(cleaned);
+  // Only strip actual shell metacharacters at the END of the path, not path separators.
+  // Shell operators: | & $ ; < > ` and trailing operators after them
+  const str = String(raw);
+  const match = str.match(/[|&;$<>`].*$/);
+  if (match) {
+    // Truncate at the first shell operator
+    const cleaned = str.substring(0, str.length - match[0].length);
+    return path.normalize(convertUnixPath(cleaned || str)).trim();
+  }
+  return path.normalize(convertUnixPath(str)).trim();
 }
 
 /**
@@ -21,8 +47,13 @@ function sanitizePath(raw: string): string {
  */
 function sanitizeDir(raw: string | undefined): string {
   if (!raw) return ".";
-  const cleaned = String(raw).replace(/[|&;$<>`\\].*$/, "").trim();
-  return path.normalize(cleaned || ".");
+  const str = String(raw);
+  const match = str.match(/[|&;$<>`].*$/);
+  if (match) {
+    const cleaned = str.substring(0, str.length - match[0].length);
+    return path.normalize(convertUnixPath(cleaned || ".")).trim();
+  }
+  return path.normalize(convertUnixPath(str) || ".").trim();
 }
 
 export interface Tool {

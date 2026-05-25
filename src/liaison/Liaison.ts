@@ -160,9 +160,17 @@ export class Liaison {
       brief.targetFiles.push(match[1]);
     }
 
-    // Success criteria
-    if (/\btest\b/i.test(lowerInput)) {
-      brief.successCriteria = { acceptanceCriteria: ["tests pass"] };
+    // Success criteria - derive explicit acceptance criteria from user request
+    const acceptanceCriteria = this.deriveAcceptanceCriteria(input, brief.intent);
+    if (acceptanceCriteria.length > 0) {
+      brief.successCriteria = {
+        acceptanceCriteria,
+        ...(brief.successCriteria?.testCmd ? { testCmd: brief.successCriteria.testCmd } : {}),
+      };
+    } else if (brief.successCriteria?.acceptanceCriteria) {
+      // Keep existing acceptance criteria if no new ones derived
+    } else {
+      brief.successCriteria = { acceptanceCriteria: [] };
     }
 
     // Priority
@@ -170,11 +178,6 @@ export class Liaison {
       brief.priority = "critical";
     } else if (/\b(someday|low priority|whenever)\b/.test(lowerInput)) {
       brief.priority = "low";
-    }
-
-    // Success criteria for test intent
-    if (brief.intent === "test") {
-      brief.successCriteria = { acceptanceCriteria: ["tests pass"] };
     }
 
     // Complexity estimation (simple word count + keyword heuristics)
@@ -348,5 +351,76 @@ followed by 2-3 bullet points of your initial approach. Be confident but concise
    */
   public getConfig(): Required<LiaisonConfig> {
     return { ...this.config };
+  }
+
+  /**
+   * Derive explicit acceptance criteria from user input.
+   * Parses request for verifiable outcomes.
+   */
+  private deriveAcceptanceCriteria(input: string, intent: string): string[] {
+    const criteria: string[] = [];
+    const lower = input.toLowerCase();
+
+    // Pattern-based extraction
+    const criteriaPatterns = [
+      // Explicit criteria markers
+      { pattern: /should\s+(.+?)(?:\.|$)/gi, extract: (m: string) => m.replace(/^should\s+/i, '') },
+      { pattern: /must\s+(.+?)(?:\.|$)/gi, extract: (m: string) => m.replace(/^must\s+/i, '') },
+      { pattern: /acceptance[:\s]+(.+?)(?:\.|$)/gi, extract: (m: string) => m.replace(/^acceptance[:\s]+/i, '') },
+      { pattern: /done\s+when[:\s]+(.+?)(?:\.|$)/gi, extract: (m: string) => m.replace(/^done\s+when[:\s]+/i, '') },
+
+      // Functional outcomes
+      { pattern: /work[s]?\s+correctly/g, extract: () => 'code works correctly' },
+      { pattern: /pass(?:es)?\s+tests?/g, extract: () => 'tests pass' },
+      { pattern: /no\s+errors?/g, extract: () => 'no errors' },
+      { pattern: /fix(?:es|ed)?\s+(?:the\s+)?(.+?)(?:\.|$)/gi, extract: (m: string) => `fix: ${m.replace(/^fix(?:es|ed)?\s+(?:the\s+)?/i, '')}` },
+
+      // Implementation markers
+      { pattern: /implement[s]?\s+(.+?)(?:\.|$)/gi, extract: (m: string) => `implemented: ${m.replace(/^implement[s]?\s+/i, '')}` },
+      { pattern: /create[s]?\s+(.+?)(?:\.|$)/gi, extract: (m: string) => `created: ${m.replace(/^create[s]?\s+/i, '')}` },
+      { pattern: /add[s]?\s+(.+?)(?:\.|$)/gi, extract: (m: string) => `added: ${m.replace(/^add[s]?\s+/i, '')}` },
+
+      // Test-specific
+      { pattern: /test[s]?\s+(.+?)(?:\.|$)/gi, extract: (m: string) => `test: ${m.replace(/^test[s]?\s+/i, '')}` },
+    ];
+
+    for (const { pattern, extract } of criteriaPatterns) {
+      const matches = input.matchAll(pattern);
+      for (const match of matches) {
+        const criterion = extract(match[0]);
+        if (criterion && criterion.length > 2 && criterion.length < 200) {
+          criteria.push(criterion);
+        }
+      }
+    }
+
+    // Intent-specific defaults
+    if (criteria.length === 0) {
+      switch (intent) {
+        case 'implement':
+          criteria.push('feature works as intended');
+          break;
+        case 'debug':
+          criteria.push('bug is fixed', 'no regression introduced');
+          break;
+        case 'test':
+          criteria.push('tests pass');
+          break;
+        case 'refactor':
+          criteria.push('functionality preserved', 'no breaking changes');
+          break;
+        case 'deploy':
+          criteria.push('deployment successful', 'service accessible');
+          break;
+      }
+    }
+
+    // Ensure 'tests pass' is included for test intent
+    if (intent === 'test' && !criteria.includes('tests pass')) {
+      criteria.push('tests pass');
+    }
+
+    // Deduplicate
+    return [...new Set(criteria)].slice(0, 10);
   }
 }

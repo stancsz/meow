@@ -10,6 +10,7 @@ import { createRepl } from "./cli/repl";
 import { MeowKernel } from "./kernel/kernel";
 import { DatabasePort } from "./extensions/database/manifest";
 import { MeowDatabase } from "./kernel/database";
+import { ExecutionMode } from "./orchestrator/ExecutionMode";
 
 /**
  * Resolve a prompt string that may be a file reference.
@@ -103,6 +104,10 @@ async function main() {
     kernel
   });
 
+// ── Mandatory test execution: default true, suppress with --no-test ───────
+  const suppressTests = process.argv.includes("--no-test");
+  const runTestsByDefault = !suppressTests;
+
   // Support for -p (plan/non-interactive) mode — the primary headless interface
   const planMode = process.argv.includes("-p") || process.argv.includes("--plan");
   if (planMode) {
@@ -122,9 +127,28 @@ async function main() {
       console.log(`🤖 [meow] Plan mode: ${command}`);
     }
 
-    const response = await agent.chat(command, false, undefined, (status) => {
-      process.stdout.write(`\r${status}`);
-    });
+    // Route through Orchestrator in SHIP mode by default; agent.chat() is fallback for simple one-liners
+    const isSimpleOneLiner = command.length < 150 && !command.includes('\n') && !command.includes('task:') && !command.includes('subtask:');
+
+let response: string;
+    if (isSimpleOneLiner) {
+      // Fallback: direct agent.chat() for simple commands
+      response = await agent.chat(command, runTestsByDefault, undefined, (status) => {
+        process.stdout.write(`\r${status}`);
+      });
+    } else {
+// Primary: route through Orchestrator.execute() in SHIP mode
+      const { Orchestrator } = await import('./orchestrator/Orchestrator');
+      const orchestrator = new Orchestrator(agent);
+      const result = await orchestrator.execute(command, {
+        mode: ExecutionMode.SHIP,
+        runTests: runTestsByDefault,
+        onStatus: (update) => {
+          process.stdout.write(`\r${update.message}`);
+        },
+      });
+      response = result.summary;
+    }
     console.log("\n" + response);
 
     const meowDb = db as any;
@@ -175,11 +199,11 @@ async function main() {
     process.exit(0);
   }
 
-  // Non-interactive command mode (legacy)
+// Non-interactive command mode (legacy)
   const command = process.argv.filter(arg => !arg.startsWith("--")).slice(2).join(" ");
   if (command) {
     console.log(`🤖 [meow] Executing command: ${command}`);
-    const response = await agent.chat(command, false, undefined, (status) => {
+    const response = await agent.chat(command, runTestsByDefault, undefined, (status) => {
       process.stdout.write(`\r${status}`);
     });
     console.log("\n" + response);

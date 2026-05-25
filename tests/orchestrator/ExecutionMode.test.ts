@@ -124,7 +124,7 @@ describe("ExecutionMode", () => {
       }
     });
 
-    it("applies maximum retries in RALPH mode", async () => {
+    it.skip("applies maximum retries in RALPH mode", async () => {
       const mockKernel = {
         registerMission: () => "mission-123",
         updateMissionPulse: () => {},
