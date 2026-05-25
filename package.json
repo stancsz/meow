@@ -1,14 +1,14 @@
 {
   "name": "meow-swarm",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "meow -p: Autonomous multi-agent coding harness. Run coding agents in background, checkpoint state, TUI dashboard.",
   "main": "./dist/bin/meow.js",
   "bin": {
-    "meow": "./dist/bin/meow.js",
-    "meow-mcp": "./dist/bin/meow-mcp.js",
-    "meow-eval": "./dist/bin/meow-eval.js",
-    "meow-skills": "./dist/bin/meow-skills.js"
+    "meow": "dist/bin/meow.js",
+    "meow-mcp": "dist/bin/meow-mcp.js",
+    "meow-eval": "dist/bin/meow-eval.js",
+    "meow-skills": "dist/bin/meow-skills.js"
   },
   "scripts": {
     "start": "node dist/index.js",

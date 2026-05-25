@@ -397,8 +397,10 @@ export async function summon(agentName: string, context: SummonContext): Promise
       console.log(`✓ BrowserOS ready at ${status.serverUrl} (CDP: ${status.cdpConnected ? "connected" : "disconnected"})`);
     }
     // Issue #317 Fix 1: Spawn subprocess in locked cwd to prevent sub-specialist scope bleed
-    execSync(command, { stdio: "inherit", cwd: safeCwd });
-    return `✅ ${agent.name} has completed the mission. MEOW is resuming control and analyzing changes.`;
+    // Issue #317 Fix 2: Capture stdout/stderr so MEOW gets actual specialist output
+    // stdio: "pipe" replaces "inherit" so we can return real output, not a fake success message
+    const result = execSync(command, { cwd: safeCwd, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+    return result || `✅ ${agent.name} completed with no output.`;
   } catch (error: any) {
     if (agentName === "aider" || agentName === "opencode") {
       console.log(`⚠️ ${agent.name} failed. Escalating to Claude Code (Level 2 Specialist)...`);

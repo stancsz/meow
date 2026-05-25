@@ -41,8 +41,7 @@ memory/
 skills/
 .meow/
 
-# Temp files
+tmp/
 scratch/
-*.bak
 *.ts.bak
 *.ts.v2
