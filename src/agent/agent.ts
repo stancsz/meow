@@ -132,14 +132,22 @@ export class Agent {
     }
   }
 
-  async chat(
+async chat(
     userInput: string, 
-    runTests: boolean = false,
+    runTests: boolean = true,
     testCmd?: string,
     onStatus?: (status: string) => void
   ): Promise<string> {
     this.messages.push({ role: "user", content: userInput });
     this.updateTokenEstimate();
+
+    // ── TDD ENFORCEMENT: For implement/debug tasks, require failing-test-first ─
+    const isTddTask = this.isTddEligibleTask(userInput);
+    if (isTddTask) {
+      onStatus?.("🎯 [TDD] Implement/debug task detected — writing failing test first...");
+      const tddPrompt = this.buildTddFailingTestPrompt(userInput);
+      this.messages.push({ role: "user", content: tddPrompt });
+    }
     
     // Tiered Context Management: High-Water Mark Detection
     if (this.currentL1Tokens > this.L1_TOKEN_LIMIT || this.messages.length > 15) {
@@ -236,18 +244,35 @@ export class Agent {
         await this.applyEdits(edits);
       }
       
-      // Run tests if requested and we have edits
+// Run tests if requested and we have edits
       if (runTests && edits.length > 0) {
-        const testResult = await this.runTests(testCmd);
-        const passed = !testResult.includes("failed") && !testResult.includes("error");
-        
+        const { output: testOutput, exitCode } = await this.runTests(testCmd);
+
+        // ── HARD FAILURE: non-zero exit is a hard failure ─────────────────
+        if (exitCode !== 0) {
+          console.error(pc.red(`✗ Tests failed with exit code ${exitCode} — task blocked.`));
+          lastError = this.extractError(testOutput);
+          this.recordTaskOutcome(userInput, 'failure', `exit code ${exitCode}: ${lastError}`);
+          continue;
+        }
+
+        const passed = !testOutput.includes("failed") && !testOutput.includes("error");
+
+        // ── LIVE VS MOCKED QUALITY GATE ───────────────────────────────────
+        if (passed) {
+          const quality = this.scoreTestQuality(testOutput);
+          if (quality.score < 60) {
+            console.log(pc.yellow(`⚠️  [TEST QUALITY] Score: ${quality.score}/100 — ${quality.concerns.join(" | ")}`));
+          }
+        }
+
         if (passed) {
           // MEOW succeeded — record for metrics, reset failure counter
           this.kernel.push({ type: "SET_STATE", key: `task:${userInput.substring(0, 50)}:success`, value: Date.now() });
           this.recordTaskOutcome(userInput, 'success');
           return response;
         } else {
-          lastError = this.extractError(testResult);
+          lastError = this.extractError(testOutput);
           continue;
         }
       }
@@ -271,10 +296,14 @@ export class Agent {
   }
 
   /**
-   * MEOW-3-RULE: Fix MEOW (not the task).
+   * MEOW-3-RULE: Fix MEOW (not the task) — SKILL-FIRST LOOKUP.
    * 
-   * Called when MEOW fails 3 times. Runs claude -p with a self-improvement prompt
-   * that diagnoses why MEOW failed, then patches MEOW's own code/tools/prompts.
+   * Called when MEOW fails 3 times. Escalation order:
+   *  1. Skill lookup: use_skill | list + npx skills find
+   *  2. If skill found: TOOL: use_skill
+   *  3. If no skill: TOOL: summon | claude | targeted fix prompt
+   *  4. If summon also fails: claude -p (raw LLM) as FINAL fallback
+   * 
    * The task is NOT completed — it's marked needs_retry in the DB.
    */
   private async fixMeow(ctx: {
@@ -284,8 +313,166 @@ export class Agent {
     runTests?: boolean;
     testCmd?: string;
   }): Promise<string> {
-    const files = Array.from(this.files);
     const meowDir = process.cwd();
+
+    // ── STEP 1: SKILL-FIRST LOOKUP ───────────────────────────────────────────
+    // Try to find a relevant repair skill before falling back to LLM calls
+    try {
+      const { execSync } = await import("child_process");
+
+      // 1a: Check locally available skills
+      let localSkills = "";
+      try {
+        localSkills = execSync("npx skills list 2>/dev/null || echo 'no-local-skills'", {
+          cwd: meowDir,
+          encoding: "utf-8",
+          timeout: 30_000,
+        });
+      } catch { /* ignore */ }
+
+      // 1b: Search for relevant repair/self-fix skills
+      let foundSkills = "";
+      const searchTerms = ["fix", "repair", "debug", "self-heal", "agent-fix"];
+      for (const term of searchTerms) {
+        try {
+          foundSkills = execSync(`npx skills find ${term} 2>/dev/null || echo 'no-skill-found'`, {
+            cwd: meowDir,
+            encoding: "utf-8",
+            timeout: 30_000,
+          });
+          if (foundSkills && !foundSkills.includes("no-skill-found") && foundSkills.trim().length > 10) {
+            break; // Found relevant skills
+          }
+        } catch { /* continue searching */ }
+      }
+
+      // If we found relevant skills, try to use the best match
+      if (foundSkills && !foundSkills.includes("no-skill-found") && foundSkills.trim().length > 10) {
+        // Look for fix/repair related skill name
+        const skillMatch = foundSkills.match(/(?:agent|meow|fix|repair|debug)[-_]?\w*/i);
+        if (skillMatch) {
+          const skillName = skillMatch[0].replace(/[^a-zA-Z0-9_-]/g, '');
+          console.log(pc.cyan(`🔧 [FIX-MEOW] Found skill: ${skillName}, attempting skill-first repair...`));
+          // Return skill-based repair report (the skill will be invoked via TOOL: use_skill in the agent loop)
+          return `🔧 SKILL-FIRST REPAIR PATH\n${'─'.repeat(40)}\n` +
+            `Relevant skill found: ${skillName}\n` +
+            `Available local skills:\n${localSkills.substring(0, 500)}\n\n` +
+            `Skill search results:\n${foundSkills.substring(0, 500)}\n\n` +
+            `→ Install with: npx skills add ${skillName} -g -y\n` +
+            `→ Then re-run task to use the skill for self-repair.\n` +
+            `${'─'.repeat(40)}\n`;
+        }
+      }
+    } catch (skillErr: any) {
+      console.log(pc.yellow(`⚠️ [FIX-MEOW] Skill lookup failed (non-fatal): ${skillErr.message?.substring(0, 100)}`));
+    }
+
+    // ── STEP 2: SUMMON FALLBACK ──────────────────────────────────────────────
+    // No skill found — try summon (which uses Claude Code internally)
+    try {
+      console.log(pc.cyan(`🔧 [FIX-MEOW] No relevant skill found, trying summon...`));
+      
+      // Build a targeted fix prompt for summon
+      const summonPrompt = `MEOW FAILED 3 TIMES — ROOT CAUSE ANALYSIS & SELF-REPAIR
+
+## The Task That Failed
+${ctx.userInput}
+
+## What MEOW Tried (${ctx.attempt} attempts)
+${ctx.lastError || "Unknown — MEOW produced no usable output"}
+
+## Your Job: Fix MEOW, Not The Task
+MEOW is a coding agent at ${meowDir}. It uses TOOL: <name> | <args> calling conventions.
+DO NOT complete the original task — only fix MEOW's machinery.
+
+## Escalation Path
+1. Read src/agent/agent.ts — understand the tool loop, retry logic, escalation path
+2. Read src/types/tool.ts — understand how tools are registered
+3. Check the LLM config in src/config/env.ts
+4. Look for relevant skills: npx skills find <topic>
+5. Apply fixes via SEARCH/REPLACE blocks
+6. Verify: npm run check
+
+Output format: SEARCH/REPLACE blocks for each file changed.
+CRITICAL: Fix the underlying cause, not just the symptom.`;
+
+      const { execSync: execSyncSummon } = await import("child_process");
+      const { writeFile: writeFileSummon, rm: rmSummon } = await import("fs/promises");
+      const { tmpdir: tmpdirSummon } = await import("os");
+      const pathMod = await import("path");
+
+      const summonTmpFile = pathMod.join(tmpdirSummon(), `meow_summon_fix_${Date.now()}.txt`);
+      await writeFileSummon(summonTmpFile, summonPrompt, "utf-8");
+
+      const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const escapedSummonFile = summonTmpFile.replace(/\\/g, "/");
+      const summonCmd = process.platform === "win32"
+        ? `${claudeBin} -p @"${escapedSummonFile}" --output-format=json --dangerously-skip-permissions`
+        : `${claudeBin} -p @${escapedSummonFile} --output-format=json --dangerously-skip-permissions`;
+
+      let summonTimedOut = false;
+      const summonTimer = setTimeout(() => { summonTimedOut = true; }, 600_000);
+
+      try {
+        const summonStdout = execSyncSummon(summonCmd, {
+          cwd: meowDir,
+          encoding: "utf-8",
+          maxBuffer: 10 * 1024 * 1024,
+          env: {
+            ...process.env,
+            CI: "true",
+            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
+          },
+          timeout: 600_000,
+        });
+        clearTimeout(summonTimer);
+        rmSummon(summonTmpFile).catch(() => {});
+
+        // Check for auth failures
+        const hasAuthFailure = /api.?key|auth.*token|unauthorized|invalid.*credential/i.test(summonStdout);
+        if (hasAuthFailure) {
+          throw new Error("summon-auth-failed");
+        }
+
+        if (!summonStdout || summonStdout.trim().length === 0) {
+          throw new Error("summon-empty-output");
+        }
+
+        this.kernel.push({
+          type: "SET_STATE",
+          key: `meow:repair:${Date.now()}`,
+          value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError },
+        });
+
+        // Parse JSON result from summon
+        let extractedContent = summonStdout;
+        try {
+          const parsed = JSON.parse(summonStdout);
+          extractedContent = parsed.result?.trim() || parsed.content?.trim() || parsed.message?.trim() || summonStdout;
+        } catch { /* use as-is */ }
+
+        console.log(pc.green(`✅ [FIX-MEOW] Summon repair succeeded.`));
+        return `🩹 MEOW Self-Repair Report (via SUMMON)\n${'─'.repeat(40)}\n${extractedContent}\n${'─'.repeat(40)}`;
+      } catch (summonError: any) {
+        clearTimeout(summonTimer);
+        rmSummon(summonTmpFile).catch(() => {});
+
+        const summonErrMsg = summonError.message || String(summonError);
+        if (summonTimedOut) {
+          throw new Error("summon-timeout");
+        }
+        if (summonErrMsg.includes("summon-auth-failed") || /api.?key|auth/i.test(summonErrMsg)) {
+          throw new Error("summon-auth-failed");
+        }
+        // Summon failed — will fall through to raw claude -p
+        console.log(pc.yellow(`⚠️ [FIX-MEOW] Summon failed (non-fatal), falling through to claude -p: ${summonErrMsg.substring(0, 100)}`));
+      }
+    } catch (summonOuterErr: any) {
+      console.log(pc.yellow(`⚠️ [FIX-MEOW] Summon unavailable, falling through to claude -p: ${summonOuterErr.message?.substring(0, 100)}`));
+    }
+
+    // ── STEP 3: FINAL FALLBACK — raw claude -p ─────────────────────────────
+    console.log(pc.red(`🔴 [FIX-MEOW] All skill/summon paths exhausted. Using raw claude -p as FINAL fallback.`));
 
     // Build the self-improvement prompt for claude -p
     const fixPrompt = `
@@ -343,32 +530,29 @@ Then run: \`npm run check 2>&1 | head -50\` to verify nothing is broken.
 DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 `.trim();
 
-    // Run claude -p to fix MEOW
     try {
-      const { spawn } = await import("child_process");
-      const { writeFile, rm, readFile } = await import("fs/promises");
+      const { execSync } = await import("child_process");
+      const { writeFile, rm } = await import("fs/promises");
       const { tmpdir } = await import("os");
-      const path = await import("path");
+      const pathMod = await import("path");
 
-      // Write prompt to temp file — avoids stdin heredoc issues on Windows cmd.exe
-      // Use @file syntax so claude reads from file instead of stdin
-      const tmpFile = path.join(tmpdir(), `meow_fix_${Date.now()}.txt`);
-      const outFile = path.join(tmpdir(), `meow_fix_out_${Date.now()}.txt`);
+      const tmpFile = pathMod.join(tmpdir(), `meow_fix_${Date.now()}.txt`);
       await writeFile(tmpFile, fixPrompt, "utf-8");
 
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
       const escapedTmpFile = tmpFile.replace(/\\/g, "/");
-      const escapedOutFile = outFile.replace(/\\/g, "/");
-      // On Windows, use cmd.exe /c to properly handle batch file I/O with output redirection to a file.
-      // This avoids the Windows batch stdout buffering issue with exec() where stdout isn't captured.
       const fullCmd = process.platform === "win32"
-        ? `cmd.exe /c "${claudeBin} -p @"${escapedTmpFile}" --output-format=json --dangerously-skip-permissions > "${escapedOutFile}" 2>&1"`
+        ? `${claudeBin} -p @"${escapedTmpFile}" --output-format=json --dangerously-skip-permissions`
         : `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions`;
 
-      return new Promise<string>((resolve) => {
-        const child = spawn(fullCmd, {
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; }, 600_000);
+
+      try {
+        const stdout = execSync(fullCmd, {
           cwd: meowDir,
-          shell: true,
+          encoding: "utf-8",
+          maxBuffer: 10 * 1024 * 1024,
           env: {
             ...process.env,
             CI: "true",
@@ -376,84 +560,64 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
             ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || process.env.LLM_BASE_URL,
           },
           timeout: 600_000,
-          windowsHide: true,
         });
+        clearTimeout(timer);
+        rm(tmpFile).catch(() => {});
 
-        let timedOut = false;
-        const timer = setTimeout(() => {
-          timedOut = true;
-          child.kill();
-        }, 600_000);
+        const hasAuthFailure = /api.?key|auth.*token|unauthorized|invalid.*credential|not authenticated/i.test(stdout);
+        if (hasAuthFailure) {
+          return `❌ claude -p authentication failed. Verify ANTHROPIC_API_KEY is valid. Output: "${stdout.substring(0, 300)}"`;
+        }
 
-        child.on('close', (code: number) => {
-          clearTimeout(timer);
-          rm(tmpFile).catch(() => {});
+        if (!stdout || stdout.trim().length === 0) {
+          return `❌ claude -p produced no output. Check: (1) claude binary is in PATH, (2) ANTHROPIC_API_KEY is set, (3) claude can authenticate.`;
+        }
 
-          if (timedOut) {
-            rm(outFile).catch(() => {});
-            resolve(`❌ claude -p timed out after 300s. Increase timeout or simplify the repair prompt.`);
-            return;
-          }
+        const hasSearchReplace = /<<<<<<< SEARCH/.test(stdout) && />>>>>>> REPLACE/.test(stdout);
+        let extractedContent = stdout;
 
-          readFile(outFile, 'utf-8').then(stdout => {
-            rm(outFile).catch(() => {});
-
-            // Check for common auth/API failure signals regardless of exit code
-            const hasAuthFailure = /api.?key|auth.*token|unauthorized|invalid.*credential|not authenticated/i.test(stdout);
-            if (hasAuthFailure) {
-              resolve(`❌ claude -p authentication failed. Verify ANTHROPIC_API_KEY is valid. Output: "${stdout.substring(0, 300)}"`);
-              return;
+        if (!hasSearchReplace) {
+          try {
+            const parsed = JSON.parse(stdout);
+            if (typeof parsed.result === "string" && parsed.result.trim()) {
+              extractedContent = parsed.result.trim();
+            } else if (parsed.result?.result) {
+              extractedContent = parsed.result.result || parsed.result.content || parsed.result.message || JSON.stringify(parsed.result, null, 2);
+            } else if (typeof parsed.content === "string") {
+              extractedContent = parsed.content;
+            } else if (typeof parsed.message === "string") {
+              extractedContent = parsed.message;
             }
+          } catch { /* Not JSON */ }
+        }
 
-            if (code !== 0 || stdout.trim().length === 0) {
-              resolve(`❌ claude -p produced no usable output (exit code: ${code}). Check: (1) claude binary is in PATH, (2) ANTHROPIC_API_KEY is set, (3) claude can authenticate.`);
-              return;
-            }
-
-            // Try to find SEARCH/REPLACE blocks first (plain text format)
-            const hasSearchReplace = /<<<<<<< SEARCH/.test(stdout) && />>>>>>> REPLACE/.test(stdout);
-            let extractedContent = stdout;
-
-            // If no SEARCH/REPLACE blocks, try JSON parsing (--output-format=json)
-            if (!hasSearchReplace) {
-              try {
-                const parsed = JSON.parse(stdout);
-                // claude --output-format=json returns {"result": "...", ...}
-                if (typeof parsed.result === "string" && parsed.result.trim()) {
-                  extractedContent = parsed.result.trim();
-                } else if (parsed.result?.result) {
-                  // Nested: {"result": {"result": "...", ...}}
-                  extractedContent = parsed.result.result || parsed.result.content || parsed.result.message || JSON.stringify(parsed.result, null, 2);
-                } else if (typeof parsed.content === "string") {
-                  extractedContent = parsed.content;
-                } else if (typeof parsed.message === "string") {
-                  extractedContent = parsed.message;
-                }
-              } catch {
-                // Not JSON — use stdout as-is (plain text response)
-              }
-            }
-
-            this.kernel.push({
-              type: "SET_STATE",
-              key: `meow:repair:${Date.now()}`,
-              value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError },
-            });
-            this.suggestUpstreamContribution(extractedContent).catch(() => {});
-            resolve(extractedContent);
-          }).catch(err => {
-            rm(outFile).catch(() => {});
-            resolve(`❌ Failed to read claude output: ${err.message}`);
-          });
+        this.kernel.push({
+          type: "SET_STATE",
+          key: `meow:repair:${Date.now()}`,
+          value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError },
         });
+        this.suggestUpstreamContribution(extractedContent).catch(() => {});
+        return extractedContent;
+      } catch (error: any) {
+        clearTimeout(timer);
+        rm(tmpFile).catch(() => {});
 
-        child.on('error', (err: Error) => {
-          clearTimeout(timer);
-          rm(tmpFile).catch(() => {});
-          rm(outFile).catch(() => {});
-          resolve(`❌ claude -p self-repair failed: ${err.message}\nCheck MEOW manually at ${meowDir}`);
-        });
-      });
+        if (timedOut) {
+          return `❌ claude -p timed out after 600s. Increase timeout or simplify the repair prompt.`;
+        }
+
+        const errMsg = error.message || String(error);
+        const hasAuthFailure = /api.?key|auth.*token|unauthorized|invalid.*credential|not authenticated/i.test(errMsg);
+        if (hasAuthFailure) {
+          return `❌ claude -p authentication failed. Verify ANTHROPIC_API_KEY is valid. Output: "${errMsg.substring(0, 300)}"`;
+        }
+
+        if (/not found|ENOENT|command failed/i.test(errMsg)) {
+          return `❌ claude -p not found in PATH or failed to execute: ${errMsg}\nCheck MEOW manually at ${meowDir}`;
+        }
+
+        return `❌ claude -p self-repair failed: ${errMsg}\nCheck MEOW manually at ${meowDir}`;
+      }
     } catch (err: any) {
       return `❌ claude -p self-repair failed: ${err.message}\nCheck MEOW manually at ${meowDir}`;
     }
@@ -692,15 +856,26 @@ Available Tools:
 - verify_mission | goal|test : Review and verify if the work is done properly (MANDATORY after 'summon')
 - use_skill | <name> : Activate a specialist skill (run 'use_skill | list' to see available skills)
 
-# SKILLS ECOSYSTEM (ALWAYS CHECK FIRST):
-Before delegating to Level-2 specialists (summon), ALWAYS check if a skill exists:
-- Run 'npx skills find <relevant-topic>' to search the unified ecosystem.
-- Core Repositories: https://github.com/stancsz/skills and https://github.com/vercel-labs/skills
-- Reference: https://github.com/vercel-labs/skills/blob/main/skills/find-skills/SKILL.md
-- Skills from 'vercel-labs/agent-skills' and 'anthropics/skills' are battle-tested (100K+ installs).
-- Common categories: testing, deployment, documentation, code quality, design, devops.
-- If a relevant skill exists, install it: npx skills add <owner/repo@skill> -g -y
-- Only summon a specialist if no skill can help with the task.
+# SKILLS ECOSYSTEM (ALWAYS CHECK FIRST — SKILL-FIRST RULE):
+Before doing any work manually, ALWAYS check for relevant skills in the ecosystem:
+1. Check https://github.com/anthropics/skills FIRST — official Anthropic skill collection
+2. Check https://github.com/vercel-labs/skills — use 'find-skills' skill to search both repos
+3. Check https://github.com/stancsz/skills — project-local skills
+
+Specific skills to check BEFORE doing work manually:
+- Code review: look for 'code-review' skill
+- Frontend/UI design: look for 'frontend-design', 'ui-review', or 'design-system' skill
+- Testing: look for 'test-coverage', 'test-generator', or 'e2e-testing' skill
+- Documentation: look for 'docs-writer' or 'readme-generator' skill
+
+Skill lookup workflow:
+1. Run 'use_skill | list' to see what's already available locally
+2. Run 'npx skills find <relevant-topic>' to search the unified ecosystem
+3. If a relevant skill exists: install and use it (npx skills add <owner/repo@skill> -g -y)
+4. Only do the work manually if no suitable skill exists.
+
+Example: TOOL: use_skill | list
+Example: TOOL: run | npx skills find code-review
 
 Example: TOOL: verify_mission | Fixed the race condition in the kernel | npm test
 
@@ -1194,19 +1369,28 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
     return errorLines.slice(-20).join('\n') || "Unknown error";
   }
 
-  async runTests(testCmd?: string): Promise<string> {
+async runTests(testCmd?: string): Promise<{ output: string; exitCode: number }> {
     try {
-      const result = execSync(testCmd || "npm test", { 
-        encoding: "utf-8",
-        cwd: process.cwd(),
-        timeout: 60000
-      });
-      return result;
-    } catch (e: unknown) {
-      if (e && typeof e === 'object' && 'stdout' in e) {
-        return String((e as { stdout?: unknown }).stdout || '');
+      const { execSync: exec } = await import("child_process");
+      // Capture exit code for hard failure enforcement
+      let exitCode = 0;
+      let output = "";
+      try {
+        output = exec(testCmd || "npm test", { 
+          encoding: "utf-8",
+          cwd: process.cwd(),
+          timeout: 120000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch (e: unknown) {
+        // Non-zero exit is captured from the caught error
+        const err = e as { status?: number; code?: string | number; stdout?: string };
+        exitCode = typeof err.status === 'number' ? err.status : (typeof err.code === 'number' ? err.code : 1);
+        output = err.stdout ? String(err.stdout) : String(e);
       }
-      return String(e);
+      return { output, exitCode };
+    } catch (e: unknown) {
+      return { output: String(e), exitCode: 1 };
     }
   }
 
@@ -1309,8 +1493,86 @@ Respond with your fix using SEARCH/REPLACE blocks.`;
     this.messages = [];
   }
 
-  getEditedFiles(): string[] {
+getEditedFiles(): string[] {
     return Array.from(this.editedFiles);
+  }
+
+  // ── TDD ENFORCEMENT ────────────────────────────────────────────────────────
+
+  /**
+   * Detect if a task is TDD-eligible (implement or debug intent).
+   * Uses the same keyword patterns as Liaison.extractIntent().
+   */
+  private isTddEligibleTask(input: string): boolean {
+    const lower = input.toLowerCase();
+    return (
+      /\b(create|implement|add|build|make|new)\b/.test(lower) ||
+      /\b(fix|debug|bug|error|issue|problem|broken)\b/.test(lower)
+    );
+  }
+
+  /**
+   * Build a TDD enforcement prompt that injects a failing-test-first requirement.
+   * The gate is: test was red before the change and green after.
+   */
+  private buildTddFailingTestPrompt(userInput: string): string {
+    return `## 🎯 TDD ENFORCEMENT: Failing-Test-First Required
+
+You are working on an IMPLEMENT or DEBUG task. MEOW policy requires TDD:
+
+1. **WRITE A FAILING TEST FIRST**: Before writing any implementation code, write a test that describes the expected behavior but currently FAILS. Use TOOL: write to create the test file.
+
+2. **RUN THE TEST**: Use TOOL: run to execute the test and confirm it fails (red). Copy the exact failure output.
+
+3. **IMPLEMENT THE FEATURE**: Only after step 2 is complete, write the implementation code that makes the test pass.
+
+4. **VERIFY GREEN**: Run the test again and confirm it passes (green).
+
+5. **RETURN THE GATE**: Your final response must state whether the test was RED before (expected failure) and GREEN after (implementation correct).
+
+Task: ${userInput}
+
+Respond with your failing test first.`;
+  }
+
+  // ── LIVE VS MOCKED TEST QUALITY GATE ─────────────────────────────────────
+
+  /**
+   * Score a test file for live-vs-mock confidence.
+   * Flags tests where every external dependency is mocked as low-confidence.
+   * Returns a score 0-100 and an array of flagged concerns.
+   */
+  public scoreTestQuality(testOutput: string, testFileContent?: string): { score: number; concerns: string[] } {
+    const concerns: string[] = [];
+    let score = 100;
+
+    // Heuristic: if the test output shows all mocks and no real I/O, flag it
+    const hasMockIndicators = /\bmock\w*|\bfake\b|\bstub\b|\bspy\b/i.test(testOutput);
+    const hasRealNetworkOrDb = /\bhttp\b|\bsql\b|\bdatabase\b|\bapi\.|\brequest\b|\bfetch\b|\bconnect\b/i.test(testOutput);
+    const hasLiveCalls = /\blive\b|\breal\b|\bintegration\b/i.test(testOutput);
+
+    // If everything is mocked and nothing real is exercised
+    if (hasMockIndicators && !hasRealNetworkOrDb && !hasLiveCalls) {
+      concerns.push("All external dependencies are mocked — no live I/O exercised. Confidence: LOW.");
+      score -= 40;
+    }
+
+    // If test passes too easily (no actual validation)
+    if (/passes?\s+without?\s+(checking|validation|assertion)/i.test(testOutput)) {
+      concerns.push("Test passes without meaningful assertions. Confidence: LOW.");
+      score -= 30;
+    }
+
+    // External network calls that are critical but mocked
+    if (/\bexternal\b.*\bmocked\b|\bthird.?party\b.*\bmock\b/i.test(testOutput)) {
+      concerns.push("Critical third-party dependency is fully mocked — integration gap.");
+      score -= 20;
+    }
+
+    return {
+      score: Math.max(0, score),
+      concerns,
+    };
   }
 
   // ── AI-Native Phase 1.2: Task outcome instrumentation ────────────────────

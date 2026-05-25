@@ -30,6 +30,7 @@ export interface TaskResult {
   output?: string;
   error?: string;
   artifacts?: FileArtifact[];
+  runtimeEvidence?: RuntimeEvidence[];  // Evidence from post-edit runtime execution
   metadata?: Record<string, unknown>;
 }
 
@@ -57,6 +58,8 @@ export interface Task {
     apiKey?: string;
   };
   result?: TaskResult;
+  /** Explicit acceptance criteria for task completion (Definition of Done) */
+  definitionOfDone?: string[];
 }
 
 export interface TaskEvents {
@@ -78,6 +81,17 @@ export interface TestResult {
   passed: boolean;
   coverage?: number;
   failures?: string[];
+}
+
+/** Runtime evidence from executing a task's artifacts after edits */
+export interface RuntimeEvidence {
+  command: string;           // The command that was run (e.g. "npm test", "npm run build")
+  exitCode: number;          // 0 = success, non-zero = failure
+  stdout: string;            // Truncated if very long
+  stderr: string;            // Truncated if very long
+  durationMs: number;        // Execution time
+  timestamp: number;         // When it was captured
+  artifactType: 'test' | 'build' | 'cli' | 'unknown';
 }
 
 export interface TaskSpec {

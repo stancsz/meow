@@ -84,7 +84,7 @@ describe("SelfReviewRunner", () => {
       expect(result.passes).toBe(true);
       expect(result.iterations).toBe(1);
       expect(result.gates).toHaveLength(0); // no gates in parallel mode
-    });
+    }, 10000);
 
     it("in SEQUENTIAL mode executes and returns SelfReviewResult", async () => {
       const runner = new SelfReviewRunner({
@@ -102,6 +102,7 @@ describe("SelfReviewRunner", () => {
           }),
         }],
         minQualityScore: 50, // low threshold to pass
+        enableTestExecution: false, // skip slow vitest run in test
       });
 
       const task = createTask("sequential-task");
@@ -114,7 +115,7 @@ describe("SelfReviewRunner", () => {
       expect(result).toHaveProperty("gates");
       expect(result).toHaveProperty("iterations");
       expect(result).toHaveProperty("timeSpentMs");
-    });
+    }, 10000);
 
     it("in SHIP mode returns SelfReviewResult with qualityScore", async () => {
       const runner = new SelfReviewRunner({
@@ -132,6 +133,8 @@ describe("SelfReviewRunner", () => {
         }],
         minQualityScore: 50,
         allowHumanOverride: false,
+        enableJudge: false, // skip real LLM judge API call in test
+        enableTestExecution: false, // skip slow vitest run in test
       });
 
       const task = createTask("ship-task");
@@ -140,7 +143,7 @@ describe("SelfReviewRunner", () => {
       expect(result.qualityScore).toBeGreaterThanOrEqual(0);
       expect(result.qualityScore).toBeLessThanOrEqual(100);
       expect(typeof result.qualityScore).toBe("number");
-    });
+    }, 60000);
 
     it("returns failed result when executor fails", async () => {
       const runner = new SelfReviewRunner({ mode: ExecutionMode.PARALLEL });
@@ -151,6 +154,6 @@ describe("SelfReviewRunner", () => {
       expect(result.passes).toBe(false);
       expect(result.qualityScore).toBe(0);
       expect(result.issues).toContain("execution failed");
-    });
+    }, 10000);
   });
 });

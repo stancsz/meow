@@ -82,7 +82,7 @@ export class Hermes {
 
   async chat(
     userInput: string,
-    runTests: boolean = false,
+    runTests: boolean = true,
     testCmd?: string,
     onStatus?: (status: string) => void
   ): Promise<string> {

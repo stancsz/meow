@@ -51,12 +51,23 @@ export interface QualityTaskContext {
   visualQA?: VisualQAResult;
   coverage?: number;
   humanSignoff?: HumanSignoff;
+  runtimeEvidence?: RuntimeEvidence[];
 }
 
 export interface FileArtifact {
   path: string;
   operation: 'create' | 'update' | 'delete';
   content?: string;
+}
+
+export interface RuntimeEvidence {
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  timestamp: number;
+  artifactType: 'test' | 'build' | 'cli' | 'unknown';
 }
 
 export interface TestResult {
@@ -130,15 +141,23 @@ export const DEFAULT_QUALITY_GATES: QualityGate[] = [
     blocking: true,
     check: async (ctx): Promise<QualityGateResult> => {
       const start = Date.now();
-      // Lint is run via external process — here we check if results were provided
-      const passed = ctx.testResults === undefined || ctx.testResults.length === 0
-        ? true // No lint results = pass (defer to testResults check)
-        : !ctx.testResults.some(r => r.failures && r.failures.length > 0);
-
+      // No testResults means no lint data was captured — warn instead of trivially passing
+      if (!ctx.testResults || ctx.testResults.length === 0) {
+        return {
+          passed: false,
+          details: 'No lint/test results captured — cannot verify code quality',
+          durationMs: Date.now() - start,
+          warnings: ['Run tests to populate lint results before quality gates'],
+          issues: ['Missing testResults — lint gate has no data to verify'],
+        };
+      }
+      const hasFailures = ctx.testResults.some(r => r.failures && r.failures.length > 0);
+      const passed = !hasFailures;
       return {
         passed,
-        details: passed ? 'Lint passed' : 'Lint errors detected',
+        details: passed ? 'Lint and tests passed' : `Lint errors in ${ctx.testResults.filter(r => r.failures?.length).length} suite(s)`,
         durationMs: Date.now() - start,
+        issues: passed ? undefined : ctx.testResults.flatMap(r => r.failures || []),
       };
     },
   },
@@ -150,12 +169,27 @@ export const DEFAULT_QUALITY_GATES: QualityGate[] = [
       const start = Date.now();
       const minCoverage = 80;
 
+      // No coverage data captured — warn but do not hard-block if tests passed
+      // This avoids blocking on projects without coverage instrumentation
       if (!ctx.coverage) {
+        if (!ctx.testResults || ctx.testResults.length === 0) {
+          return {
+            passed: false,
+            details: 'No coverage report and no test results — cannot verify quality',
+            durationMs: Date.now() - start,
+            issues: ['Coverage unknown and no test results — run tests with coverage'],
+          };
+        }
+        // Tests ran but no coverage instrument — warn and pass with caveat
+        const allPassed = ctx.testResults.every(r => r.passed);
         return {
-          passed: false,
-          details: 'No coverage report available — tests must run first',
+          passed: allPassed,
+          details: allPassed
+            ? 'Tests passed but no coverage data — coverage instrumentation recommended'
+            : 'Tests failed (no coverage data)',
           durationMs: Date.now() - start,
-          issues: ['Coverage unknown — cannot verify quality'],
+          warnings: ['No coverage data — add coverage instrumentation (e.g. --coverage)'],
+          issues: allPassed ? undefined : ctx.testResults.flatMap(r => r.failures || []),
         };
       }
 
