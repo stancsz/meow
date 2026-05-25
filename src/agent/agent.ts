@@ -326,14 +326,19 @@ The failure was likely caused by one of:
 - If a skill is missing: write a new skill in \`skills/<name>/SKILL.md\`
 - If the retry logic is wrong: patch the while loop in \`chat()\` in agent.ts
 - If the LLM is too weak: update the model in \`src/config/env.ts\`
+- If MEOW produced no output: check API endpoint, model capability, and prompt length
 
 ## Output Format
 
-After your investigation, output a SEARCH/REPLACE block for every file you changed,
-then run: \`npm run check 2>&1 | head -50\` to verify nothing is broken.
+After your investigation, output a SEARCH/REPLACE block for every file you changed.
+CRITICAL: If the failure was that MEOW produced no output at all (returned empty), this usually means:
+- The model API call failed (check API key, baseUrl, model capability)
+- The prompt was too long and got truncated
+- The model hit max_tokens without producing useful output
 
-If you couldn't find the root cause, output what you tried and what you suspect
-but couldn't verify.
+Fix the underlying cause, not just the symptom.
+
+Then run: \`npm run check 2>&1 | head -50\` to verify nothing is broken.
 
 DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 `.trim();
@@ -370,7 +375,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
             ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
             ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || process.env.LLM_BASE_URL,
           },
-          timeout: 300_000,
+          timeout: 600_000,
           windowsHide: true,
         });
 
@@ -378,7 +383,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
         const timer = setTimeout(() => {
           timedOut = true;
           child.kill();
-        }, 300_000);
+        }, 600_000);
 
         child.on('close', (code: number) => {
           clearTimeout(timer);
@@ -392,8 +397,16 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
           readFile(outFile, 'utf-8').then(stdout => {
             rm(outFile).catch(() => {});
+
+            // Check for common auth/API failure signals regardless of exit code
+            const hasAuthFailure = /api.?key|auth.*token|unauthorized|invalid.*credential|not authenticated/i.test(stdout);
+            if (hasAuthFailure) {
+              resolve(`❌ claude -p authentication failed. Verify ANTHROPIC_API_KEY is valid. Output: "${stdout.substring(0, 300)}"`);
+              return;
+            }
+
             if (code !== 0 || stdout.trim().length === 0) {
-              resolve(`❌ claude -p exited with code ${code}. Output: "${stdout.substring(0, 300)}"`);
+              resolve(`❌ claude -p produced no usable output (exit code: ${code}). Check: (1) claude binary is in PATH, (2) ANTHROPIC_API_KEY is set, (3) claude can authenticate.`);
               return;
             }
 
