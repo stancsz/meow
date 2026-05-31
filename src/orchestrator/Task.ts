@@ -60,7 +60,18 @@ export interface Task {
   result?: TaskResult;
   /** Explicit acceptance criteria for task completion (Definition of Done) */
   definitionOfDone?: string[];
+  feedbackHistory?: FeedbackReport[];
 }
+
+export interface FeedbackReport {
+  iteration: number;
+  qualityScore: number;
+  failedGates: string[];
+  issues: string[];
+  judgeCritique?: string;
+  testFailures?: string[];
+}
+
 
 export interface TaskEvents {
   onStatusChange?: (taskId: string, status: TaskStatus) => void;

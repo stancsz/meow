@@ -53,11 +53,16 @@ https://github.com/vercel-labs/skills
       monolithBlueprint: "Test blueprint"
     };
 
+    const message = SPECIALISTS.cc.getMessage!(ctx);
     const command = SPECIALISTS.cc.getCommand(ctx);
 
-    expect(command).toContain("npx skills find");
-    expect(command).toContain("https://github.com/stancsz/skills");
-    expect(command).toContain("https://github.com/vercel-labs/skills/blob/main/skills/find-skills/SKILL.md");
+    // getMessage returns the raw message for content inspection
+    expect(message).toContain("npx skills find");
+    expect(message).toContain("https://github.com/stancsz/skills");
+    expect(message).toContain("https://github.com/vercel-labs/skills/blob/main/skills/find-skills/SKILL.md");
+    // getCommand returns the OS command (with temp file path on Windows)
+    expect(command).toContain("claude.cmd");
+    expect(command).toContain("--dangerously-skip-permissions");
   });
 
   it("should synthesize comprehensive context for the specialist (Goal, Files, Blueprint)", () => {
@@ -68,12 +73,16 @@ https://github.com/vercel-labs/skills
       monolithBlueprint: "Rules of the House: Surgical changes only."
     };
 
+    const message = SPECIALISTS.cc.getMessage!(ctx);
     const command = SPECIALISTS.cc.getCommand(ctx);
 
-    expect(command).toContain("GOAL: Fix the race condition in the kernel");
-    expect(command).toContain("FAILURE: SQLITE_BUSY: database is locked");
-    expect(command).toContain("RESOURCES: src/kernel/kernel.ts, src/index.ts");
-    expect(command).toContain("# MONOLITH BLUEPRINT (Rules of the House):");
-    expect(command).toContain("Rules of the House: Surgical changes only.");
+    // getMessage returns the raw message content for inspection
+    expect(message).toContain("GOAL: Fix the race condition in the kernel");
+    expect(message).toContain("FAILURE: SQLITE_BUSY: database is locked");
+    expect(message).toContain("RESOURCES: src/kernel/kernel.ts, src/index.ts");
+    expect(message).toContain("# MONOLITH BLUEPRINT (Rules of the House):");
+    expect(message).toContain("Rules of the House: Surgical changes only.");
+    // getCommand returns the OS command (with temp file path)
+    expect(command).toContain("claude.cmd");
   });
 });

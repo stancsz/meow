@@ -8,9 +8,6 @@ import { McpManager } from "./mcp";
 import { DiscoveryModule } from "./discovery";
 import { resolve } from "path";
 import { v4 as uuidv4 } from "uuid";
-
-import { summon } from "./summoner";
-import { DEFAULT_TOOLS } from "../types/tool";
 import { ExtensionManager } from "../extensions/ExtensionManager";
 import { MeowKernel } from "../kernel/kernel";
 import { AgenticMemory, MemoryResult } from "./memory";
@@ -21,6 +18,7 @@ import { embed } from "./embeddings";
 import { DatabasePort } from "../extensions/database/manifest";
 import { AuditLogger } from "../kernel/audit";
 import pc from "picocolors";
+import { DEFAULT_TOOLS } from "../types/tool";
 
 export interface AgentConfig {
   model: string;
@@ -176,10 +174,22 @@ async chat(
         lastError = null; // Clear it so we don't repeat the message
       }
       
-      let response = await this.callLLM(systemPrompt, this.messages);
-      
+      let response: string;
+      try {
+        response = await this.callLLM(systemPrompt, this.messages);
+      } catch (error: any) {
+        lastError = `LLM call failed: ${error.message}`;
+        continue;
+      }
+
       // Remove reasoning/thinking content if present
       response = this.stripReasoningContent(response);
+
+      // ── EMPTY RESPONSE GUARD: Treat empty responses as failures to trigger retry ─
+      if (!response || response.trim().length === 0) {
+        lastError = "LLM returned empty response. Check API endpoint, authentication, and model configuration.";
+        continue;
+      }
       
       // Check for Tool Calls
       if (response.includes("TOOL:")) {
@@ -327,7 +337,8 @@ async chat(
           cwd: meowDir,
           encoding: "utf-8",
           timeout: 30_000,
-        });
+          shell: true,
+        } as any);
       } catch { /* ignore */ }
 
       // 1b: Search for relevant repair/self-fix skills
@@ -339,7 +350,8 @@ async chat(
             cwd: meowDir,
             encoding: "utf-8",
             timeout: 30_000,
-          });
+            shell: true,
+          } as any);
           if (foundSkills && !foundSkills.includes("no-skill-found") && foundSkills.trim().length > 10) {
             break; // Found relevant skills
           }
@@ -407,8 +419,8 @@ CRITICAL: Fix the underlying cause, not just the symptom.`;
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
       const escapedSummonFile = summonTmpFile.replace(/\\/g, "/");
       const summonCmd = process.platform === "win32"
-        ? `${claudeBin} -p @"${escapedSummonFile}" --output-format=json --dangerously-skip-permissions`
-        : `${claudeBin} -p @${escapedSummonFile} --output-format=json --dangerously-skip-permissions`;
+        ? `${claudeBin} -p @"${escapedSummonFile}" --dangerously-skip-permissions`
+        : `${claudeBin} -p @${escapedSummonFile} --dangerously-skip-permissions`;
 
       let summonTimedOut = false;
       const summonTimer = setTimeout(() => { summonTimedOut = true; }, 600_000);
@@ -418,10 +430,12 @@ CRITICAL: Fix the underlying cause, not just the symptom.`;
           cwd: meowDir,
           encoding: "utf-8",
           maxBuffer: 10 * 1024 * 1024,
+          shell: true as any,
           env: {
             ...process.env,
             CI: "true",
             ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
+            ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || process.env.LLM_BASE_URL,
           },
           timeout: 600_000,
         });
@@ -444,12 +458,20 @@ CRITICAL: Fix the underlying cause, not just the symptom.`;
           value: { task: ctx.userInput.substring(0, 80), attempt: ctx.attempt, error: ctx.lastError },
         });
 
-        // Parse JSON result from summon
+        // Parse JSON result from summon (try multiple field names for compatibility)
         let extractedContent = summonStdout;
         try {
           const parsed = JSON.parse(summonStdout);
-          extractedContent = parsed.result?.trim() || parsed.content?.trim() || parsed.message?.trim() || summonStdout;
-        } catch { /* use as-is */ }
+          // Handle various JSON output formats from claude -p
+          extractedContent =
+            parsed.result?.trim() ||
+            parsed.content?.trim() ||
+            parsed.message?.trim() ||
+            parsed.completion?.trim() ||
+            parsed.text?.trim() ||
+            (typeof parsed === "string" ? parsed.trim() : null) ||
+            summonStdout;
+        } catch { /* Not JSON or parse failed — use raw stdout */ }
 
         console.log(pc.green(`✅ [FIX-MEOW] Summon repair succeeded.`));
         return `🩹 MEOW Self-Repair Report (via SUMMON)\n${'─'.repeat(40)}\n${extractedContent}\n${'─'.repeat(40)}`;
@@ -542,8 +564,8 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
       const escapedTmpFile = tmpFile.replace(/\\/g, "/");
       const fullCmd = process.platform === "win32"
-        ? `${claudeBin} -p @"${escapedTmpFile}" --output-format=json --dangerously-skip-permissions`
-        : `${claudeBin} -p @${escapedTmpFile} --output-format=json --dangerously-skip-permissions`;
+        ? `${claudeBin} -p @"${escapedTmpFile}" --dangerously-skip-permissions`
+        : `${claudeBin} -p @${escapedTmpFile} --dangerously-skip-permissions`;
 
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; }, 600_000);
@@ -553,6 +575,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
           cwd: meowDir,
           encoding: "utf-8",
           maxBuffer: 10 * 1024 * 1024,
+          shell: true as any,
           env: {
             ...process.env,
             CI: "true",
@@ -579,6 +602,7 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
         if (!hasSearchReplace) {
           try {
             const parsed = JSON.parse(stdout);
+            // Handle various JSON output formats from claude -p
             if (typeof parsed.result === "string" && parsed.result.trim()) {
               extractedContent = parsed.result.trim();
             } else if (parsed.result?.result) {
@@ -587,8 +611,12 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
               extractedContent = parsed.content;
             } else if (typeof parsed.message === "string") {
               extractedContent = parsed.message;
+            } else if (typeof parsed.completion === "string") {
+              extractedContent = parsed.completion;
+            } else if (typeof parsed.text === "string") {
+              extractedContent = parsed.text;
             }
-          } catch { /* Not JSON */ }
+          } catch { /* Not JSON — use raw stdout */ }
         }
 
         this.kernel.push({
@@ -732,8 +760,11 @@ DO NOT attempt to complete the original task. Only fix MEOW's machinery.
 
     let text = "";
 
-    // If we have an API key and the URL looks like an Anthropic-compatible endpoint, use that format
-    if (this._apiKey && (this._baseUrl.includes("anthropic"))) {
+    // If we have an API key and the URL looks like an Anthropic-compatible endpoint
+    // OpenAI-compatible providers use /api/chat (not /v1/messages) — but only when
+    // the URL path doesn't already contain "anthropic"
+    const isOpenAICompatible = /minimax|openai|ollama/i.test(this._baseUrl) && !this._baseUrl.includes("/anthropic");
+    if (this._apiKey && (this._baseUrl.includes("anthropic")) && !isOpenAICompatible) {
       const url = this._baseUrl.endsWith("/v1/messages") ? this._baseUrl : `${this._baseUrl}/v1/messages`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 120000);
@@ -1354,17 +1385,38 @@ ONLY EVER RETURN CODE IN A SEARCH/REPLACE BLOCK!
 
   private extractError(testOutput: string): string {
     // Extract the most relevant error lines from test output
+    // Only match lines that START with error indicators or contain actual error patterns
     const lines = testOutput.split('\n');
     const errorLines: string[] = [];
-    
+
+    // Patterns for lines that indicate actual errors (at start of line or with specific context)
+    const errorPatterns = [
+      /^Error:/,                     // Error at line start
+      /^error:/,                     // lowercase error at line start
+      /^✗/,                          // failure X symbol
+      /^FAILED$/,                    // all-caps FAILED
+      /^.*\bfailed\b/i,              // "failed" at start of line (not "0 failed" which is success)
+      /\b[1-9]\d*\s+failed\b/i,      // N failed where N >= 1
+      /\bAssertionError\b/,
+      /\bTS[0-9]{4}\b/,             // TypeScript error codes
+      /^.*\berror:\s*/m,            // "error:" at start of line (compilable errors)
+      /^SyntaxError:*/m,
+      /^ReferenceError:*/m,
+      /^TypeError:*/m,
+    ];
+
     for (const line of lines) {
-      if (line.includes("error") || line.includes("Error") || 
-          line.includes("failed") || line.includes("FAILED") ||
-          line.includes("AssertionError")) {
+      // Skip success indicators that contain error words
+      if (/^0\s+(errors?|failed)/i.test(line)) continue;
+      if (/^no\s+errors/i.test(line)) continue;
+      if (/^all\s+\d+\s+tests?\s+passed/i.test(line)) continue;
+
+      // Match actual error patterns
+      if (errorPatterns.some(pattern => pattern.test(line))) {
         errorLines.push(line);
       }
     }
-    
+
     // Return last 20 lines of errors or all if less than 20
     return errorLines.slice(-20).join('\n') || "Unknown error";
   }
@@ -1402,12 +1454,13 @@ async runTests(testCmd?: string): Promise<{ output: string; exitCode: number }> 
     // Only match actual build/test failures — not ESLint warnings
     // Real errors appear at line start: "✗", "error:", "Error:", "FAILED", "Build failed"
     // Warnings don't have these prefixes
+    // NOTE: "0 failed" or "X errors" where X is 0 are SUCCESS conditions — must not match
     const failurePatterns = [
       /^Error:/m,                    // Error at start of line (not "warning" context)
       /^error:/m,                    // lowercase error at line start
       /^✗/m,                         // failure X symbol
       /^FAILED$/m,                   // all-caps FAILED
-      /\bfailed\b/i,                 // "failed" case-insensitive
+      /\b[1-9]\d*\s+failed\b/i,     // N failed where N >= 1 (actual failure count, not "0 failed")
       /\bfatal\b/i,                  // fatal error
       /\bSyntaxError\b/,
       /\bReferenceError\b/,

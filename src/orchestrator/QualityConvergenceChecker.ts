@@ -1,7 +1,7 @@
 // Quality convergence detector — stops grinding when ROI drops
 // "Meow keeps investing tokens where they make sense, and stops when they don't."
 
-import * as pc from 'picocolors';
+import pc from 'picocolors';
 
 export interface ConvergenceConfig {
   /** Minimum score delta to count as genuine improvement (default: 3) */

@@ -72,7 +72,7 @@ export class BrowserOSManager {
    */
   isInstalled(): boolean {
     try {
-      execSync("browseros-cli --version", { stdio: "ignore" });
+      execSync("browseros-cli --version", { stdio: "ignore", shell: true } as any);
       return true;
     } catch (e) {
       return false;
@@ -124,8 +124,9 @@ export class BrowserOSManager {
       // Check if already running first
       const existingCheck = execSync("browseros-cli status", {
         encoding: "utf-8",
-        stdio: "pipe"
-      });
+        stdio: "pipe",
+        shell: true,
+      } as any);
 
       if (existingCheck.includes("BrowserOS is already running")) {
         console.log("✓ BrowserOS is already running");

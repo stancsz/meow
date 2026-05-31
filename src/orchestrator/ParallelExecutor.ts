@@ -343,8 +343,36 @@ export class ParallelExecutor {
       task.requiredFiles.forEach(f => agent.addFile(f));
     }
 
+    let chatInput = task.description;
+    if (task.feedbackHistory && task.feedbackHistory.length > 0) {
+      const latestFeedback = task.feedbackHistory[task.feedbackHistory.length - 1];
+      chatInput += `\n\n--- ⚠️ SELF-CORRECTION PROTOCOL (Iteration ${latestFeedback.iteration + 1}) ---
+Your previous attempt failed our automated Quality Gates (Quality Score: ${latestFeedback.qualityScore}%).
+
+Please carefully review the following errors and critiques from your last execution, refactor the affected files, and resolve all issues:
+
+### Failed Quality Gates
+${latestFeedback.failedGates.map(g => `- ${g}`).join('\n')}
+
+### Compiler, Linter, & Runtime Issues
+${latestFeedback.issues.map(i => `- ${i}`).join('\n')}
+
+${latestFeedback.testFailures && latestFeedback.testFailures.length > 0 ? `
+### Automated Test Failures
+\`\`\`text
+${latestFeedback.testFailures.join('\n')}
+\`\`\`
+` : ''}
+
+### Strategy to Fix
+1. Read the affected files to see your previous edits.
+2. Analyze the specific errors listed above.
+3. Surgical fix: rewrite ONLY what is necessary to pass the tests/gates. Do not add speculative code or stubs.
+4. Verify your solution using the 'run' or 'test' tools.`;
+    }
+
     const output = await agent.chat(
-      task.description,
+      chatInput,
       false,
       undefined,
       (status) => this.taskEvents?.onProgress?.(task.id, status)

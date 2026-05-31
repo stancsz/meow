@@ -24,6 +24,8 @@ export interface ExternalAgent {
   name: string;
   description: string;
   getCommand: (ctx: SummonContext) => string;
+  /** Returns the raw message without temp-file wrapping. Used for inspection/testing. */
+  getMessage?: (ctx: SummonContext) => string;
 }
 
 export const DYNAMIC_SPECIALISTS: Record<string, ExternalAgent> = {};
@@ -48,13 +50,32 @@ export function registerDynamicSpecialist(name: string, agent: ExternalAgent): v
   DYNAMIC_SPECIALISTS[name] = agent;
 }
 
-export const SPECIALISTS: Record<string, ExternalAgent> = {
-  cc: {
-    name: "Claude Code",
-    description: "Excellent for reasoning, complex debugging, and state-of-the-art coding tasks.",
-    getCommand: (ctx) => {
-      const blueprint = ctx.monolithBlueprint || "Maintain surgical changes and simplicity.";
-      const message = `I am MEOW (Meta-Orchestrator). I've hit a roadblock. 
+/**
+ * Build a safe summon command using a temp file to avoid shell quoting issues.
+ * On Windows, embedding messages with quotes/special chars in shell commands breaks parsing.
+ * Writing to a temp file and using @filepath avoids this entirely.
+ */
+function buildSummonCommandSafe(message: string, bin: string): { command: string; cleanup: () => void } {
+  const { writeFile, rm } = require("fs/promises");
+  const { tmpdir } = require("os");
+  const pathMod = require("path");
+
+  const tmpFile = pathMod.join(tmpdir(), `meow_summon_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`);
+
+  // Write message to temp file (avoids shell quoting issues with quotes/newlines)
+  require("fs").writeFileSync(tmpFile, message, "utf-8");
+
+  const escapedTmpFile = tmpFile.replace(/\\/g, "/");
+  const command = `${bin} -p @"${escapedTmpFile}" --dangerously-skip-permissions`;
+
+  const cleanup = () => { try { rm(tmpFile, { force: true }); } catch {} };
+
+  return { command, cleanup };
+}
+
+function buildCcMessage(ctx: SummonContext): string {
+  const blueprint = ctx.monolithBlueprint || "Maintain surgical changes and simplicity.";
+  return `I am MEOW (Meta-Orchestrator). I've hit a roadblock.
 GOAL: ${ctx.goal}
 FAILURE: ${ctx.lastError || "Build/Test loop failure"}
 ATTEMPT: ${ctx.attempt || 1}
@@ -75,9 +96,17 @@ INSTRUCTIONS:
 - THINK BEFORE CODING: State assumptions explicitly.
 - SIMPLICITY FIRST: Minimum code.
 - SURGICAL CHANGES: Match the existing style exactly.`;
-      
-      // Hardened Headless Flags: -p for non-interactive print mode, bypass for everything else
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
+}
+
+export const SPECIALISTS: Record<string, ExternalAgent> = {
+  cc: {
+    name: "Claude Code",
+    description: "Excellent for reasoning, complex debugging, and state-of-the-art coding tasks.",
+    getMessage: buildCcMessage,
+    getCommand: (ctx) => {
+      const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const { command } = buildSummonCommandSafe(buildCcMessage(ctx), bin);
+      return command;
     }
   },
   aider: {
@@ -115,7 +144,32 @@ Do NOT commit. MEOW will review and commit your changes.
     name: "Claude Code",
     description: "Standard specialist for high-fidelity logic fixes.",
     getCommand: (ctx) => {
-      return SPECIALISTS.cc.getCommand(ctx); // Use the same robust prompt
+      const blueprint = ctx.monolithBlueprint || "Maintain surgical changes and simplicity.";
+      const message = `I am MEOW (Meta-Orchestrator). I've hit a roadblock.
+GOAL: ${ctx.goal}
+FAILURE: ${ctx.lastError || "Build/Test loop failure"}
+ATTEMPT: ${ctx.attempt || 1}
+RESOURCES: ${ctx.files.join(", ")}
+
+# MONOLITH BLUEPRINT (Rules of the House):
+${blueprint}
+
+INSTRUCTIONS:
+0. BEFORE STARTING: Run 'npx skills find <relevant-topic>' to check the unified ecosystem (https://github.com/stancsz/skills). If a relevant skill exists (see https://github.com/vercel-labs/skills/blob/main/skills/find-skills/SKILL.md), use it to solve the task.
+1. FIX the immediate issue and ensure all tests pass.
+2. DO NOT TOUCH 'quantum_*.ts' files unless the goal specifically asks for it.
+3. DO NOT COMMIT: MEOW is the Expert Taster and will review/commit your work.
+4. REPORT: Summarize your changes and provide exact steps for MEOW to verify your work.
+5. RECURSIVE IMPROVEMENT: If you find a missing pattern, create a reusable skill in 'src/skills/'.
+
+# KARPATHY GUIDELINES:
+- THINK BEFORE CODING: State assumptions explicitly.
+- SIMPLICITY FIRST: Minimum code.
+- SURGICAL CHANGES: Match the existing style exactly.`;
+
+      const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const { command } = buildSummonCommandSafe(message, bin);
+      return command;
     }
   },
   qa: {
@@ -138,8 +192,10 @@ RESOURCES: ${ctx.files.join(", ")}
 - THINK BEFORE CODING: Analyze the Coder's likely approach.
 - SIMPLICITY FIRST: Clean, readable test code.
 - GOAL-DRIVEN: Your success is defined by test coverage and documentation clarity.`;
-      
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
+
+      const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const { command } = buildSummonCommandSafe(message, bin);
+      return command;
     }
   },
   "claude-hermes": {
@@ -170,8 +226,9 @@ INSTRUCTIONS:
 - SURGICAL CHANGES: Touch only what must, match existing style
 - GOAL-DRIVEN: Define success criteria before starting`;
 
-      // Hermes uses Claude Code with specialized prompts for skill evolution
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
+      const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const { command } = buildSummonCommandSafe(message, bin);
+      return command;
     }
   },
   "claude-browseros": {
@@ -203,7 +260,9 @@ INSTRUCTIONS:
 - Take screenshot: claude mcp call mcp__browseros__ss --page <pageId>`;
 
       // BrowserOS works through MCP tools with Claude Code
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
+      const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const { command } = buildSummonCommandSafe(message, bin);
+      return command;
     }
   },
   eigent: {
@@ -233,7 +292,9 @@ INSTRUCTIONS:
 - THINK BEFORE CODING: Plan parallelization strategy
 - SIMPLICITY FIRST: Minimize redundant parallel tasks`;
 
-      return `claude "${message.replace(/"/g, '\\"')}" -p --dangerously-skip-permissions`;
+      const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+      const { command } = buildSummonCommandSafe(message, bin);
+      return command;
     }
   }
 };
@@ -350,12 +411,18 @@ export async function summon(agentName: string, context: SummonContext): Promise
     ? (context.targetDir.startsWith(process.cwd()) ? context.targetDir : process.cwd())
     : process.cwd();
 
-  const command = agent.getCommand(context);
+  const commandStr = agent.getCommand(context);
+
+  // Detect if this is a claude-style command that needs temp-file treatment
+  const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+  const isClaudeCmd = commandStr.trim().startsWith(bin);
+
+  let tempFileCleanup: (() => void) | null = null;
 
   try {
     if (agentName === "aider") {
       try {
-        execSync("aider --version", { stdio: "ignore" });
+        execSync("aider --version", { stdio: "ignore", shell: true } as any);
       } catch (e) {
         console.log("⚠️ Aider not found in PATH. Escalating to Claude Code...");
         return summon("cc", { ...context, depth });
@@ -363,7 +430,7 @@ export async function summon(agentName: string, context: SummonContext): Promise
     }
     if (agentName === "opencode") {
       try {
-        execSync("opencode --version", { stdio: "ignore" });
+        execSync("opencode --version", { stdio: "ignore", shell: true } as any);
       } catch (e) {
         console.log("⚠️ OpenCode not found in PATH. Escalating to Claude Code...");
         return summon("cc", { ...context, depth });
@@ -371,7 +438,7 @@ export async function summon(agentName: string, context: SummonContext): Promise
     }
     if (agentName === "claude" || agentName === "cc") {
       try {
-        execSync("claude --version", { stdio: "ignore" });
+        execSync(process.platform === "win32" ? "claude.cmd --version" : "claude --version", { stdio: "ignore", shell: true } as any);
       } catch (e) {
         console.log("⚠️ Claude Code not found in PATH. Please run 'use_skill | setup' to install it.");
         throw new Error("Claude Code not found.");
@@ -381,7 +448,7 @@ export async function summon(agentName: string, context: SummonContext): Promise
       // Hermes now uses Claude Code as backend - no separate installation needed
       // Just verify Claude is available
       try {
-        execSync("claude --version", { stdio: "ignore" });
+        execSync(process.platform === "win32" ? "claude.cmd --version" : "claude --version", { stdio: "ignore", shell: true } as any);
       } catch (e) {
         console.log("⚠️ Hermes Agent requires Claude Code. Please run 'use_skill | setup' to install it.");
         throw new Error("Claude Code not found - Hermes backend unavailable.");
@@ -396,10 +463,24 @@ export async function summon(agentName: string, context: SummonContext): Promise
       }
       console.log(`✓ BrowserOS ready at ${status.serverUrl} (CDP: ${status.cdpConnected ? "connected" : "disconnected"})`);
     }
+
+    // Build safe command: use temp file for claude-style commands to avoid shell quoting issues
+    let finalCommand = commandStr;
+    if (isClaudeCmd) {
+      // Extract message from the malformed command and rebuild with temp file
+      // Pattern: claude.cmd "MESSAGE" -p --dangerously-skip-permissions
+      const msgMatch = commandStr.match(/^[^"]*"(.+)"\s+-p\s+--dangerously-skip-permissions$/s);
+      if (msgMatch) {
+        const { command: safeCmd, cleanup } = buildSummonCommandSafe(msgMatch[1], bin);
+        finalCommand = safeCmd;
+        tempFileCleanup = cleanup;
+      }
+    }
+
     // Issue #317 Fix 1: Spawn subprocess in locked cwd to prevent sub-specialist scope bleed
     // Issue #317 Fix 2: Capture stdout/stderr so MEOW gets actual specialist output
     // stdio: "pipe" replaces "inherit" so we can return real output, not a fake success message
-    const result = execSync(command, { cwd: safeCwd, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+    const result = execSync(finalCommand, { cwd: safeCwd, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024, shell: true } as any);
     return result || `✅ ${agent.name} completed with no output.`;
   } catch (error: any) {
     if (agentName === "aider" || agentName === "opencode") {
@@ -407,6 +488,11 @@ export async function summon(agentName: string, context: SummonContext): Promise
       return summon("cc", { ...context, depth });
     }
     return `❌ Escalation failed. ${agent.name} error: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    // Clean up temp file
+    if (tempFileCleanup) {
+      try { tempFileCleanup(); } catch {}
+    }
   }
 };
 

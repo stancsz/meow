@@ -313,7 +313,7 @@ export class Orchestrator {
             taskId: task.id,
             success: reviewResult.passes,
             output: `Quality score: ${reviewResult.qualityScore}%, iterations: ${reviewResult.iterations}`,
-            artifacts: reviewResult.issues.length > 0 ? [] : undefined,
+            artifacts: reviewResult.artifacts,
             metadata: {
               qualityScore: reviewResult.qualityScore,
               selfReviewResult: reviewResult,
