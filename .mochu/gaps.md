@@ -2,16 +2,20 @@
 
 Format: id · dimension · description · evidence · impact 1-5 · effort 1-5 · confidence 1-5 · score = I*C/E
 
+## Shipped
+
+| id | dimension | description | evidence |
+|---|---|---|---|
+| gap-001 | reliability-errors | Heartbeat verifier suite (spawn, stdin, @file, stub read-back, exit contract) | **SHIPPED** — 7/7 green, ship_gate PASS |
+| gap-003 | developer-experience | Freeze legacy: branch legacy-swarm, strip quantum/swarm deps | **SHIPPED** — 11/11 green, ship_gate PASS |
+| gap-006 | performance | Thinning ratchet: baseline.json + ship_gate enforcement | **SHIPPED** — 15/15 green, ship_gate PASS |
+| gap-008 | developer-experience | W3: src/agent/, orchestrator/, kernel/, cli/ deleted | **SHIPPED** — 20/20 green, ship_gate PASS; 11,201 deletions |
+| gap-009 | developer-experience | W4: perimeter trimmed (.husky, dist-runtime, scratch, legacy skills) | **SHIPPED** — 25/25 green, ship_gate PASS; 4,718 deletions |
+| gap-010 | developer-experience | W5: src/ empty | **SHIPPED** — 30/30 green (2 skipped), ship_gate PASS; 2,317 deletions |
+
 ## Active
 
-| id | dimension | description | evidence | impact | effort | confidence | score |
-|----|-----------|-------------|----------|--------|--------|------------|-------|
-| gap-001 | reliability-errors | Heartbeat verifier suite (spawn, stdin, @file, stub read-back, exit contract) | **SHIPPED** — 7/7 green, ship_gate PASS | — | — | — | — |
-| gap-002 | features | v0002_one_life_e2e: end-to-end mocked life through schedule→birth→gate | **PASSING** — v0002_one_life_e2e.py green in corpus | 5 | 3 | 5 | 8.3 |
-| gap-003 | developer-experience | Freeze legacy: branch legacy-swarm, strip quantum/swarm deps from package.json | **SHIPPED** — 11/11 green, ship_gate PASS; 194 insertions, 1457 deletions | — | — | — | — |
-| gap-006 | performance | Thinning ratchet: baseline.json + ship_gate enforcement (MIGRATION.md §3) | **SHIPPED** — 15/15 green, ship_gate PASS; thinning check in ship_gate.py | — | — | — | — |
-| gap-004 | onboarding-first-run | meow init command: scaffold .meow/ + PROBLEM.md interview for a target repo | No init command exists | 3 | 3 | 3 | 3.0 |
-| gap-005 | features | Metric adapter stub: read a target's real-world metric into the ledger at SHIP | PROBLEM.md has metric defined but no adapter | 4 | 5 | 2 | 1.6 |
+(none — migration complete)
 
 ## Parked
 
@@ -19,5 +23,14 @@ Format: id · dimension · description · evidence · impact 1-5 · effort 1-5 �
 
 ## Discovered gaps (during build)
 
-- **gap-007** · developer-experience · INBOX.md stub threshold: ship_gate.py checks for ≥3 non-empty lines in .md files. All state files must be ≥3 lines. | impact:2 | effort:1 | confidence:5 | score:10.0 | **SHIPPED** (iter-1 fix)
-- **gap-008** · developer-experience · src/agent/*.ts still reference deleted quantum_* files; typecheck fails until W3. 9 TypeScript errors. | impact:3 | effort:2 | confidence:5 | score:7.5 | **W3 dependency**
+- **gap-007** · developer-experience · INBOX.md stub threshold: ship_gate.py checks ≥3 non-empty lines | **SHIPPED** (iter-1)
+- **gap-008** · developer-experience · src/agent/*.ts import errors (9 TS errors) | **SHIPPED** (iter-4, W3)
+- **gap-011** · performance · run_corpus.py SKIP handling: exit 2 treated as FAIL instead of SKIP | **SHIPPED** (iter-6, W5)
+
+## Next (post-migration)
+
+| id | dimension | description | impact | effort | confidence | score |
+|---|---|---|---|---|---|---|---|
+| gap-012 | features | meow init: scaffold .meow/ + PROBLEM.md interview for a target repo | 4 | 4 | 3 | 3.0 |
+| gap-013 | features | meow status: TUI showing active life, budget, gaps | 4 | 4 | 3 | 3.0 |
+| gap-014 | onboarding-first-run | docs: migrate legacy docs/ to skills/meow/docs/ | 3 | 3 | 4 | 4.0 |

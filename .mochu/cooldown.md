@@ -1,7 +1,5 @@
 # cooldown.md — recently shipped areas
 
-Do not touch for N iterations:
+Migration complete. No active cooldown.
 
-- reliability-errors: gap-001 shipped 2026-06-11; cooldown 6 iterations (until iter-7)
-- developer-experience: gap-003 shipped 2026-06-11; cooldown 6 iterations (until iter-7)
-- performance: gap-006 shipped 2026-06-11; cooldown 6 iterations (until iter-7)
+Post-migration: focus on gap-012 (meow init), gap-013 (meow status), gap-014 (docs migration).

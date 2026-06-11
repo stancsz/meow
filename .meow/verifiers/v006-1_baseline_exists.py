@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """v006-1: baseline.json exists and has valid non_core_loc.
 
-Claim: .meow/baseline.json exists with a positive integer non_core_loc field.
+Claim: .meow/baseline.json exists with a non-negative integer non_core_loc field.
 This is the foundation of the thinning ratchet (MIGRATION.md §3).
+0 is valid (migration complete — src/ is empty).
 """
 import json
 import sys
@@ -28,8 +29,8 @@ def main() -> int:
         return 1
 
     loc = data["non_core_loc"]
-    if not isinstance(loc, int) or loc <= 0:
-        print(f"FAIL: non_core_loc is {loc!r}, expected positive integer")
+    if not isinstance(loc, int) or loc < 0:
+        print(f"FAIL: non_core_loc is {loc!r}, expected non-negative integer")
         return 1
 
     if "recorded" not in data:
