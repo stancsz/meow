@@ -9,6 +9,61 @@
 
 ---
 
+# meow — Nine Lives Harness (current)
+
+## Core Interface
+
+```bash
+# Run a life cycle (birth → phase → exit contract → rebirth)
+bun bin/meow.ts birth
+
+# Run specific number of lives
+bun bin/meow.ts birth --lives 3
+
+# Schedule the heartbeat
+bun bin/meow.ts schedule
+```
+
+## Architecture
+
+- `bin/meow.ts` — Heartbeat entry point: schedule, birth, phase dispatch, exit contract, rebirth
+- `scripts/` — Governor scripts: `run_corpus.py` (verifier corpus), `ship_gate.py` (pre-commit gate), `schedule.py`, `select_gap.py`, `compact.py`, `budget.py`, `audit_verifiers.py`
+- `skills/meow/` — Role skills: `SKILL.md` + `roles/` (builder, planner, etc.)
+- `.meow/` — State directory: `ledger.md`, `brain.db`, `verifiers/`, `goals.md`, `gaps.md`, `campaign.md`, `budget.md`, `playbook.md`
+- `.mochu/` — Product iteration state: `gaps.md`, `competitors.md`, `product.md`, `RELEASE.md`, `verifiers/`
+
+## Nine Lives Lifecycle
+
+1. **Schedule** — heartbeat triggers on cron/schedule
+2. **Birth** — assemble context from PROBLEM.md, gaps.md, ledger, brain
+3. **Phase** — execute role:phase (e.g., `builder:execute`, `planner:plan`)
+4. **Exit contract** — gates green, ledger appended, brain distilled, WIP serialized
+5. **Rebirth** — next life begins
+
+## Requirements
+
+- Bun (TypeScript runtime)
+- Python 3 (for governor scripts)
+- Anthropic API key: set `ANTHROPIC_API_KEY` env var
+
+## Verifiers
+
+Verifiers live in `.meow/verifiers/` and `.mochu/verifiers/`. Run the corpus:
+
+```bash
+python3 scripts/run_corpus.py
+```
+
+## Ship Gate
+
+Pre-commit gate must pass before committing:
+
+```bash
+python3 scripts/ship_gate.py
+```
+
+---
+
 # meow-swarm (LEGACY — frozen)
 
 > **For autonomous agent loops**: the old procedure was `docs/legacy/loop.md`; the current one is the Nine Lives life-cycle (`docs/rfc/nine-lives.md` §4.5).
@@ -53,7 +108,7 @@ meow-swarm is a **background daemon-style coding harness**. Think `nohup ./worke
 - Node.js 18+ (Bun NOT supported — better-sqlite3 native addons require Node.js)
 - LLM provider env vars — **preferred: Anthropic**:
 
-Set credentials and model in `.env` (copy from `.env.example`). `src/config/env.ts` reads `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_MODEL` from the environment. Never hardcode keys or model names.
+Set credentials and model in `.env` (copy from `.env.example`). Never hardcode keys or model names.
 
 ## Architecture
 
@@ -93,4 +148,3 @@ If only one is updated, the other becomes stale and future agents will re-work a
 A confirmed failure mode (see `docs/legacy/FEEDBACK.md`): `meow -p` tasks have completed, reported success, and written a file — but the file on disk contained only a stub title line with no body content.
 
 **Rule: after any significant `write` or file creation, immediately read the file back and verify it is not a stub.** If the read returns fewer than 10 lines for a document that should have content, treat it as a failed write and retry. Do not commit until verified.
-
