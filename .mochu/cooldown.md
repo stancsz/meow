@@ -2,4 +2,4 @@
 
 Do not touch for N iterations:
 
-(none — bootstrap iteration)
+- reliability-errors: gap-001 shipped 2026-06-11; cooldown 6 iterations (until iter-7)
