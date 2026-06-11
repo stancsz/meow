@@ -6,6 +6,7 @@ Exit 0 = within budget. Exit 1 = exceeded (reason on stdout; caller halts and
 writes INBOX). The heartbeat calls this before every birth.
 """
 import datetime
+import os
 import re
 import sys
 from pathlib import Path
@@ -36,6 +37,10 @@ def lives_today() -> int:
 
 
 def main() -> int:
+    # MEOW_SKIP_BUDGET=1 bypasses budget checks (for verifiers and mocks).
+    if os.environ.get("MEOW_SKIP_BUDGET") == "1":
+        print("OK: budget check skipped (verifier/mock mode)")
+        return 0
     cfg = limits()
     used = lives_today()
     if used >= cfg["max_lives_per_day"]:

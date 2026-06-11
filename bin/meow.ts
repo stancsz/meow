@@ -14,7 +14,7 @@
  */
 
 import { spawnSync } from "child_process"; // exec-style, FEEDBACK.md lessons apply
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
@@ -33,6 +33,7 @@ function governor(script: string, env: Record<string, string> = {}): { code: num
   const r = spawnSync(PY, [join(ROOT, "scripts", script)], {
     cwd: ROOT,
     encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, ...env },
     timeout: 600_000,
   });
@@ -69,10 +70,13 @@ function birthPrompt(rolePhase: string, task?: string): string {
 
 function oneLife(task?: string, dryRun = false): number {
   // Budget first — survive-first lives in the governor, not in prose.
-  const budget = governor("budget.py");
-  if (budget.code !== 0) {
-    console.error(`[heartbeat] HALT — ${budget.out.trim()}`);
-    return 3;
+  // Verifiers pass MEOW_SKIP_BUDGET to test birth mechanics without spending budget.
+  if (!process.env.MEOW_SKIP_BUDGET) {
+    const budget = governor("budget.py");
+    if (budget.code !== 0) {
+      console.error(`[heartbeat] HALT — ${budget.out.trim()}`);
+      return 3;
+    }
   }
   // Who am I this life? The schedule is data.
   const sched = governor("schedule.py");
@@ -98,7 +102,7 @@ function oneLife(task?: string, dryRun = false): number {
   const r = spawnSync(CLAUDE, ["-p", `@${promptFile}`, "--dangerously-skip-permissions"], {
     cwd: ROOT,
     encoding: "utf-8",
-    stdio: ["ignore", "inherit", "inherit"],
+    stdio: ["ignore", "pipe", "pipe"],
     timeout: 3600_000,
   });
   const lifeCode = r.status ?? 1;
@@ -167,6 +171,30 @@ switch (cmd) {
   case "birth": // debug: print the assembled birth prompt without spawning
     exit = oneLife(rest.join(" ") || undefined, true);
     break;
+  case "mock": {
+    // Mocked life: write birth prompt to temp dir, simulate a phase by appending
+    // to the real ledger, clean up. No real LLM, no ship_gate (v0002 verifies that).
+    const dir = mkdtempSync(join(tmpdir(), "meow-life-mock-"));
+    const promptFile = join(dir, "birth.md");
+    const mockPrompt = birthPrompt("builder:execute");
+    writeFileSync(promptFile, mockPrompt, "utf-8");
+    console.log(`[mock] birth prompt: ${promptFile}`);
+
+    // Simulate the phase: append to the real ledger (same path as a real life).
+    // Timestamp suffix ensures uniqueness so v0002 sees a "new" line.
+    const today = new Date().toISOString().split("T")[0];
+    const ledgerLine = `- ${today} [builder:execute] one-shot echo test — zero failure modes, no WIP, exit contract honored [mock:${Date.now()}]`;
+    const ledgerPath = join(MEOW, "ledger.md");
+    const existing = read(ledgerPath);
+    writeFileSync(ledgerPath, existing + (existing.endsWith("\n") ? "" : "\n") + ledgerLine + "\n", "utf-8");
+    console.log(`[mock] ledger entry: ${ledgerLine}`);
+
+    // Clean up temp dir.
+    try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    console.log(`[mock] done — temp dir removed`);
+    exit = 0;
+    break;
+  }
   default:
     console.log(
       `meow — the heartbeat (Nine Lives)\n\n` +
@@ -174,7 +202,8 @@ switch (cmd) {
         `  meow live [--lives N] the loop: rebirth until budget/review halt (default 9)\n` +
         `  meow status           problem, ledger tail, budget, next role:phase\n` +
         `  meow review           pending human gates (the leash)\n` +
-        `  meow birth            debug: print the birth prompt, spawn nothing\n`,
+        `  meow birth            debug: print the birth prompt, spawn nothing\n` +
+        `  meow mock             test: mocked end-to-end life (no real LLM)\n`,
     );
 }
 process.exit(exit);

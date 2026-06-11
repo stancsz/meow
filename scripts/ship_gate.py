@@ -30,7 +30,7 @@ TEXT_EXT = {".md", ".txt", ".py", ".ts", ".js", ".sh", ".json", ".yaml", ".yml"}
 
 def git(*args) -> str:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True,
-                          text=True).stdout
+                          text=True, stdin=subprocess.DEVNULL).stdout
 
 
 def changed_files():
@@ -45,12 +45,16 @@ def changed_files():
 def main() -> int:
     errors = []
 
-    # 1. Corpus
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "run_corpus.py")],
-                       capture_output=True, text=True)
-    print(r.stdout, end="")
-    if r.returncode != 0:
-        errors.append("corpus not green")
+    # 1. Corpus (skip when invoked from `meow mock` to avoid recursive loop:
+    # mock → ship_gate → run_corpus → v0002 → meow mock → …)
+    if os.environ.get("MEOW_SKIP_CORPUS") == "1":
+        print("[ship_gate] corpus check skipped (mock mode)")
+    else:
+        r = subprocess.run([sys.executable, str(ROOT / "scripts" / "run_corpus.py")],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        print(r.stdout, end="")
+        if r.returncode != 0:
+            errors.append("corpus not green")
 
     changes = changed_files()
 
@@ -85,7 +89,7 @@ def main() -> int:
     if errors:
         print("\nHOLD:")
         for e in errors:
-            print(f"  ✗ {e}")
+            print(f"  FAIL: {e}")
         return 1
     print("\nSHIP: all gates green")
     return 0

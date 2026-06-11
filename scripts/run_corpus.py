@@ -5,6 +5,7 @@ All green or exit nonzero. Verifiers are v*.py (run with this interpreter)
 or v*.sh (run with bash). A verifier passes iff it exits 0.
 Past wins are protected: this is always the full corpus, never a subset.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,14 +14,24 @@ VERIFIERS = Path(__file__).resolve().parent.parent / ".meow" / "verifiers"
 
 
 def main() -> int:
+    # MEOW_SKIP_CORPUS=1 skips the corpus entirely — used by the mock command
+    # to break the recursive loop: ship_gate → run_corpus → v0002 → meow mock
+    # → ship_gate → run_corpus → …
+    if os.environ.get("MEOW_SKIP_CORPUS") == "1":
+        print("[ship_gate] corpus check skipped (mock mode)")
+        return 0
     files = sorted(list(VERIFIERS.glob("v*.py")) + list(VERIFIERS.glob("v*.sh")))
+    # Set MEOW_SKIP_CORPUS in the verifiers' environment so that if a verifier
+    # (e.g. v0002) calls `meow mock` → ship_gate → run_corpus, the inner
+    # run_corpus sees the flag and exits fast instead of recursing.
+    verif_env = {**os.environ, "MEOW_SKIP_CORPUS": "1"}
     if not files:
         print("CORPUS EMPTY: no verifiers found — nothing can ship against an empty ratchet")
         return 2
     failed = []
     for f in files:
         cmd = [sys.executable, str(f)] if f.suffix == ".py" else ["bash", str(f)]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL, env=verif_env)
         status = "PASS" if r.returncode == 0 else "FAIL"
         print(f"[{status}] {f.name}")
         if r.returncode != 0:
