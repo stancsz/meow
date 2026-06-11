@@ -1,13 +1,19 @@
 # STATUS
 
-> **Read this first, every session.** Everything an agent needs to orient and pick work.
-> Last updated: 2026-05-23
+> **Read `docs/HANDOFF.md` first**, then this. Cleanup plan: `docs/MIGRATION.md`.
+> Last updated: 2026-06-11
 
 ---
 
 ## Current Phase
 
+**NINE LIVES REPIVOT (2026-06-11) — supersedes everything below.** Read `docs/rfc/nine-lives.md` first. meow is being rebuilt as the **exoskeleton for Claude Code**: a Bun heartbeat that owns the session boundary (birth context → exit contract → rebirth), meow-the-skill (markdown roles) as the mind, Python gate scripts as the trust layer, second-brain as memory. Combines architect-builder, mochu, spec-driven-qa, monkey-skills, and second-brain. Wave 5 (ECOMODE/AUTOPILOT/TUI/REPL/RALPH) is **cancelled** — do not pick those items. `src/` is frozen pending the `legacy-swarm` branch. **Scaffold landed 2026-06-11:** `bin/meow.ts` (Bun heartbeat) · `skills/meow/` (mind: strategist/builder/verifier) · `scripts/` (governor: schedule, budget, run_corpus, ship_gate, select_gap, audit_verifiers, compact) · `.meow/` (state: PROBLEM, campaign, goals, gaps, verifiers/v0001, brain). Gate chain verified green. Legacy docs moved to `docs/.refs/`. Next work = gaps.md #1 (heartbeat verifier suite), per RFC §5 step 4.
+
+<details><summary>Pre-repivot phase (historical)</summary>
+
 **Wave 4 — Operational Hardening.** All prior waves and the 5-phase AI-native self-improvement plan are complete. The loop now fixes bugs that are actively breaking the running system.
+
+</details>
 
 ---
 
