@@ -30,7 +30,7 @@ Status legend: ✅ done · ⏳ next · ▢ later. Every wave ends with: corpus g
 ledger entry, brain distill, baseline.json updated (§3).
 
 **W0 — Scaffold** ✅ (2026-06-11) Heartbeat, governor, skill, `.meow/`, brain,
-docs reorganized to `.refs/`. Gate chain verified.
+docs reorganized to `legacy/`. Gate chain verified.
 
 **W1 — Prove the heartbeat** ⏳ (gaps #1, #2) Host smoke test (`meow birth`,
 `meow -p`), then the heartbeat verifier suite from the Do-Not-Repeat drawers,
@@ -88,7 +88,7 @@ A verifier makes "each iteration thinner" enforceable:
 4. **One wave in flight:** no interleaving. A blocked wave gets parked with a
    task file, and the loop works gaps instead.
 5. **Docs follow code:** anything describing deleted machinery moves to
-   `docs/.refs/` in the same life. STATUS.md and this file are updated together
+   `docs/legacy/` in the same life. STATUS.md and this file are updated together
    (the dual-bookkeeping lesson, applied to the cleanup itself).
 
 ## 5. Done-when
@@ -97,4 +97,4 @@ A verifier makes "each iteration thinner" enforceable:
 one binary; governor unchanged in shape since W0; baseline.json strictly
 monotone downward across every ledger SHIPPED entry; and the 25-life streak
 (PROBLEM.md) achieved on an external target — at which point this file's job is
-over and it moves to `docs/.refs/` too.
+over and it moves to `docs/legacy/` too.

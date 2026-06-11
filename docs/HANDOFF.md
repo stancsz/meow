@@ -18,8 +18,8 @@ Canonical design docs — the only two that are alive:
 2. `docs/rfc/yugong-harness-design.md` — the mind: four laws, eight phases,
    sixteen mental models bound as mechanics, tri-role split.
 
-Everything else in `docs/.refs/` is historical. Do not resurrect ideas from
-`.refs/` without a verifier-backed reason. `src/` is the FROZEN legacy swarm —
+Everything else in `docs/legacy/` is historical. Do not resurrect ideas from
+`legacy/` without a verifier-backed reason. `src/` is the FROZEN legacy swarm —
 never extend it; it only shrinks (see `docs/MIGRATION.md`).
 
 ## How to run it
@@ -60,7 +60,7 @@ python3 scripts/compact.py         # regenerate playbook.md from the brain
 Done: repivot RFC accepted; Yugong merged; second-brain installed
 (`.claude/skills/second-brain/`) and seeded (6 drawers incl. 3 Do-Not-Repeat);
 scaffold complete and gate chain verified green (corpus 1/1, SHIP); legacy docs
-in `docs/.refs/`; meow's own PROBLEM.md set (25-life streak on an external target).
+in `docs/legacy/`; meow's own PROBLEM.md set (25-life streak on an external target).
 
 Not done: no real life has run end-to-end yet (`bun` was unavailable in the
 authoring sandbox — first `meow birth` + `meow -p` smoke test happens on the
@@ -71,7 +71,7 @@ suite (gaps #1) unwritten. Next work = top of `.meow/gaps.md`.
 
 - **Windows spawn:** `spawn(shell:true)` for `claude -p` races stdout on
   cmd.exe. Use exec-style with `@file` prompts, stdin ignored. Source:
-  `docs/FEEDBACK.md`, brain drawer "Do-Not-Repeat: spawn(shell:true)…".
+  `docs/legacy/FEEDBACK.md`, brain drawer "Do-Not-Repeat: spawn(shell:true)…".
 - **Brain FTS:** hyphens are NOT operators in FTS5 — quote searches:
   `search '"do-not-repeat"'`.
 - **Brain on weird mounts:** WAL mode can fail read-only opens; `compact.py`
