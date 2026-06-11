@@ -30,3 +30,8 @@ Removals require an INBOX entry and human ack.
 | v009-3 | developer-experience | W4: heartbeat works after perimeter deletions (regression) | python3 .meow/verifiers/v009-3_heartbeat_works_w4.py |
 | v009-4 | developer-experience | W4: thinning ratchet holds after W4 | python3 .meow/verifiers/v009-4_thinning_ratchet_w4.py |
 | v009-5 | developer-experience | W4: src/ contains only core dirs | python3 .meow/verifiers/v009-5_src_empty.py |
+| v010-1 | developer-experience | W5: src/ deleted from main | python3 .meow/verifiers/v010-1_src_deleted.py |
+| v010-2 | developer-experience | W5: heartbeat works after W5 (regression) | python3 .meow/verifiers/v010-2_heartbeat_works_w5.py |
+| v010-3 | developer-experience | W5: thinning ratchet holds (src/ LOC = 0) | python3 .meow/verifiers/v010-3_thinning_ratchet_w5.py |
+| v010-4 | developer-experience | W5: package.json has no src/ references | python3 .meow/verifiers/v010-4_no_src_refs.py |
+| v010-5 | developer-experience | W5: typecheck passes on core | python3 .meow/verifiers/v010-5_typecheck_clean.py |

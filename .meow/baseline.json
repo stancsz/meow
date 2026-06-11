@@ -1,12 +1,13 @@
 {
-  "non_core_loc": 4747,
+  "non_core_loc": 2253,
   "deps": 15,
   "recorded": "2026-06-11",
-  "note": "W3 baseline — src/agent/, orchestrator/, kernel/, cli/ deleted; ratchet only moves down",
+  "note": "W4 baseline — perimeter trimmed; src/ = architect/, auditor/, config/, liaison/, orca/, types/, index.ts; ratchet only moves down",
   "delta": {
     "W0": "heartbeat + governor + roles scaffolded",
     "W1": "gap-001 heartbeat verifier suite shipped",
     "W2": "legacy-swarm branch, src/swarm/ (-3 files), quantum_* (-2 files), -4 deps",
-    "W3": "src/agent/ (-19 files), orchestrator/ (-13 files), kernel/ (-3 files), cli/ (-3 files)"
+    "W3": "src/agent/ (-19 files), orchestrator/ (-13 files), kernel/ (-3 files), cli/ (-3 files)",
+    "W4": "src/extensions/, mcp/, eval/, skills/, .husky/, dist-runtime/, scratch/, legacy skills deleted"
   }
 }

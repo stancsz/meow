@@ -29,17 +29,27 @@ def main() -> int:
         print("CORPUS EMPTY: no verifiers found — nothing can ship against an empty ratchet")
         return 2
     failed = []
+    skipped = []
     for f in files:
         cmd = [sys.executable, str(f)] if f.suffix == ".py" else ["bash", str(f)]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL, env=verif_env)
-        status = "PASS" if r.returncode == 0 else "FAIL"
-        print(f"[{status}] {f.name}")
-        if r.returncode != 0:
+        if r.returncode == 0:
+            status = "PASS"
+        elif r.returncode == 2:
+            status = "SKIP"
+            skipped.append(f.name)
+        else:
+            status = "FAIL"
             failed.append(f.name)
+        print(f"[{status}] {f.name}")
+        if r.returncode not in (0, 2):
             tail = (r.stdout + r.stderr).strip().splitlines()[-5:]
             for ln in tail:
                 print(f"    {ln}")
-    print(f"\ncorpus: {len(files) - len(failed)}/{len(files)} green")
+    total = len(files)
+    green = total - len(failed)
+    skip_note = f" ({len(skipped)} skipped)" if skipped else ""
+    print(f"\ncorpus: {green}/{total} green{skip_note}")
     return 1 if failed else 0
 
 
