@@ -60,7 +60,7 @@ export class E2EHarness extends EventEmitter {
 
     let cmd: string;
     let args: string[];
-    let entryPoint = this.options.entryPoint || "src/index.ts";
+    let entryPoint = this.options.entryPoint || "bin/meow.ts";
 
     if (type === "meow") {
       const isWindows = process.platform === "win32";
