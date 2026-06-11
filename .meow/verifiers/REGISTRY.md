@@ -25,3 +25,8 @@ Removals require an INBOX entry and human ack.
 | v008-3 | developer-experience | W3: heartbeat still works after deletions (regression) | python3 .meow/verifiers/v008-3_heartbeat_works_w3.py |
 | v008-4 | developer-experience | W3: thinning ratchet holds (src/ LOC <= baseline) | python3 .meow/verifiers/v008-4_thinning_ratchet_w3.py |
 | v008-5 | developer-experience | W3: no typecheck errors in core (bin/, scripts/, skills/) | python3 .meow/verifiers/v008-5_typecheck_passes.py |
+| v009-1 | developer-experience | W4: src/extensions/, mcp/, eval/ deleted | python3 .meow/verifiers/v009-1_ext_mcp_eval_deleted.py |
+| v009-2 | developer-experience | W4: .husky/, dist-runtime/, scratch/, legacy skills deleted | python3 .meow/verifiers/v009-2_perimeter_cleaned.py |
+| v009-3 | developer-experience | W4: heartbeat works after perimeter deletions (regression) | python3 .meow/verifiers/v009-3_heartbeat_works_w4.py |
+| v009-4 | developer-experience | W4: thinning ratchet holds after W4 | python3 .meow/verifiers/v009-4_thinning_ratchet_w4.py |
+| v009-5 | developer-experience | W4: src/ contains only core dirs | python3 .meow/verifiers/v009-5_src_empty.py |

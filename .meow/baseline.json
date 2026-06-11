@@ -1,11 +1,12 @@
 {
-  "non_core_loc": 15928,
+  "non_core_loc": 4747,
   "deps": 15,
   "recorded": "2026-06-11",
-  "note": "W2 baseline — post W1+W2 thinning; src/swarm/ and quantum deps deleted; ratchet only moves down",
+  "note": "W3 baseline — src/agent/, orchestrator/, kernel/, cli/ deleted; ratchet only moves down",
   "delta": {
     "W0": "heartbeat + governor + roles scaffolded",
     "W1": "gap-001 heartbeat verifier suite shipped",
-    "W2": "legacy-swarm branch, src/swarm/ (-3 files), quantum_* (-2 files), -4 deps"
+    "W2": "legacy-swarm branch, src/swarm/ (-3 files), quantum_* (-2 files), -4 deps",
+    "W3": "src/agent/ (-19 files), orchestrator/ (-13 files), kernel/ (-3 files), cli/ (-3 files)"
   }
 }
