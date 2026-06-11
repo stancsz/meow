@@ -16,3 +16,7 @@ Removals require an INBOX entry and human ack.
 | v003-2 | v003-2_swarm_deleted.py | W2: src/swarm/ and quantum files deleted from main |
 | v003-3 | v003-3_deps_stripped.py | W2: quantum-circuit, blessed, blessed-contrib, ws removed from package.json |
 | v003-4 | v003-4_heartbeat_works.py | W2: heartbeat still works after W2 deletions (regression) |
+| v006-1 | v006-1_baseline_exists.py | thinning ratchet: baseline.json exists with valid non_core_loc |
+| v006-2 | v006-2_thinning_ratchet.py | thinning ratchet: baseline < W0 baseline (monotone down) |
+| v006-3 | v006-3_loc_count.py | thinning ratchet: current src/ LOC <= baseline non_core_loc |
+| v006-4 | v006-4_ship_gate_ratchet.py | thinning ratchet: ship_gate.py includes thinning enforcement |

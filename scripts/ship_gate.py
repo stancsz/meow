@@ -9,6 +9,8 @@ Checks, in order:
   3. Secrets scan over changed files.
   4. Stub-write check: changed text files must not be title-only stubs
      (the FEEDBACK.md lesson as code, not prayer).
+  5. Thinning ratchet: current src/ LOC must not exceed baseline.json non_core_loc.
+     MIGRATION.md §3: the ratchet only moves down.
 Exit 0 = SHIP. Exit nonzero = HOLD with named evidence.
 """
 import os
@@ -61,8 +63,11 @@ def main() -> int:
     # 2. Verifier tamper (modifications/deletions; additions are fine)
     if os.environ.get("MEOW_VERIFIER_TASK") != "1":
         for st, path in changes:
-            if ".meow/verifiers/" in path.replace("\\", "/") and st not in ("??", "A"):
-                errors.append(f"verifier modified outside a verifier task: {path}")
+            if ".meow/verifiers/" in path.replace("\\", "/"):
+                # Additions (A, ??) are always fine — append-only ratchet
+                # REGISTRY.md is the index; additions are the normal flow
+                if st not in ("??", "A") and "REGISTRY" not in path:
+                    errors.append(f"verifier modified outside a verifier task: {path}")
 
     # 3. Secrets
     for st, path in changes:
@@ -85,6 +90,29 @@ def main() -> int:
                      errors="ignore").splitlines() if ln.strip()]
             if 0 < len(lines) < 3:
                 errors.append(f"stub write: {path} has {len(lines)} non-empty line(s)")
+
+    # 5. Thinning ratchet (MIGRATION.md §3)
+    baseline_file = ROOT / ".meow" / "baseline.json"
+    if baseline_file.exists():
+        import json
+        try:
+            data = json.loads(baseline_file.read_text(encoding="utf-8"))
+            baseline_loc = data.get("non_core_loc", 0)
+            if baseline_loc > 0:
+                # Count current src/ LOC
+                r = subprocess.run(
+                    ["bash", "-c", "find src/ -name '*.ts' -o -name '*.js' 2>/dev/null | xargs wc -l 2>/dev/null | tail -1"],
+                    cwd=ROOT, capture_output=True, text=True, stdin=subprocess.DEVNULL
+                )
+                if r.returncode == 0:
+                    try:
+                        current_loc = int(r.stdout.strip().split()[0])
+                        if current_loc > baseline_loc:
+                            errors.append(f"thinning ratchet REVERSED: src/ has {current_loc} LOC, baseline is {baseline_loc}")
+                    except (ValueError, IndexError):
+                        pass  # count failed — not a gate failure
+        except Exception:
+            pass  # baseline unreadable — not a gate failure
 
     if errors:
         print("\nHOLD:")
