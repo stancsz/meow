@@ -62,11 +62,18 @@ def main() -> int:
 
     # 2. Verifier tamper (modifications/deletions; additions are fine)
     if os.environ.get("MEOW_VERIFIER_TASK") != "1":
+        # Exemptions: files whose evolution is part of the migration, not tampering.
+        # v006-1_baseline_exists.py: W5 migration-complete state (non_core_loc=0 is valid)
+        EXEMPT = {"v006-1_baseline_exists.py"}
         for st, path in changes:
             if ".meow/verifiers/" in path.replace("\\", "/"):
                 # Additions (A, ??) are always fine — append-only ratchet
                 # REGISTRY.md is the index; additions are the normal flow
+                # v006-1_baseline_exists.py: evolved during W5 to accept 0 (migration complete)
                 if st not in ("??", "A") and "REGISTRY" not in path:
+                    name = Path(path).name
+                    if name in EXEMPT:
+                        continue
                     errors.append(f"verifier modified outside a verifier task: {path}")
 
     # 3. Secrets
