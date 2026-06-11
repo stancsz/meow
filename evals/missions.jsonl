@@ -1,5 +1,0 @@
-{"instance_id": "meow-001", "goal": "Fix SQLITE_BUSY error in kernel.ts by adding a retry loop with exponential backoff", "repo": "meow", "files": ["src/kernel/kernel.ts"]}
-{"instance_id": "meow-002", "goal": "Implement a 'meow doctor' command that verifies if claude, aider, and sqlite-vec are correctly installed", "repo": "meow", "files": ["src/index.ts", "package.json"]}
-{"instance_id": "meow-003", "goal": "Add a watchdog timeout to the ParallelExecutor that kills tasks taking longer than 5 minutes", "repo": "meow", "files": ["src/orchestrator/ParallelExecutor.ts"]}
-{"instance_id": "meow-004", "goal": "Refactor MissionReviewer to use AST parsing instead of fuzzy regex to detect placeholder code", "repo": "meow", "files": ["src/agent/mission_reviewer.ts"]}
-{"instance_id": "meow-005", "goal": "Fix the 'Blind Oracle' bug in QuantumReasoning.solve by correctly weighting constraints in the Grover oracle", "repo": "meow", "files": ["src/agent/quantum_reasoning.ts"]}
