@@ -20,3 +20,8 @@ Removals require an INBOX entry and human ack.
 | v006-2 | v006-2_thinning_ratchet.py | thinning ratchet: baseline < W0 baseline (monotone down) |
 | v006-3 | v006-3_loc_count.py | thinning ratchet: current src/ LOC <= baseline non_core_loc |
 | v006-4 | v006-4_ship_gate_ratchet.py | thinning ratchet: ship_gate.py includes thinning enforcement |
+| v008-1 | developer-experience | W3: src/agent/ deleted from main | python3 .meow/verifiers/v008-1_agent_deleted.py |
+| v008-2 | developer-experience | W3: src/orchestrator/, kernel/, cli/ deleted | python3 .meow/verifiers/v008-2_orchestrator_deleted.py |
+| v008-3 | developer-experience | W3: heartbeat still works after deletions (regression) | python3 .meow/verifiers/v008-3_heartbeat_works_w3.py |
+| v008-4 | developer-experience | W3: thinning ratchet holds (src/ LOC <= baseline) | python3 .meow/verifiers/v008-4_thinning_ratchet_w3.py |
+| v008-5 | developer-experience | W3: no typecheck errors in core (bin/, scripts/, skills/) | python3 .meow/verifiers/v008-5_typecheck_passes.py |
