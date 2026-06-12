@@ -2,7 +2,7 @@
 /**
  * meow driver — wraps bin/meow.ts for programmatic use.
  * Usage: node driver.mjs <command> [opts]
- * 
+ *
  * Commands: status, -p <task>, live [--lives N], review, birth, mock
  * Options:
  *   --target <path>   operate on a different repo's .meow/ (default: ~/github/meow)

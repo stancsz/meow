@@ -34,17 +34,23 @@ bun bin/meow.ts -p "fix the auth bug in src/auth.ts"
 bun bin/meow.ts status
 ```
 
+## Run the loop (9 lives default)
+
+```bash
+bun bin/meow.ts live
+```
+
+## Run N lives
+
+```bash
+bun bin/meow.ts live --lives 3
+```
+
 ## Run against a target repo (default: ~/github/meow)
 
 ```bash
 bun bin/meow.ts --target ~/github/flint status
 node driver.mjs --target ~/github/flint status
-```
-
-## Run the loop (9 lives default)
-
-```bash
-bun bin/meow.ts live
 ```
 
 ## Prerequisites
