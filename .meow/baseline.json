@@ -1,0 +1,17 @@
+{
+  "non_core_loc": 0,
+  "deps": 5,
+  "recorded": "2026-06-11",
+  "note": "W5 baseline — migration complete. src/ deleted. Thinning ratchet complete. Only bin/, scripts/, skills/meow/, .meow/, .mochu/ remain.",
+  "delta": {
+    "W0": "heartbeat + governor + roles scaffolded",
+    "W1": "gap-001 heartbeat verifier suite shipped (7 verifiers)",
+    "W2": "legacy-swarm branch, src/swarm/ (-3 files), quantum_* (-2 files), -4 deps",
+    "W3": "src/agent/ (-19 files), orchestrator/ (-13 files), kernel/ (-3 files), cli/ (-3 files) — 11201 deletions",
+    "W4": "src/extensions/, mcp/, eval/, skills/, .husky/, dist-runtime/, scratch/, legacy skills deleted — 4718 deletions",
+    "W5": "src/ architect/, auditor/, config/, liaison/, orca/, types/, index.ts deleted — 2317 deletions"
+  },
+  "total_deletions": 18236,
+  "final_verifiers": 30,
+  "ship_gate": "PASS"
+}
