@@ -1,6 +1,6 @@
 ---
 name: meow
-description: meow — Nine Lives heartbeat for Claude Code. Run a life cycle (birth → phase → exit contract → rebirth), check status, review pending gates, or spawn a one-shot task. Trigger with "run meow", "one life", "grind the mountain", "meow status", "meow -p <task>", "meow live".
+description: meow — Nine Lives heartbeat for Claude Code. Run a life cycle (birth → phase → exit contract → rebirth), check status, review pending gates, or spawn a one-shot task. Trigger with "run meow", "one life", "grind the mountain", "meow status", "meow -p <task>", "meow live", "meow --target <repo>".
 ---
 
 # meow — the heartbeat (Nine Lives exoskeleton)
@@ -34,16 +34,17 @@ bun bin/meow.ts -p "fix the auth bug in src/auth.ts"
 bun bin/meow.ts status
 ```
 
+## Run against a target repo (default: ~/github/meow)
+
+```bash
+bun bin/meow.ts --target ~/github/flint status
+node driver.mjs --target ~/github/flint status
+```
+
 ## Run the loop (9 lives default)
 
 ```bash
 bun bin/meow.ts live
-```
-
-## Run N lives
-
-```bash
-bun bin/meow.ts live --lives 3
 ```
 
 ## Prerequisites
@@ -54,7 +55,7 @@ bun bin/meow.ts live --lives 3
 
 ## Architecture
 
-- `bin/meow.ts` — heartbeat entry point
+- `bin/meow.ts` — heartbeat entry point (supports `--target <path>`)
 - `scripts/` — governor scripts (budget.py, ship_gate.py, schedule.py)
 - `skills/meow/` — role skills (dispatched per life)
 - `.meow/` — state directory (ledger.md, brain.db, verifiers/, etc.)
@@ -73,3 +74,4 @@ Every life must:
 - The heartbeat runs `ship_gate.py` after each life — FAIL from the gate is final. Do not edit the gate or verifiers to route around it.
 - Budget check runs before every life unless `MEOW_SKIP_BUDGET=1`.
 - `--dangerously-skip-permissions` is passed to `claude -p` — ensure `ANTHROPIC_API_KEY` is set or the spawn will fail silently.
+- Use `--target <path>` to operate on a different repo's `.meow/` instead of the default (~/github/meow).

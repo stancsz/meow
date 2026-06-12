@@ -9,7 +9,17 @@ node_modules/
 .meow/
 tmp/
 memory/
-.claude/
+
+# Claude Code — ephemeral session state (not portable)
+.claude/README.md
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+
+# Skills are tracked — but ignore their embedded git repos and caches
+.claude/skills/*/.git/
+.claude/skills/*/__pycache__/
+.claude/skills/*/*.pyc
 
 # Build output
 dist/
@@ -51,3 +61,5 @@ logs/
 *.png
 *.jpg
 scratch/
+docs/legacy
+**.exe

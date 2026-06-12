@@ -18,7 +18,15 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
-const ROOT = resolve(import.meta.dir, "..");
+// Allow --target to override which repo's .meow/ we operate on.
+// Useful when meow runs from its own repo but targets another.
+const rawArgs = process.argv.slice(2);
+const targetIdx = rawArgs.indexOf("--target");
+const TARGET_ROOT = targetIdx >= 0 && rawArgs[targetIdx + 1]
+  ? resolve(rawArgs[targetIdx + 1])
+  : resolve(import.meta.dir, "..");
+
+const ROOT = TARGET_ROOT;
 const MEOW = join(ROOT, ".meow");
 const PY = process.platform === "win32" ? "python" : "python3";
 const CLAUDE = process.platform === "win32" ? "claude.cmd" : "claude";
@@ -150,7 +158,13 @@ function cmdReview(): number {
 
 // ---------- main ----------------------------------------------------------------
 
-const [cmd, ...rest] = process.argv.slice(2);
+// Strip --target and its value from args before command parsing.
+const args = rawArgs.filter((a, i) => {
+  if (a === "--target") return false;
+  if (rawArgs[i - 1] === "--target") return false;
+  return true;
+});
+const [cmd, ...rest] = args;
 let exit = 0;
 switch (cmd) {
   case "-p":
@@ -203,7 +217,8 @@ switch (cmd) {
         `  meow status           problem, ledger tail, budget, next role:phase\n` +
         `  meow review           pending human gates (the leash)\n` +
         `  meow birth            debug: print the birth prompt, spawn nothing\n` +
-        `  meow mock             test: mocked end-to-end life (no real LLM)\n`,
+        `  meow mock             test: mocked end-to-end life (no real LLM)\n` +
+        `  meow --target <path>  run against a different repo's .meow/ (default: self)\n`,
     );
 }
 process.exit(exit);

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
  * meow driver — wraps bin/meow.ts for programmatic use.
- * Usage: node driver.mjs <command> [args...]
+ * Usage: node driver.mjs <command> [opts]
  * 
  * Commands: status, -p <task>, live [--lives N], review, birth, mock
+ * Options:
+ *   --target <path>   operate on a different repo's .meow/ (default: ~/github/meow)
  */
 
 import { spawnSync } from "child_process";
@@ -36,21 +38,34 @@ function run(args) {
   return r.status ?? 1;
 }
 
-const [,, cmd, ...args] = process.argv;
+const args = process.argv.slice(2);
+
+// Handle --target globally (applies to all commands)
+const targetIdx = args.indexOf("--target");
+let target = null;
+const cleanArgs = args.filter((a, i) => {
+  if (a === "--target") { target = args[i + 1]; return false; }
+  if (target && args[i - 1] === "--target") return false;
+  return true;
+});
+
+const [cmd, ...rest] = cleanArgs;
 
 const COMMANDS = {
-  status: () => run(["status"]),
-  "-p": (task) => run(["-p", task]),
+  status: () => target ? run(["--target", target, "status"]) : run(["status"]),
+  "-p": (task) => target ? run(["--target", target, "-p", task]) : run(["-p", task]),
   live: () => {
-    const livesIdx = args.indexOf("--lives");
-    if (livesIdx !== -1 && args[livesIdx + 1]) {
-      return run(["live", "--lives", args[livesIdx + 1]]);
+    const livesIdx = rest.indexOf("--lives");
+    const liveArgs = ["live"];
+    if (livesIdx !== -1 && rest[livesIdx + 1]) {
+      liveArgs.push("--lives", rest[livesIdx + 1]);
     }
-    return run(["live"]);
+    if (target) liveArgs.unshift("--target", target);
+    return run(liveArgs);
   },
-  review: () => run(["review"]),
-  birth: () => run(["birth"]),
-  mock: () => run(["mock"]),
+  review: () => target ? run(["--target", target, "review"]) : run(["review"]),
+  birth: () => target ? run(["--target", target, "birth"]) : run(["birth"]),
+  mock: () => target ? run(["--target", target, "mock"]) : run(["mock"]),
 };
 
 if (!cmd) {
@@ -64,4 +79,4 @@ if (!handler) {
   process.exit(1);
 }
 
-process.exit(handler(...args));
+process.exit(handler(...rest));
